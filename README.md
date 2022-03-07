@@ -46,7 +46,7 @@ The documentation can be found on [Docs.rs](https://docs.rs/carrier-pigeon)
 ### Examples
 
 There is a simple chat program example in the
-[`examples/` directory](https://github.com/MitchellMarinoDev/carrier-pigeon/tree/master/examples).
+[`examples/` directory](https://github.com/MitchellMarinoDev/carrier-pigeon/tree/main/examples).
 This contains a client and server command line programs.
 
 ## Features
