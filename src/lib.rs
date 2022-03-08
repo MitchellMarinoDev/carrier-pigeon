@@ -19,6 +19,8 @@ mod client;
 mod message_table;
 mod server;
 
+extern crate carrier_pigeon_netmsg_derive;
+
 pub use carrier_pigeon_netmsg_derive::NetMsg;
 pub use client::Client;
 pub use message_table::{MsgTable, MsgTableParts, SortedMsgTable};
