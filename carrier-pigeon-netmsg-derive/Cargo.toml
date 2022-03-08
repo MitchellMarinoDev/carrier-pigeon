@@ -2,6 +2,9 @@
 name = "carrier-pigeon-netmsg-derive"
 version = "0.1.0"
 edition = "2021"
+description = "The NetMsg derive macro for carrier-pigeon."
+repository = "https://github.com/MitchellMarinoDev/carrier-pigeon/"
+license = "MIT OR Apache-2.0"
 
 [lib]
 proc-macro = true
