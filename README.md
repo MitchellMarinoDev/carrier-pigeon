@@ -66,3 +66,5 @@ This contains a client and server command line programs.
 
 To contribute, fork the repo and make a PR. If you find a bug, feel free to open an issue. If you have any questions, 
 concerns or suggestions you can shoot me an email (found in Cargo.toml) or DM me on discord `@TheHourGlass34#0459`.
+
+By contributing, you agree that your changes are subject to the license found in /LICENSE.
