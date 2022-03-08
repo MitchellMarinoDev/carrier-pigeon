@@ -19,6 +19,7 @@ mod client;
 mod message_table;
 mod server;
 
+pub use carrier_pigeon_netmsg_derive::NetMsg;
 pub use client::Client;
 pub use message_table::{MsgTable, MsgTableParts, SortedMsgTable};
 pub use net::{CId, MId, NetError, NetMsg, Transport};

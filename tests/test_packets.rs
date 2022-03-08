@@ -5,48 +5,44 @@ use serde::{Deserialize, Serialize};
 
 ///! Test packets for use in tests.
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, NetMsg)]
 /// A test packet for TCP.
 pub struct TcpPacket {
     pub msg: String,
 }
-impl NetMsg for TcpPacket {}
 impl TcpPacket {
     pub fn new<A: Into<String>>(msg: A) -> Self {
         TcpPacket { msg: msg.into() }
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, NetMsg)]
 /// A test packet for UDP.
 pub struct UdpPacket {
     pub msg: String,
 }
-impl NetMsg for UdpPacket {}
 impl UdpPacket {
     pub fn new<A: Into<String>>(msg: A) -> Self {
         UdpPacket { msg: msg.into() }
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, NetMsg)]
 /// A test connection packet.
 pub struct Connection {
     pub usr: String,
 }
-impl NetMsg for Connection {}
 impl Connection {
     pub fn new<A: Into<String>>(usr: A) -> Self {
         Connection { usr: usr.into() }
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, NetMsg)]
 /// A test disconnection packet.
 pub struct Disconnect {
     pub reason: String,
 }
-impl NetMsg for Disconnect {}
 impl Disconnect {
     pub fn new<A: Into<String>>(reason: A) -> Self {
         Disconnect {
@@ -55,13 +51,12 @@ impl Disconnect {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, NetMsg)]
 /// A test response packet.
 pub enum Response {
     Accepted,
     Rejected(String),
 }
-impl NetMsg for Response {}
 impl Response {
     pub fn rejected<A: Into<String>>(reason: A) -> Self {
         Response::Rejected(reason.into())
