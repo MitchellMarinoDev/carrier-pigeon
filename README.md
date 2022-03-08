@@ -46,21 +46,21 @@ The documentation can be found on [Docs.rs](https://docs.rs/carrier-pigeon)
 ### Examples
 
 There is a simple chat program example in the
-[`examples/` directory](https://github.com/MitchellMarinoDev/carrier-pigeon/tree/master/examples).
+[`examples/` directory](https://github.com/MitchellMarinoDev/carrier-pigeon/tree/main/examples).
 This contains a client and server command line programs.
 
 ## Features
 
-[x] Connection, response, disconnect messages built in and extremely flexible.
-[x] Independent message sending.
-[x] TCP and UDP channels.
-[x] Client and Server types.
-[x] Built in serialization/deserialization.
+ - [x] Connection, response, disconnect messages built in and extremely flexible.
+ - [x] Independent message sending.
+ - [x] TCP and UDP channels.
+ - [x] Client and Server types.
+ - [x] Built in serialization/deserialization.
 
 ### Planned Features
 
-[ ] Async runtime abstractions.
-[ ] [Bevy](https://bevyengine.org/) integration.
+ - [ ] Async runtime abstractions.
+ - [ ] [Bevy](https://bevyengine.org/) integration.
 
 ## Contributing
 
