@@ -1,3 +1,4 @@
 /target
 /.idea/**
 Cargo.lock
+/carrier-pigeon-netmsg-derive/target/**
