@@ -18,9 +18,13 @@ use tokio::task::JoinHandle;
 /// A server.
 ///
 /// Listens on a address and port, allowing for clients to connect.
+/// Newly connected clients will be given a client ID (CId) starting
+/// at `1` that is unique for the session.
 ///
 /// This will manage multiple connections to clients. Each connection
 /// will have a TCP and UDP connection on the same address and port.
+///
+///
 pub struct Server<C, R, D>
 where
     C: NetMsg,
@@ -273,6 +277,7 @@ where
     }
 
     /// Gets an iterator for the messages of type T.
+    /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
     ///
     /// Returns None if the type T was not registered.
     pub fn recv<T: NetMsg>(&self) -> Option<impl Iterator<Item = (CId, &T)>> {

@@ -16,7 +16,7 @@ fn send_recv() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let rt = runtime.handle();
 
-    // Client Disconnect Test
+    // CLIENT TO SERVER
     let (mut client, mut server) = create_client_server_pair(rt.clone());
 
     // Send 10 tcp packets.
@@ -45,6 +45,44 @@ fn send_recv() {
     // Despite UDP being unreliable, we are sending the packets through localhost
     // so none should get lost.
     let udp_packets: Vec<_> = server.recv::<UdpPacket>().unwrap().map(|m| m.1).collect();
+    assert_eq!(udp_packets.len(), 10); // Make sure all 10 udp packets went through.
+
+    // Udp is unreliable unordered. Assert that all packets arrive.
+    for i in 0..10 {
+        let msg = format!("Test UDP Packet {}", i);
+        assert!(udp_packets.contains(&&UdpPacket::new(msg)));
+    }
+
+
+    // SERVER TO CLIENT
+    println!("Cids: {:?}", server.cids().collect::<Vec<_>>());
+
+    // Send 10 tcp packets.
+    for i in 0..10 {
+        server.send_to(&TcpPacket::new(format!("Test TCP Packet {}", i)), 1).unwrap();
+    }
+
+    // Send 10 udp packets.
+    for i in 0..10 {
+        server.send_to(&UdpPacket::new(format!("Test UDP Packet {}", i)), 1).unwrap();
+    }
+
+    // Give the client enough time to send the packets.
+    std::thread::sleep(Duration::from_millis(100));
+
+    assert_eq!(client.recv_msgs(), 20);
+
+    let tcp_packets: Vec<_> = client.recv::<TcpPacket>().unwrap().collect();
+    assert_eq!(tcp_packets.len(), 10); // Make sure all 10 tcp packets went through.
+
+    for (i, p) in tcp_packets.into_iter().enumerate() {
+        // TCP is reliable ordered. Assert that all packets arrive in the correct order.
+        assert_eq!(p.msg, format!("Test TCP Packet {}", i));
+    }
+
+    // Despite UDP being unreliable, we are sending the packets through localhost
+    // so none should get lost.
+    let udp_packets: Vec<_> = client.recv::<UdpPacket>().unwrap().collect();
     assert_eq!(udp_packets.len(), 10); // Make sure all 10 udp packets went through.
 
     // Udp is unreliable unordered. Assert that all packets arrive.
