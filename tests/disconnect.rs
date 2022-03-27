@@ -1,16 +1,10 @@
-use crate::test_packets::{get_table_parts, Connection, Disconnect, Response};
+//! Disconnect and Drop tests.
 use simple_logger::SimpleLogger;
 use std::time::Duration;
-use tokio::runtime::Handle;
+use crate::helper::create_client_server_pair;
+use crate::helper::test_packets::{Connection, Disconnect, get_table_parts, Response};
 
-mod test_packets;
-
-///! Disconnect and Drop tests.
-
-const ADDR_LOCAL: &str = "127.0.0.1:0";
-
-type Client = carrier_pigeon::Client<Connection, Response, Disconnect>;
-type Server = carrier_pigeon::Server<Connection, Response, Disconnect>;
+mod helper;
 
 #[test]
 fn graceful_disconnect() {
@@ -104,33 +98,4 @@ fn drop_test() {
         // make sure there was 1 drop and 0 graceful disconnects.
         assert_eq!(counts, (0, 1));
     }
-}
-
-/// Creates a client and server that are connected to each other.
-/// Panics if any issues occur.
-fn create_client_server_pair(rt: Handle) -> (Client, Server) {
-    let parts = get_table_parts();
-
-    // Create server.
-    let mut server = Server::new(ADDR_LOCAL.parse().unwrap(), parts.clone(), rt.clone())
-        .blocking_recv()
-        .unwrap()
-        .unwrap();
-    let addr = server.listen_addr();
-    println!("Server created on addr: {}", addr);
-
-    // Start client connection.
-    let client = Client::new(addr, parts, Connection::new("John"), rt);
-
-    // Spin until the connection is handled.
-    // Normally this would be done in the game loop
-    // and there would be other things to do.
-    while 0 == server.handle_new_cons(&mut |_con_msg| (true, Response::Accepted)) {}
-
-    // Finish the client connection.
-    let (client, response_msg) = client.blocking_recv().unwrap().unwrap();
-
-    assert_eq!(response_msg, Response::Accepted);
-
-    (client, server)
 }

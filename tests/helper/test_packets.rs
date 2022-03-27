@@ -1,9 +1,8 @@
 #![allow(unused)]
+//! Test packets for use in tests.
 
 use carrier_pigeon::{MsgTable, MsgTableParts, NetMsg, Transport};
 use serde::{Deserialize, Serialize};
-
-///! Test packets for use in tests.
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, NetMsg)]
 /// A test packet for TCP.
