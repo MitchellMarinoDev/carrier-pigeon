@@ -2,7 +2,7 @@
 use simple_logger::SimpleLogger;
 use std::time::Duration;
 use crate::helper::create_client_server_pair;
-use crate::helper::test_packets::{Connection, Disconnect, get_table_parts, Response};
+use crate::helper::test_packets::Disconnect;
 
 mod helper;
 
