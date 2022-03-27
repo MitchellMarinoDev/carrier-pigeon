@@ -58,7 +58,7 @@ impl Header {
 ///
 /// - TCP is reliable but slower.
 /// - UDP is un-reliable but quicker.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Transport {
     TCP,
     UDP,

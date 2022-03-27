@@ -1,4 +1,6 @@
+#![allow(unused)]
 //! Helper functions and types to make setting up the tests easier.
+
 use tokio::runtime::Handle;
 use crate::helper::test_packets::{Connection, Disconnect, get_table_parts, Response};
 

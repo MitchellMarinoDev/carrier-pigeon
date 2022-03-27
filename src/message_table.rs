@@ -84,6 +84,28 @@ impl MsgTable {
         Ok(())
     }
 
+    /// Registers a message type with custom serialization and deserialization logic.
+    pub fn register_custom<T>(
+        &mut self, transport: Transport,
+        ser: SerFn,
+        deser: DeserFn,
+    ) -> Result<(), MsgRegError>
+    where
+        T: NetMsg,
+    {
+        // Get the type.
+        let tid = TypeId::of::<T>();
+
+        // Check if it has been registered already.
+        if self.table.iter().any(|(t, _, _, _)| *t == tid) {
+            return Err(TypeAlreadyRegistered);
+        }
+
+        let registration = (tid, transport, ser, deser);
+        self.table.push(registration);
+        Ok(())
+    }
+
     /// Builds the things needed for the registration.
     fn get_registration<T>(
         &self,
@@ -169,12 +191,42 @@ impl SortedMsgTable {
     pub fn register<T>(
         &mut self,
         transport: Transport,
-        identifier: String,
+        identifier: &str,
     ) -> Result<(), MsgRegError>
     where
         T: NetMsg + DeserializeOwned + Serialize,
     {
-        let registration = self.get_registration::<T>(transport, identifier)?;
+        let registration = self.get_registration::<T>(transport, identifier.into())?;
+        self.table.push(registration);
+        Ok(())
+    }
+
+    /// Registers a message type with custom serialization and deserialization logic.
+    pub fn register_custom<T>(
+        &mut self, transport: Transport,
+        identifier: &str,
+        ser: SerFn,
+        deser: DeserFn,
+    ) -> Result<(), MsgRegError>
+        where
+            T: NetMsg,
+    {
+        let identifier = identifier.into();
+
+        // Check if the identifier has been registered already.
+        if self.table.iter().any(|(id, _, _, _, _)| *id == identifier) {
+            return Err(NonUniqueIdentifier);
+        }
+
+        // Get the type.
+        let tid = TypeId::of::<T>();
+
+        // Check if it has been registered already.
+        if self.table.iter().any(|(_, t, _, _, _)| *t == tid) {
+            return Err(TypeAlreadyRegistered);
+        }
+
+        let registration = (identifier, tid, transport, ser, deser);
         self.table.push(registration);
         Ok(())
     }
