@@ -1,6 +1,7 @@
+use std::any::Any;
 use crate::net::{CId, MId};
 use crate::net::{DeserFn, SerFn};
-use crate::net::{Header, NetError, NetMsg, TaskStatus};
+use crate::net::{Header, NetError, TaskStatus};
 use crate::net::{MAX_PACKET_SIZE, MAX_SAFE_PACKET_SIZE};
 use log::{debug, error, trace, warn};
 use std::io;
@@ -43,7 +44,7 @@ pub struct UdpCon {
     /// The message sender.
     send: Option<UnboundedSender<(MId, Vec<u8>, SocketAddr)>>,
     /// The message receiver.
-    recv: UnboundedReceiver<(MId, Box<dyn NetMsg>, SocketAddr)>,
+    recv: UnboundedReceiver<(MId, Box<dyn Any + Send + Sync>, SocketAddr)>,
 
     /// The status of the `send` task.
     send_status: TaskStatus<io::Result<()>>,
@@ -207,7 +208,7 @@ impl UdpCon {
     /// If called on a client type connection `addr`
     /// will be ignored and `msg` will be  sent to
     /// the connected computer.
-    pub fn send_to(&self, mid: MId, msg: &dyn NetMsg, addr: SocketAddr) -> Result<(), NetError> {
+    pub fn send_to(&self, mid: MId, msg: &(dyn Any + Send + Sync), addr: SocketAddr) -> Result<(), NetError> {
         let ser_fn = self.ser[mid];
         let ser = ser_fn(msg).map_err(|_| NetError::Ser)?;
 
@@ -230,7 +231,7 @@ impl UdpCon {
     /// [`update_status()`](Self::update_status) was called.
     ///
     /// Only works for a Client type connection.
-    pub fn send(&self, mid: MId, msg: &dyn NetMsg) -> Result<(), NetError> {
+    pub fn send(&self, mid: MId, msg: &(dyn Any + Send + Sync)) -> Result<(), NetError> {
         if let Some(addr) = self.peer {
             // The ip addr will get ignored on the receive task
             self.send_to(mid, msg, addr)
@@ -240,7 +241,7 @@ impl UdpCon {
     }
 
     /// Receives a message if there is one available, otherwise returns [`None`].
-    pub fn try_recv(&mut self) -> Option<(MId, Box<dyn NetMsg>, SocketAddr)> {
+    pub fn try_recv(&mut self) -> Option<(MId, Box<dyn Any + Send + Sync>, SocketAddr)> {
         self.recv.try_recv().ok()
     }
 
@@ -278,7 +279,7 @@ impl UdpCon {
 ///
 /// If `peer` is [`Some`], It will make sure packets only come from that addr.
 async fn recv(
-    messages: UnboundedSender<(MId, Box<dyn NetMsg>, SocketAddr)>,
+    messages: UnboundedSender<(MId, Box<dyn Any + Send + Sync>, SocketAddr)>,
     socket: Arc<UdpSocket>,
     deser: Vec<DeserFn>,
     peer: Option<SocketAddr>,
@@ -291,7 +292,7 @@ async fn recv(
 
 /// The logic for the receive task.
 async fn recv_inner(
-    messages: UnboundedSender<(MId, Box<dyn NetMsg>, SocketAddr)>,
+    messages: UnboundedSender<(MId, Box<dyn Any + Send + Sync>, SocketAddr)>,
     socket: Arc<UdpSocket>,
     deser: Vec<DeserFn>,
     peer: Option<SocketAddr>,

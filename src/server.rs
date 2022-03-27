@@ -2,10 +2,10 @@ use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, RESPONSE_TYPE_MID
 use crate::net::{CId, DeserFn, NetError, SerFn, Transport};
 use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
-use crate::{MId, NetMsg};
+use crate::MId;
 use hashbrown::HashMap;
 use log::{debug, error, trace};
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 use std::io;
 use std::marker::PhantomData;
 use std::net::SocketAddr;
@@ -27,17 +27,17 @@ use tokio::task::JoinHandle;
 ///
 pub struct Server<C, R, D>
 where
-    C: NetMsg,
-    R: NetMsg,
-    D: NetMsg,
+    C: Any + Send + Sync,
+    R: Any + Send + Sync,
+    D: Any + Send + Sync,
 {
     /// The received message buffer.
     ///
     /// Each [`MId`] has its own vector.
-    msg_buff: Vec<Vec<(CId, Box<dyn NetMsg>)>>,
+    msg_buff: Vec<Vec<(CId, Box<dyn Any + Send + Sync>)>>,
 
     /// New connection attempts.
-    new_cons: Receiver<(TcpCon<D>, Box<dyn NetMsg>)>,
+    new_cons: Receiver<(TcpCon<D>, Box<dyn Any + Send + Sync>)>,
 
     /// The address that is being listened on.
     listen_addr: SocketAddr,
@@ -72,9 +72,9 @@ where
 
 impl<C, R, D> Server<C, R, D>
 where
-    C: NetMsg,
-    R: NetMsg,
-    D: NetMsg,
+    C: Any + Send + Sync,
+    R: Any + Send + Sync,
+    D: Any + Send + Sync,
 {
     /// Creates a new [`Server`].
     ///
@@ -143,7 +143,7 @@ where
     /// all clients before dropping the server to let the clients know
     /// that you intentionally disconnected. The `discon_msg` allows you
     /// to give a reason for the disconnect.
-    pub fn disconnect<T: NetMsg>(&mut self, discon_msg: &T, cid: CId) -> Result<(), NetError> {
+    pub fn disconnect<T: Any + Send + Sync>(&mut self, discon_msg: &T, cid: CId) -> Result<(), NetError> {
         debug!("Disconnecting CId {}", cid);
         self.send_to(cid, discon_msg)?;
         self.rm_tcp_con(cid)?;
@@ -234,7 +234,7 @@ where
     /// If the message type isn't registered, this will return
     /// [`Error::TypeNotRegistered`]. If the msg fails to be
     /// serialized this will return [`Error::SerdeError`].
-    pub fn send_to<T: NetMsg>(&self, cid: CId, msg: &T) -> Result<(), NetError> {
+    pub fn send_to<T: Any + Send + Sync>(&self, cid: CId, msg: &T) -> Result<(), NetError> {
         let addr = match self.cid_addr.get(&cid) {
             Some(addr) => *addr,
             None => return Err(NetError::InvalidCId),
@@ -256,7 +256,7 @@ where
     }
 
     /// Broadcasts a message to all connected clients.
-    pub fn broadcast<T: NetMsg>(&self, msg: &T) -> Result<(), NetError> {
+    pub fn broadcast<T: Any + Send + Sync>(&self, msg: &T) -> Result<(), NetError> {
         for cid in self.cid_addr.iter().map(|t| t.0) {
             self.send_to(*cid, msg)?;
         }
@@ -264,7 +264,7 @@ where
     }
 
     /// Broadcasts a message to all connected clients except the [`CId`] `cid`.
-    pub fn broadcast_except<T: NetMsg>(&self, msg: &T, cid: CId) -> Result<(), NetError> {
+    pub fn broadcast_except<T: Any + Send + Sync>(&self, msg: &T, cid: CId) -> Result<(), NetError> {
         for cid in self
             .cid_addr
             .iter()
@@ -280,7 +280,7 @@ where
     /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
     ///
     /// Returns None if the type T was not registered.
-    pub fn recv<T: NetMsg>(&self) -> Option<impl Iterator<Item = (CId, &T)>> {
+    pub fn recv<T: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = (CId, &T)>> {
         let tid = TypeId::of::<T>();
         let mid = *self.tid_map.get(&tid)?;
 
@@ -405,9 +405,9 @@ where
 }
 
 /// Note: Will **not** stop automatically and needs to be aborted.
-async fn listen<D: NetMsg>(
+async fn listen<D: Any + Send + Sync>(
     listener: TcpListener,
-    new_cons: Sender<(TcpCon<D>, Box<dyn NetMsg>)>,
+    new_cons: Sender<(TcpCon<D>, Box<dyn Any + Send + Sync>)>,
     deser: Vec<DeserFn>,
     ser: Vec<SerFn>,
     rt: Handle,
@@ -430,9 +430,9 @@ async fn listen<D: NetMsg>(
 }
 
 /// A branch task, spawned for each new connection from the listening task.
-async fn establish_con<D: NetMsg>(
+async fn establish_con<D: Any + Send + Sync>(
     mut con: TcpCon<D>,
-    new_cons: Sender<(TcpCon<D>, Box<dyn NetMsg>)>,
+    new_cons: Sender<(TcpCon<D>, Box<dyn Any + Send + Sync>)>,
 ) {
     let cid = con.cid();
 
@@ -468,9 +468,9 @@ async fn establish_con<D: NetMsg>(
 
 impl<C, R, D> Drop for Server<C, R, D>
 where
-    C: NetMsg,
-    R: NetMsg,
-    D: NetMsg,
+    C: Any + Send + Sync,
+    R: Any + Send + Sync,
+    D: Any + Send + Sync,
 {
     fn drop(&mut self) {
         self.listen_task.abort();

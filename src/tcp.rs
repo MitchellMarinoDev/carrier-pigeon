@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::marker::PhantomData;
@@ -13,7 +14,7 @@ use tokio::task::JoinHandle;
 use crate::message_table::DISCONNECT_TYPE_MID;
 use crate::net::{CId, MId};
 use crate::net::{DeserFn, SerFn};
-use crate::net::{Header, NetError, NetMsg, TaskStatus};
+use crate::net::{Header, NetError, TaskStatus};
 use crate::net::{MAX_PACKET_SIZE, MAX_SAFE_PACKET_SIZE};
 
 /// A raw TCP connection.
@@ -33,7 +34,7 @@ use crate::net::{MAX_PACKET_SIZE, MAX_SAFE_PACKET_SIZE};
 /// function before calling either of those.
 pub struct TcpCon<D>
 where
-    D: NetMsg,
+    D: Any + Send + Sync,
 {
     /// The Connection ID. This is used in
     /// logging for discerning between connections.
@@ -47,7 +48,7 @@ where
     /// The message sender.
     send: Option<UnboundedSender<(MId, Vec<u8>)>>,
     /// The message receiver.
-    recv: UnboundedReceiver<(MId, Box<dyn NetMsg>)>,
+    recv: UnboundedReceiver<(MId, Box<dyn Any + Send + Sync>)>,
 
     /// The status of the `send` task.
     send_status: TaskStatus<io::Result<()>>,
@@ -63,7 +64,7 @@ where
     _pd: PhantomData<D>,
 }
 
-impl<D: NetMsg> TcpCon<D> {
+impl<D: Any + Send + Sync> TcpCon<D> {
     /// Creates a new [`TcpCon`].
     pub async fn new(
         cid: CId,
@@ -189,7 +190,7 @@ impl<D: NetMsg> TcpCon<D> {
     /// before calling this function, as the result is only
     /// accurate to the last time that
     /// [`update_status()`](Self::update_status) was called.
-    pub fn send(&self, mid: MId, msg: &dyn NetMsg) -> Result<(), NetError> {
+    pub fn send(&self, mid: MId, msg: &(dyn Any + Send + Sync)) -> Result<(), NetError> {
         let ser_fn = self.ser[mid];
         let ser = ser_fn(msg).map_err(|_| NetError::Ser)?;
 
@@ -201,12 +202,12 @@ impl<D: NetMsg> TcpCon<D> {
     }
 
     /// Receives a message if there is one available, otherwise returns [`None`]
-    pub fn try_recv(&mut self) -> Option<(MId, Box<dyn NetMsg>)> {
+    pub fn try_recv(&mut self) -> Option<(MId, Box<dyn Any + Send + Sync>)> {
         self.recv.try_recv().ok()
     }
 
     /// Receives a message asynchronously.
-    pub async fn recv(&mut self) -> Option<(MId, Box<dyn NetMsg>)> {
+    pub async fn recv(&mut self) -> Option<(MId, Box<dyn Any + Send + Sync>)> {
         self.recv.recv().await
     }
 
@@ -234,8 +235,8 @@ impl<D: NetMsg> TcpCon<D> {
 /// If `peer` is [`Some`], It will make sure packets only come from that addr.
 ///
 /// This task does need to be canceled or it will leave the connection open.
-async fn recv<D: NetMsg>(
-    messages: UnboundedSender<(MId, Box<dyn NetMsg>)>,
+async fn recv<D: Any + Send + Sync>(
+    messages: UnboundedSender<(MId, Box<dyn Any + Send + Sync>)>,
     read: OwnedReadHalf,
     deser: Vec<DeserFn>,
     cid: CId,
@@ -249,8 +250,8 @@ async fn recv<D: NetMsg>(
 }
 
 /// The logic for the receive task.
-async fn recv_inner<D: NetMsg>(
-    messages: UnboundedSender<(MId, Box<dyn NetMsg>)>,
+async fn recv_inner<D: Any + Send + Sync>(
+    messages: UnboundedSender<(MId, Box<dyn Any + Send + Sync>)>,
     mut read: OwnedReadHalf,
     deser: Vec<DeserFn>,
     cid: CId,
@@ -428,7 +429,7 @@ async fn send_inner(
     Ok(())
 }
 
-impl<D: NetMsg> Drop for TcpCon<D> {
+impl<D: Any + Send + Sync> Drop for TcpCon<D> {
     fn drop(&mut self) {
         // The send task should complete automatically after sending
         // everything it needs to because the `self.send` channel will

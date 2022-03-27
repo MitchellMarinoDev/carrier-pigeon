@@ -1,10 +1,10 @@
 #![allow(unused)]
 //! Test packets for use in tests.
 
-use carrier_pigeon::{MsgTable, MsgTableParts, NetMsg, Transport};
+use carrier_pigeon::{MsgTable, MsgTableParts, Transport};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, NetMsg)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
 /// A test packet for TCP.
 pub struct TcpPacket {
     pub msg: String,
@@ -15,7 +15,7 @@ impl TcpPacket {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, NetMsg)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
 /// A test packet for UDP.
 pub struct UdpPacket {
     pub msg: String,
@@ -26,7 +26,7 @@ impl UdpPacket {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, NetMsg)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
 /// A test connection packet.
 pub struct Connection {
     pub usr: String,
@@ -37,7 +37,7 @@ impl Connection {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, NetMsg)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
 /// A test disconnection packet.
 pub struct Disconnect {
     pub reason: String,
@@ -50,7 +50,7 @@ impl Disconnect {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, NetMsg)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
 /// A test response packet.
 pub enum Response {
     Accepted,

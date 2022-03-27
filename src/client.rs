@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 use std::io::{Error, ErrorKind};
 use std::marker::PhantomData;
 use std::net::SocketAddr;
@@ -7,7 +7,7 @@ use log::{debug, error};
 use tokio::io;
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
-use crate::{MId, NetMsg};
+use crate::MId;
 use crate::message_table::{CONNECTION_TYPE_MID, MsgTableParts, RESPONSE_TYPE_MID};
 use crate::net::{NetError, Transport};
 use crate::tcp::TcpCon;
@@ -20,14 +20,14 @@ use crate::udp::UdpCon;
 /// Contains a TCP and UDP connection to the server.
 pub struct Client<C, R, D>
 where
-    C: NetMsg,
-    R: NetMsg,
-    D: NetMsg,
+    C: Any + Send + Sync,
+    R: Any + Send + Sync,
+    D: Any + Send + Sync,
 {
     /// The received message buffer.
     ///
     /// Each [`MId`] has its own vector.
-    msg_buff: Vec<Vec<Box<dyn NetMsg>>>,
+    msg_buff: Vec<Vec<Box<dyn Any + Send + Sync>>>,
 
     /// The TCP connection for this client.
     tcp: TcpCon<D>,
@@ -43,9 +43,9 @@ where
 
 impl<C, R, D> Client<C, R, D>
 where
-    C: NetMsg,
-    R: NetMsg,
-    D: NetMsg,
+    C: Any + Send + Sync,
+    R: Any + Send + Sync,
+    D: Any + Send + Sync,
 {
     /// Creates a oneshot to a new [`Client`].
     ///
@@ -139,7 +139,7 @@ where
     /// method before dropping the client to let the server know that
     /// you intentionally disconnected. The `discon_msg` allows you to
     /// give a reason for the disconnect.
-    pub fn disconnect<T: NetMsg>(&mut self, discon_msg: &T) -> Result<(), NetError> {
+    pub fn disconnect(&mut self, discon_msg: &D) -> Result<(), NetError> {
         debug!("Disconnecting client.");
         self.send(discon_msg)?;
         self.tcp.disconnect();
@@ -170,7 +170,7 @@ where
     /// If the message type isn't registered, this will return
     /// [`NetError::TypeNotRegistered`]. If the msg fails to be
     /// serialized this will return [`NetError::SerdeError`].
-    pub fn send<T: NetMsg>(&self, msg: &T) -> Result<(), NetError> {
+    pub fn send<T: Any + Send + Sync>(&self, msg: &T) -> Result<(), NetError> {
         let tid = TypeId::of::<T>();
         if !self.tid_map.contains_key(&tid) {
             return Err(NetError::TypeNotRegistered);
@@ -189,7 +189,7 @@ where
     /// Gets an iterator for the messages of type T.
     ///
     /// Returns None if the type T was not registered.
-    pub fn recv<T: NetMsg>(&self) -> Option<impl Iterator<Item = &T>> {
+    pub fn recv<T: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = &T>> {
         let tid = TypeId::of::<T>();
         let mid = *self.tid_map.get(&tid)?;
 

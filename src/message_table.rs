@@ -1,13 +1,14 @@
 use crate::message_table::MsgRegError::TypeAlreadyRegistered;
 use crate::net::{DeserFn, SerFn, Transport};
-use crate::{MId, NetMsg};
+use crate::MId;
 use hashbrown::HashMap;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
 use MsgRegError::NonUniqueIdentifier;
+use crate::NetError::{Deser, Ser};
 
 /// A type for collecting the parts needed to send
 /// a struct over the network.
@@ -53,9 +54,9 @@ pub struct SortedMsgTable {
 #[derive(Clone)]
 pub struct MsgTableParts<C, R, D>
 where
-    C: NetMsg,
-    R: NetMsg,
-    D: NetMsg,
+    C: Any + Send + Sync,
+    R: Any + Send + Sync,
+    D: Any + Send + Sync,
 {
     pub tid_map: HashMap<TypeId, MId>,
     pub transports: Vec<Transport>,
@@ -77,7 +78,7 @@ impl MsgTable {
     /// Registers a message type so that it can be sent over the network.
     pub fn register<T>(&mut self, transport: Transport) -> Result<(), MsgRegError>
     where
-        T: NetMsg + DeserializeOwned + Serialize,
+        T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
         let registration = self.get_registration::<T>(transport)?;
         self.table.push(registration);
@@ -86,12 +87,13 @@ impl MsgTable {
 
     /// Registers a message type with custom serialization and deserialization logic.
     pub fn register_custom<T>(
-        &mut self, transport: Transport,
+        &mut self,
+        transport: Transport,
         ser: SerFn,
         deser: DeserFn,
     ) -> Result<(), MsgRegError>
     where
-        T: NetMsg,
+        T: Any + Send + Sync,
     {
         // Get the type.
         let tid = TypeId::of::<T>();
@@ -112,7 +114,7 @@ impl MsgTable {
         transport: Transport,
     ) -> Result<(TypeId, Transport, SerFn, DeserFn), MsgRegError>
     where
-        T: NetMsg + DeserializeOwned + Serialize,
+        T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
         // Get the type.
         let tid = TypeId::of::<T>();
@@ -123,9 +125,10 @@ impl MsgTable {
         }
 
         // Get the serialize and deserialize functions
-        let deser_fn: DeserFn =
-            |bytes: &[u8]| bincode::deserialize::<T>(bytes).map(|d| Box::new(d) as Box<dyn NetMsg>);
-        let ser_fn: SerFn = |m: &dyn NetMsg| bincode::serialize(m.downcast_ref::<T>().unwrap());
+        let deser_fn: DeserFn = |bytes: &[u8]|
+            bincode::deserialize::<T>(bytes).map(|d| Box::new(d) as Box<dyn Any + Send + Sync>).map_err(|_| Deser);
+        let ser_fn: SerFn = |m: &(dyn Any + Send + Sync)|
+            bincode::serialize(m.downcast_ref::<T>().unwrap()).map_err(|_| Ser);
 
         Ok((tid, transport, ser_fn, deser_fn))
     }
@@ -142,9 +145,9 @@ impl MsgTable {
     /// The generic parameters should **not** be registered before hand.
     pub fn build<C, R, D>(self) -> Result<MsgTableParts<C, R, D>, MsgRegError>
     where
-        C: NetMsg + DeserializeOwned + Serialize,
-        R: NetMsg + DeserializeOwned + Serialize,
-        D: NetMsg + DeserializeOwned + Serialize,
+        C: Any + Send + Sync + DeserializeOwned + Serialize,
+        R: Any + Send + Sync + DeserializeOwned + Serialize,
+        D: Any + Send + Sync + DeserializeOwned + Serialize,
     {
         // Always prepend the Connection and Disconnect types first.
         // This gives them universal MIds.
@@ -194,7 +197,7 @@ impl SortedMsgTable {
         identifier: &str,
     ) -> Result<(), MsgRegError>
     where
-        T: NetMsg + DeserializeOwned + Serialize,
+        T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
         let registration = self.get_registration::<T>(transport, identifier.into())?;
         self.table.push(registration);
@@ -209,7 +212,7 @@ impl SortedMsgTable {
         deser: DeserFn,
     ) -> Result<(), MsgRegError>
         where
-            T: NetMsg,
+            T: Any + Send + Sync,
     {
         let identifier = identifier.into();
 
@@ -238,7 +241,7 @@ impl SortedMsgTable {
         identifier: String,
     ) -> Result<(String, TypeId, Transport, SerFn, DeserFn), MsgRegError>
     where
-        T: NetMsg + DeserializeOwned + Serialize,
+        T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
         // Check if the identifier has been registered already.
         if self.table.iter().any(|(id, _, _, _, _)| *id == identifier) {
@@ -254,9 +257,10 @@ impl SortedMsgTable {
         }
 
         // Get the serialize and deserialize functions
-        let deser_fn: DeserFn =
-            |bytes: &[u8]| bincode::deserialize::<T>(bytes).map(|d| Box::new(d) as Box<dyn NetMsg>);
-        let ser_fn: SerFn = |m: &dyn NetMsg| bincode::serialize(m.downcast_ref::<T>().unwrap());
+        let deser_fn: DeserFn = |bytes: &[u8]|
+            bincode::deserialize::<T>(bytes).map(|d| Box::new(d) as Box<dyn Any + Send + Sync>).map_err(|_| Deser);
+        let ser_fn: SerFn = |m: &(dyn Any + Send + Sync)|
+            bincode::serialize(m.downcast_ref::<T>().unwrap()).map_err(|_| Ser);
 
         Ok((identifier, tid, transport, ser_fn, deser_fn))
     }
@@ -273,9 +277,9 @@ impl SortedMsgTable {
     /// The generic parameters should **not** be registered before hand.
     pub fn build<C, R, D>(mut self) -> Result<MsgTableParts<C, R, D>, MsgRegError>
     where
-        C: NetMsg + DeserializeOwned + Serialize,
-        R: NetMsg + DeserializeOwned + Serialize,
-        D: NetMsg + DeserializeOwned + Serialize,
+        C: Any + Send + Sync + DeserializeOwned + Serialize,
+        R: Any + Send + Sync + DeserializeOwned + Serialize,
+        D: Any + Send + Sync + DeserializeOwned + Serialize,
     {
         // Always prepend the Connection and Disconnect types first.
         // This gives them universal MIds.
