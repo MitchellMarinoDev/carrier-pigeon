@@ -59,12 +59,12 @@ fn send_recv() {
 
     // Send 10 tcp packets.
     for i in 0..10 {
-        server.send_to(&TcpPacket::new(format!("Test TCP Packet {}", i)), 1).unwrap();
+        server.send_to(1, &TcpPacket::new(format!("Test TCP Packet {}", i))).unwrap();
     }
 
     // Send 10 udp packets.
     for i in 0..10 {
-        server.send_to(&UdpPacket::new(format!("Test UDP Packet {}", i)), 1).unwrap();
+        server.send_to(1, &UdpPacket::new(format!("Test UDP Packet {}", i))).unwrap();
     }
 
     // Give the client enough time to send the packets.

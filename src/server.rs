@@ -145,7 +145,7 @@ where
     /// to give a reason for the disconnect.
     pub fn disconnect<T: NetMsg>(&mut self, discon_msg: &T, cid: CId) -> Result<(), NetError> {
         debug!("Disconnecting CId {}", cid);
-        self.send_to(discon_msg, cid)?;
+        self.send_to(cid, discon_msg)?;
         self.rm_tcp_con(cid)?;
         Ok(())
     }
@@ -234,7 +234,7 @@ where
     /// If the message type isn't registered, this will return
     /// [`Error::TypeNotRegistered`]. If the msg fails to be
     /// serialized this will return [`Error::SerdeError`].
-    pub fn send_to<T: NetMsg>(&self, msg: &T, cid: CId) -> Result<(), NetError> {
+    pub fn send_to<T: NetMsg>(&self, cid: CId, msg: &T) -> Result<(), NetError> {
         let addr = match self.cid_addr.get(&cid) {
             Some(addr) => *addr,
             None => return Err(NetError::InvalidCId),
@@ -258,7 +258,7 @@ where
     /// Broadcasts a message to all connected clients.
     pub fn broadcast<T: NetMsg>(&self, msg: &T) -> Result<(), NetError> {
         for cid in self.cid_addr.iter().map(|t| t.0) {
-            self.send_to(msg, *cid)?;
+            self.send_to(*cid, msg)?;
         }
         Ok(())
     }
@@ -271,7 +271,7 @@ where
             .map(|t| *t.0)
             .filter(|o_cid| *o_cid != cid)
         {
-            self.send_to(msg, cid)?;
+            self.send_to(cid, msg)?;
         }
         Ok(())
     }
