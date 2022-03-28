@@ -300,9 +300,9 @@ where
         let mut i = 0;
         for (cid, tcp) in self.tcp.iter_mut() {
             while let Some((mid, msg)) = tcp.try_recv() {
-                i += 1;
                 trace!("getting tcp msg with mid: {}", mid);
                 self.msg_buff[mid].push((*cid, msg));
+                i += 1;
             }
         }
 

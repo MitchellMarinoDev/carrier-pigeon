@@ -11,7 +11,7 @@ use tokio::sync::oneshot::error::TryRecvError;
 ///
 /// Note that `carrier-pigeon` imposes a 4 byte overhead on every message.
 /// This overhead ***is*** accounted for in this const.
-pub const MAX_SAFE_PACKET_SIZE: usize = 508 - 4;
+pub const MAX_SAFE_PACKET_SIZE: usize = 504;
 
 /// The absolute maximum packet size that can be received.
 /// This is used for sizing the buffer.
