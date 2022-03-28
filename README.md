@@ -7,11 +7,11 @@ channels allowing you to send and receive messages from a synchronous context, w
 async code.
 
 ### Messages
-Messages are simple rust types that implement the `NetMsg` trait, serde's `Serialize` and `Deserialize` traits. 
-(it also must be `send` and `sync`). This means making new message types is simple and almost boilerplate free. 
+Messages are simple rust types that implement the `Any + Send + Sync` traits, and serde's `Serialize` and `DeserializeOwned` 
+traits. This means making new message types is simple and almost boilerplate free. 
 Each message type is independent of the others. This means adding another message type won't mess with any of the other 
 messages. This not only makes it scalable for your code, but makes it easy for modders to add their own message types 
-without interfacing with yours. 
+without interfacing with yours.
 
 Messages need to be registered in a `MsgTable` for them to be used. The Message tables on all clients and the server
 **need** to have the same exact types registered in the same exact order. If you can not guarantee a constant

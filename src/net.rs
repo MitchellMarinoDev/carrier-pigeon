@@ -1,7 +1,7 @@
 //! Networking things that are not specific to either transport.
 
+use std::any::Any;
 use crate::net::TaskStatus::{Done, Failed, Running};
-use downcast_rs::{impl_downcast, Downcast};
 use std::fmt::{Debug, Display, Formatter};
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::error::TryRecvError;
@@ -11,7 +11,7 @@ use tokio::sync::oneshot::error::TryRecvError;
 ///
 /// Note that `carrier-pigeon` imposes a 4 byte overhead on every message.
 /// This overhead ***is*** accounted for in this const.
-pub const MAX_SAFE_PACKET_SIZE: usize = 508 - 4;
+pub const MAX_SAFE_PACKET_SIZE: usize = 504;
 
 /// The absolute maximum packet size that can be received.
 /// This is used for sizing the buffer.
@@ -95,14 +95,10 @@ pub type MId = usize;
 /// Connection ID
 pub type CId = u32;
 
-/// A trait for messages to be sent over the network
-pub trait NetMsg: Send + Sync + Downcast {}
-impl_downcast!(NetMsg);
-
 /// The function used to deserialize a message.
-pub type DeserFn = fn(&[u8]) -> Result<Box<dyn NetMsg>, bincode::Error>;
+pub type DeserFn = fn(&[u8]) -> Result<Box<dyn Any + Send + Sync>, NetError>;
 /// The function used to serialize a message.
-pub type SerFn = fn(&dyn NetMsg) -> Result<Vec<u8>, bincode::Error>;
+pub type SerFn = fn(&(dyn Any + Send + Sync)) -> Result<Vec<u8>, NetError>;
 
 pub enum Resp<R, C> {
     Accepted(R, C),
