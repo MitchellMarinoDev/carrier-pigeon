@@ -3,13 +3,13 @@ use std::fmt::{Display, Formatter};
 use std::io;
 use std::io::{Error, ErrorKind, Read, Write};
 use std::marker::PhantomData;
-use std::net::{SocketAddr, TcpStream, UdpSocket};
+use std::net::{Shutdown, SocketAddr, TcpStream, UdpSocket};
 use crossbeam_channel::internal::SelectHandle;
 use crossbeam_channel::Receiver;
 use log::{debug, error, trace, warn};
 use crate::MId;
 use crate::message_table::{DISCONNECT_TYPE_MID, MsgTableParts, RESPONSE_TYPE_MID};
-use crate::net::{Header, MAX_PACKET_SIZE, MAX_SAFE_PACKET_SIZE, NetError, Transport};
+use crate::net::{Header, MAX_PACKET_SIZE, MAX_SAFE_PACKET_SIZE, Status, Transport};
 
 /// A Client connection.
 ///
@@ -22,6 +22,7 @@ where
     R: Any + Send + Sync,
     D: Any + Send + Sync,
 {
+    status: Status<D>,
     /// The buffer used for sending and receiving packets
     buff: [u8; MAX_PACKET_SIZE],
     /// The received message buffer.
@@ -73,8 +74,8 @@ where
         con_msg: C,
     ) -> io::Result<(Self, R)> {
         // TCP & UDP Connections.
-        let mut tcp = TcpStream::connect(peer)?;
-        let mut udp = UdpSocket::bind(peer)?;
+        let tcp = TcpStream::connect(peer)?;
+        let udp = UdpSocket::bind(peer)?;
 
         let mid_count = parts.tid_map.len();
         let mut msg_buff = Vec::with_capacity(mid_count);
@@ -83,6 +84,7 @@ where
         }
 
         let mut client = Client {
+            status: Status::Connected,
             buff: [0; MAX_PACKET_SIZE],
             msg_buff,
             tcp,
@@ -228,20 +230,23 @@ where
     /// method before dropping the client to let the server know that
     /// you intentionally disconnected. The `discon_msg` allows you to
     /// give a reason for the disconnect.
-    pub fn disconnect(&mut self, discon_msg: &D) -> Result<(), NetError> {
+    pub fn disconnect(&mut self, discon_msg: &D) -> io::Result<()> {
         debug!("Disconnecting client.");
         self.send(discon_msg)?;
-        self.tcp.disconnect();
-        self.udp.disconnect();
+        self.tcp.flush()?;
+        self.tcp.shutdown(Shutdown::Both)?;
+        // No shutdown method on udp.
         Ok(())
     }
 
+    /// Gets the status of the connection.
+    pub fn status(&self) -> &Status<D> {
+        &self.status
+    }
+
     /// Returns whether the connection is open.
-    pub fn open(&mut self) -> bool {
-        self.get_tcp_recv_status().is_none()
-            && self.get_udp_recv_status().is_none()
-            && self.get_send_status(Transport::TCP).is_none()
-            && self.get_send_status(Transport::UDP).is_none()
+    pub fn open(&self) -> bool {
+        self.status().connected()
     }
 
     /// Sends a message to the connected computer.
@@ -253,21 +258,19 @@ where
     /// serialized this will return [`NetError::SerdeError`].
     pub fn send<T: Any + Send + Sync>(&mut self, msg: &T) -> io::Result<()> {
         let tid = TypeId::of::<T>();
-        if !self.tid_map.contains_key(&tid) {
-            return Err(io::Error::new(ErrorKind::InvalidData, NetError::TypeNotRegistered));
+        if !self.parts.tid_map.contains_key(&tid) {
+            return Err(io::Error::new(ErrorKind::InvalidData, "Type not registered."));
         }
         let mid = self.parts.tid_map[&tid];
         let transport = self.parts.transports[mid];
         let ser_fn = self.parts.ser[mid];
         let b = ser_fn(msg)
-            .map_err(|o| Err(io::Error::new(ErrorKind::InvalidData, o)))?;
+            .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Serialization Error."))?;
 
         match transport {
             Transport::TCP => self.send_tcp(mid, b),
-            Transport::UDP => todo!("{} {}", mid, b),
-        }?;
-
-        Ok(())
+            Transport::UDP => todo!(),
+        }
     }
 
     /// Gets an iterator for the messages of type T.
@@ -291,14 +294,14 @@ where
     /// before default time. This will clear the messages between frames.
     pub fn recv_msgs(&mut self) -> u32 {
         let mut i = 0;
-        while let Some((mid, msg)) = self.tcp.try_recv() {
+        while let Ok((mid, msg)) = self.recv_tcp() {
             i += 1;
             self.msg_buff[mid].push(msg);
         }
-        while let Some((mid, msg, _addr)) = self.udp.try_recv() {
-            i += 1;
-            self.msg_buff[mid].push(msg);
-        }
+        // while let (mid, msg, _addr) = self.recv_udp() { // UDP
+        //     i += 1;
+            // self.msg_buff[mid].push(msg);
+        // }
         i
     }
 
@@ -355,12 +358,17 @@ where
 
     /// Gets the client. This will yield a value if [`done()`](Self::done)
     /// returned `true`.
-    pub fn get(self) -> Result<(Client<C, R, D>, R), Self> {
+    pub fn get(self) -> Result<io::Result<(Client<C, R, D>, R)>, Self> {
         if self.done() {
             Ok(self.channel.recv().unwrap())
         } else {
             Err(self)
         }
+    }
+
+    /// Blocks until the client is ready.
+    pub fn block(self) -> io::Result<(Client<C, R, D>, R)> {
+        self.channel.recv().unwrap()
     }
 }
 

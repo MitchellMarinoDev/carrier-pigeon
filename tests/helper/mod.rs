@@ -25,7 +25,7 @@ pub fn create_client_server_pair(rt: Handle) -> (Client, Server) {
     println!("Server created on addr: {}", addr);
 
     // Start client connection.
-    let client = Client::new(addr, parts, Connection::new("John"), rt);
+    let client = Client::new(addr, parts, Connection::new("John"));
 
     // Spin until the connection is handled.
     // Normally this would be done in the game loop
@@ -33,7 +33,7 @@ pub fn create_client_server_pair(rt: Handle) -> (Client, Server) {
     while 0 == server.handle_new_cons(&mut |_con_msg| (true, Response::Accepted)) {}
 
     // Finish the client connection.
-    let (client, response_msg) = client.blocking_recv().unwrap().unwrap();
+    let (client, response_msg) = client.block().unwrap();
 
     assert_eq!(response_msg, Response::Accepted);
 

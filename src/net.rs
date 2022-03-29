@@ -170,3 +170,46 @@ impl<T> TaskStatus<T> {
         }
     }
 }
+
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+/// An enum for the possible states of a connection
+pub enum Status<D> {
+    /// The connection is still live.
+    Connected,
+    /// The connection is closed because we chose to disconnect.
+    Disconnected,
+    /// The connection is closed because the peer chose to disconnect us.
+    Closed(D),
+    /// The connection was dropped without sending a disconnection packet.
+    Dropped,
+}
+
+impl<D> Status<D> {
+    pub fn connected(&self) -> bool {
+        match self {
+            Status::Connected => true,
+            _ => false,
+        }
+    }
+
+    pub fn disconnected(&self) -> bool {
+        match self {
+            Status::Disconnected => true,
+            _ => false,
+        }
+    }
+
+    pub fn dropped(&self) -> bool {
+        match self {
+            Status::Dropped => true,
+            _ => false,
+        }
+    }
+
+    pub fn closed(&self) -> Option<&D> {
+        match self {
+            Status::Closed(d) => Some(d),
+            _ => None,
+        }
+    }
+}

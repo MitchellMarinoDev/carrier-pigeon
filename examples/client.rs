@@ -21,6 +21,7 @@ use std::io::stdin;
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::time::Duration;
 use std::{env, thread};
+use carrier_pigeon::net::Status::Closed;
 
 mod shared;
 
@@ -52,12 +53,10 @@ fn main() {
     };
 
     // Start the connection to the server.
-    let client = Client::new(addr, parts, con_msg, rt.handle().clone());
+    let client = Client::new(addr, parts, con_msg);
 
     // Block until the connection is made.
-    let (mut client, resp) = client
-        .blocking_recv()
-        .unwrap()
+    let (mut client, resp) = client.block()
         .expect("Failed to connect to server.");
 
     match resp {
@@ -103,15 +102,9 @@ fn main() {
             }
         }
 
-        if let Some(d) = client.get_disconnect() {
+        if let Closed(msg) = client.status() {
             // Client was disconnected.
-            match d {
-                Ok(msg) => {
-                    println!("Disconnected for reason {}", msg.reason);
-                }
-                Err(e) => {
-                    println!("Error occurred. {}", e);
-                }
+                println!("Disconnected for reason {}", msg.reason);
             }
             break;
         }

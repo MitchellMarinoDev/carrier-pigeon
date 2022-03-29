@@ -51,7 +51,7 @@ fn graceful_disconnect() {
         std::thread::sleep(Duration::from_millis(100));
 
         assert_eq!(
-            client.get_disconnect().unwrap().as_ref().unwrap(),
+            client.status(),
             &Disconnect::new("Testing Disconnect Server.")
         );
     }
