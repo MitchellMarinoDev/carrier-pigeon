@@ -24,7 +24,9 @@ pub const MAX_PACKET_SIZE: usize = 1024;
 /// This shouldn't pose any real issues.
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 pub(crate) struct Header {
+    /// The message id.
     pub mid: MId,
+    /// Then length of the packet without the header.
     pub len: usize,
 }
 
