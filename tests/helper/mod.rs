@@ -6,18 +6,18 @@ use crate::helper::test_packets::{Connection, Disconnect, get_table_parts, Respo
 
 pub mod test_packets;
 
-const ADDR_LOCAL: &str = "127.0.0.1:0";
+const ADDR_LOCAL: &str = "0.0.0.0:7788";
 
 pub type Client = carrier_pigeon::Client<Connection, Response, Disconnect>;
 pub type Server = carrier_pigeon::Server<Connection, Response, Disconnect>;
 
 /// Creates a client and server that are connected to each other.
 /// Panics if any issues occur.
-pub fn create_client_server_pair(rt: Handle) -> (Client, Server) {
+pub fn create_client_server_pair() -> (Client, Server) {
     let parts = get_table_parts();
 
     // Create server.
-    let mut server = Server::new(ADDR_LOCAL.parse().unwrap(), parts.clone(), rt.clone())
+    let mut server = Server::new(ADDR_LOCAL.parse().unwrap(), parts.clone())
         .blocking_recv()
         .unwrap()
         .unwrap();

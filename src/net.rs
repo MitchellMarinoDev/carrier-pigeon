@@ -176,10 +176,10 @@ impl<T> TaskStatus<T> {
 pub enum Status<D> {
     /// The connection is still live.
     Connected,
-    /// The connection is closed because we chose to disconnect.
-    Disconnected,
-    /// The connection is closed because the peer chose to disconnect us.
-    Closed(D),
+    /// The connection is closed because the peer disconnected by sending a disconnection packet.
+    Disconnected(D),
+    /// The connection is closed because we chose to close the connection.
+    Closed,
     /// The connection was dropped without sending a disconnection packet.
     Dropped,
 }
@@ -192,10 +192,10 @@ impl<D> Status<D> {
         }
     }
 
-    pub fn disconnected(&self) -> bool {
+    pub fn disconnected(&self) -> Option<&D> {
         match self {
-            Status::Disconnected => true,
-            _ => false,
+            Status::Disconnected(d) => Some(d),
+            _ => None,
         }
     }
 
@@ -206,10 +206,10 @@ impl<D> Status<D> {
         }
     }
 
-    pub fn closed(&self) -> Option<&D> {
+    pub fn closed(&self) -> bool {
         match self {
-            Status::Closed(d) => Some(d),
-            _ => None,
+            Status::Closed => true,
+            _ => false,
         }
     }
 }

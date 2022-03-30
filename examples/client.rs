@@ -21,7 +21,7 @@ use std::io::stdin;
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::time::Duration;
 use std::{env, thread};
-use carrier_pigeon::net::Status::Closed;
+use carrier_pigeon::net::Status;
 
 mod shared;
 
@@ -38,9 +38,6 @@ fn main() {
     let addr = addr.parse().expect("Could not parse address.");
 
     let username = args.next().unwrap_or("MyUser".to_owned());
-
-    // Create a tokio runtime.
-    let rt = tokio::runtime::Runtime::new().unwrap();
 
     // Create the message table.
     // This should be the same on the client and server.
@@ -102,10 +99,9 @@ fn main() {
             }
         }
 
-        if let Closed(msg) = client.status() {
+        if let Status::Disconnected(msg) = client.status() {
             // Client was disconnected.
-                println!("Disconnected for reason {}", msg.reason);
-            }
+            println!("Disconnected for reason {}", msg.reason);
             break;
         }
 

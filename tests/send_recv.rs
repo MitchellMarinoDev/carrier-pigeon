@@ -17,7 +17,7 @@ fn send_recv() {
     let rt = runtime.handle();
 
     // CLIENT TO SERVER
-    let (mut client, mut server) = create_client_server_pair(rt.clone());
+    let (mut client, mut server) = create_client_server_pair();
 
     // Send 10 tcp packets.
     for i in 0..10 {

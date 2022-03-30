@@ -13,12 +13,9 @@ fn graceful_disconnect() {
         .with_level(log::LevelFilter::Debug)
         .init();
 
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let rt = runtime.handle();
-
     {
         // Client Disconnect Test
-        let (mut client, mut server) = create_client_server_pair(rt.clone());
+        let (mut client, mut server) = create_client_server_pair();
 
         client
             .disconnect(&Disconnect::new("Testing Disconnect Client."))
@@ -41,7 +38,7 @@ fn graceful_disconnect() {
 
     {
         // Server Disconnect Test
-        let (mut client, mut server) = create_client_server_pair(rt.clone());
+        let (mut client, mut server) = create_client_server_pair();
 
         server
             .disconnect(&Disconnect::new("Testing Disconnect Server."), 1)
@@ -51,7 +48,7 @@ fn graceful_disconnect() {
         std::thread::sleep(Duration::from_millis(100));
 
         assert_eq!(
-            client.status(),
+            client.status().disconnected().unwrap(),
             &Disconnect::new("Testing Disconnect Server.")
         );
     }
@@ -64,23 +61,21 @@ fn drop_test() {
         .with_level(log::LevelFilter::Debug)
         .init();
 
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let rt = runtime.handle();
-
     {
         // Server Drop Client.
-        let (mut client, server) = create_client_server_pair(rt.clone());
+        let (client, server) = create_client_server_pair();
         drop(server);
 
         // Give the server enough time for the connection to sever.
         std::thread::sleep(Duration::from_millis(100));
 
-        assert!(client.get_disconnect().unwrap().is_err());
+        // Make sure the client is dropped abruptly
+        assert!(client.status().dropped());
     }
 
     {
         // Client Drop Server.
-        let (client, mut server) = create_client_server_pair(rt.clone());
+        let (client, mut server) = create_client_server_pair();
         drop(client);
 
         // Give the server enough time for the connection to sever.
