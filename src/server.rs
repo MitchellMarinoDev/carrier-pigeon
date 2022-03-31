@@ -1,19 +1,17 @@
 use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, RESPONSE_TYPE_MID};
-use crate::net::{CId, DeserFn, NetError, SerFn, Transport};
+use crate::net::{CId, DeserFn, NetError, SerFn, Status, Transport};
 use crate::tcp::TcpCon;
-use crate::udp::UdpCon;
 use crate::MId;
 use hashbrown::HashMap;
 use log::{debug, error, trace};
 use std::any::{Any, TypeId};
+use std::fmt::{Display, Formatter};
 use std::io;
 use std::marker::PhantomData;
-use std::net::SocketAddr;
-use tokio::net::TcpListener;
-use tokio::runtime::Handle;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
+use std::net::{SocketAddr, TcpListener, UdpSocket};
+use crossbeam_channel::internal::SelectHandle;
+use crossbeam_channel::Receiver;
+use tokio::net::TcpStream;
 
 /// A server.
 ///
@@ -36,17 +34,10 @@ where
     /// Each [`MId`] has its own vector.
     msg_buff: Vec<Vec<(CId, Box<dyn Any + Send + Sync>)>>,
 
-    /// New connection attempts.
-    new_cons: Receiver<(TcpCon<D>, Box<dyn Any + Send + Sync>)>,
-
-    /// The address that is being listened on.
-    listen_addr: SocketAddr,
-    /// The listening task.
-    listen_task: JoinHandle<io::Result<()>>,
     /// The TCP connection for this client.
-    tcp: HashMap<CId, TcpCon<D>>,
+    tcp: HashMap<CId, TcpStream>,
     /// The UDP connection for this client.
-    udp: UdpCon,
+    udp: UdpSocket,
 
     /// The map from CId to SocketAddr for the UDP messages to be sent to.
     ///
@@ -63,10 +54,8 @@ where
     /// `rm_tcp_con` functions to mutate these maps.
     addr_cid: HashMap<SocketAddr, CId>,
 
-    /// The map from [`TypeId`] to [`MId`].
-    tid_map: HashMap<TypeId, MId>,
-    /// The transport that is associated with each MId.
-    transports: Vec<Transport>,
+    /// The [`MsgTableParts`] to use for sending messages.
+    parts: MsgTableParts<C, R, D>,
     _pd: PhantomData<(C, R, D)>,
 }
 
@@ -81,40 +70,12 @@ where
     /// Creates a new [`Server`] asynchronously, passing back a oneshot receiver.
     /// This oneshot receiver allows you to wait on the connection however you like.
     pub fn new(
-        listen_addr: SocketAddr,
-        parts: MsgTableParts<C, R, D>,
-        rt: Handle,
-    ) -> oneshot::Receiver<io::Result<Self>> {
-        let (server_tx, server_rx) = oneshot::channel();
-
-        let rt0 = rt.clone();
-        rt0.spawn(async move {
-            let _ = server_tx.send(Self::new_async(listen_addr, parts, rt).await);
-        });
-
-        server_rx
-    }
-
-    /// Creates a new [`Server`] asynchronously.
-    pub async fn new_async(
         mut listen_addr: SocketAddr,
         parts: MsgTableParts<C, R, D>,
-        rt: Handle,
     ) -> io::Result<Self> {
-        let (new_cons_tx, new_cons_rx) = channel(2);
-
-        let listener = TcpListener::bind(listen_addr).await?;
+        let listener = TcpListener::bind(listen_addr)?;
         listen_addr = listener.local_addr().unwrap();
-
-        let listen_task = rt.spawn(listen(
-            listener,
-            new_cons_tx,
-            parts.deser.clone(),
-            parts.ser.clone(),
-            rt.clone(),
-        ));
-
-        let udp = UdpCon::new(0, listen_addr, None, parts.deser, parts.ser, rt).await?;
+        let udp = UdpSocket::bind(listen_addr).unwrap();
 
         debug!("New server created at {}.", listen_addr);
 
@@ -126,15 +87,11 @@ where
 
         Ok(Server {
             msg_buff,
-            new_cons: new_cons_rx,
-            listen_addr,
-            listen_task,
             tcp: HashMap::new(),
             udp,
             cid_addr: Default::default(),
             addr_cid: Default::default(),
-            tid_map: parts.tid_map,
-            transports: parts.transports,
+            parts,
             _pd: PhantomData,
         })
     }
@@ -325,39 +282,6 @@ where
         }
     }
 
-    /// Gets the status of the send task of the given
-    /// `transport`.
-    ///
-    /// [`None`] indicates that the send task has not
-    /// completed yet. Otherwise a reference is given
-    /// to the [`Result`] of the task.
-    pub fn get_send_status(&mut self, transport: Transport, cid: CId) -> Option<&io::Result<()>> {
-        match transport {
-            Transport::UDP => self.udp.get_send_status(),
-            Transport::TCP => self.tcp.get_mut(&cid)?.get_send_status(),
-        }
-    }
-
-    /// Gets the status of the receive task of the given
-    /// `transport`.
-    ///
-    /// [`None`] indicates that the receive task has not
-    /// completed yet. Otherwise a reference is given
-    /// to the [`Result`] of the task.
-    pub fn get_udp_recv_status(&mut self) -> Option<&io::Result<()>> {
-        self.udp.get_recv_status()
-    }
-
-    /// Gets the status of the receive task of the given
-    /// `transport`.
-    ///
-    /// [`None`] indicates that the receive task has not
-    /// completed yet. Otherwise a reference is given
-    /// to the [`Result`] of the task.
-    pub fn get_tcp_recv_status(&mut self, cid: CId) -> Option<&io::Result<D>> {
-        self.tcp.get_mut(&cid)?.get_recv_status()
-    }
-
     /// Gets the address that the server is listening on.
     pub fn listen_addr(&self) -> SocketAddr {
         self.listen_addr
@@ -474,5 +398,54 @@ where
 {
     fn drop(&mut self) {
         self.listen_task.abort();
+    }
+}
+
+#[derive(Debug)]
+pub struct PendingServer<C, R, D>
+    where
+        C: Any + Send + Sync,
+        R: Any + Send + Sync,
+        D: Any + Send + Sync,
+{
+    channel: Receiver<io::Result<Server<C, R, D>>>,
+}
+
+// Impl display so that `get()` can be unwrapped.
+impl<C, R, D> Display for PendingServer<C, R, D>
+    where
+        C: Any + Send + Sync,
+        R: Any + Send + Sync,
+        D: Any + Send + Sync,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Pending client connection ({}).", if self.done() { "done" } else { "not done" })
+    }
+}
+
+impl<C, R, D> PendingServer<C, R, D>
+    where
+        C: Any + Send + Sync,
+        R: Any + Send + Sync,
+        D: Any + Send + Sync,
+{
+    /// Returns whether the client is finished connecting.
+    pub fn done(&self) -> bool {
+        self.channel.is_ready()
+    }
+
+    /// Gets the client. This will yield a value if [`done()`](Self::done)
+    /// returned `true`.
+    pub fn get(self) -> Result<io::Result<(Server<C, R, D>, R)>, Self> {
+        if self.done() {
+            Ok(self.channel.recv().unwrap())
+        } else {
+            Err(self)
+        }
+    }
+
+    /// Blocks until the client is ready.
+    pub fn block(self) -> io::Result<(Server<C, R, D>, R)> {
+        self.channel.recv().unwrap()
     }
 }

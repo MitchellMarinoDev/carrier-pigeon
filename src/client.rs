@@ -35,7 +35,7 @@ where
     /// The UDP connection for this client.
     udp: UdpSocket,
 
-    /// The [`MsgTableParts`] to use for message serialization/deserialization.
+    /// The [`MsgTableParts`] to use for sending messages.
     parts: MsgTableParts<C, R, D>,
     _pd: PhantomData<(C, R, D)>,
 }
@@ -68,7 +68,7 @@ where
     }
 
     /// Creates a new [`Client`] asynchronously.
-    pub fn new_blocking(
+    fn new_blocking(
         peer: SocketAddr,
         parts: MsgTableParts<C, R, D>,
         con_msg: C,
@@ -163,7 +163,7 @@ where
         // Make sure it sent correctly.
         if n != total_len {
             error!(
-                "TCP_S: Couldn't send all the bytes of a packet (mid: {}). \
+                "TCP: Couldn't send all the bytes of a packet (mid: {}). \
 				Wanted to send {} but could only send {}.",
                 mid, total_len, n
             );
@@ -171,6 +171,7 @@ where
         Ok(())
     }
 
+    /// A function that encapsulates the sending logic for the UDP transport.
     fn send_udp(&mut self, mid: MId, packet: Vec<u8>) -> io::Result<()> {
         let total_len = packet.len() + 4;
 
@@ -181,15 +182,15 @@ where
                 MId: {}, size: {}. Discarding packet.",
                 MAX_PACKET_SIZE, mid, total_len
             );
-            error!(msg);
+            error!("{}", msg);
             return Err(io::Error::new(ErrorKind::InvalidData, msg));
         }
 
         if total_len > MAX_SAFE_PACKET_SIZE {
             warn!(
-                "UDP_S({}): Outgoing packet size is greater than the maximum SAFE packet size.\
+                "UDP: Outgoing packet size is greater than the maximum SAFE packet size.\
                 MId: {}, size: {}. Sending packet anyway.",
-                cid, mid, total_len
+                mid, total_len
             );
         }
         // Packet can be sent!
@@ -198,12 +199,12 @@ where
         let h_bytes = header.to_be_bytes();
         // put the header in the front of the packet
         for (i, b) in h_bytes.into_iter().chain(packet.into_iter()).enumerate() {
-            buff[i] = b;
+            self.buff[i] = b;
         }
 
         // Send
         trace!("UDP: Sending mid {}.", mid);
-        let n = self.udp.send(&buff[..total_len])?;
+        let n = self.udp.send(&self.buff[..total_len])?;
 
         // Make sure it sent correctly.
         if n != total_len {
@@ -217,6 +218,9 @@ where
     }
 
     /// A function that encapsulates the receiving logic for the TCP transport.
+    ///
+    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
+    /// no more packets can be yielded without blocking.
     fn recv_tcp(&mut self) -> io::Result<(MId, Box<dyn Any + Send + Sync>)> {
         let h_n = self.tcp.read(&mut self.buff[..4])?;
 
@@ -275,93 +279,76 @@ where
         Ok((header.mid, msg))
     }
 
+    /// A function that encapsulates the receiving logic for the UDP transport.
+    ///
+    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
+    /// no more packets can be yielded without blocking. [`InvalidData`] likely means
+    /// carrier-pigeon detected bad data.
     pub fn recv_udp(&mut self) -> io::Result<(MId, Box<dyn Any + Send + Sync>)> {
         // Receive the data.
-        let (n, addr) = {
-            let (mut n, mut addr) = self.udp.recv_from(&mut buff)?;
+        let n = self.udp.recv(&mut self.buff)?;
 
-            // Make sure the packet was from the address that we are connected to.
-            if addr != peer {
-                warn!(
-                    "UDP: Got a packet from a different address than the peer \
-                    connected peer: ({}), packet from: ({}). Discarding packet.",
-                    peer, addr
-                );
-            }
+        if n == 0 {
+            let e_msg = format!("UDP: The connection was dropped.");
+            warn!("{}", e_msg);
+            return Err(Error::new(ErrorKind::ConnectionAborted, e_msg));
         }
 
-            if n == 0 {
-                let e_msg = format!("UDP_R({}): The peer ({}) closed the connection.", cid, addr);
-                debug!("{}", e_msg);
-                if client {
-                    return Err(Error::new(ErrorKind::ConnectionAborted, e_msg));
-                } else {
-                    continue;
-                }
-            }
+        let header = Header::from_be_bytes(&self.buff[..4]);
+        let total_expected_len = header.len + 4;
 
-            let header = Header::from_be_bytes(&buff[..4]);
-            let total_expected_len = header.len + 4;
-
-            if total_expected_len > MAX_PACKET_SIZE {
-                let e_msg = format!(
-                    "UDP_R({}): The header of a received packet indicates a size of {}, \
+        if total_expected_len > MAX_PACKET_SIZE {
+            let e_msg = format!(
+                "UDP: The header of a received packet indicates a size of {}, \
                 but the max allowed packet size is {}.\
-				carrier-pigeon never sends a packet greater than this. \
-				This packet was likely not sent by carrier-pigeon. \
+                carrier-pigeon never sends a packet greater than this. \
+                This packet was likely not sent by carrier-pigeon. \
                 Discarding this packet.",
-                    cid, total_expected_len, MAX_PACKET_SIZE
+                total_expected_len, MAX_PACKET_SIZE
+            );
+            error!("{}", e_msg);
+            return Err(Error::new(ErrorKind::InvalidData, e_msg));
+        }
+
+        if n != total_expected_len {
+            let e_msg = format!(
+                "UDP: The header specified that the packet size was {} bytes.\
+                However, {} bytes were read. Discarding invalid packet.",
+                total_expected_len, n
+            );
+            error!("{}", e_msg);
+            return Err(Error::new(ErrorKind::InvalidData, e_msg));
+        }
+
+        let deser_fn = match self.parts.deser.get(header.mid) {
+            Some(d) => *d,
+            None => {
+                let e_msg = format!(
+                    "UDP: Invalid MId read: {}. Max MId: {}.",
+                    header.mid,
+                    self.parts.deser.len() - 1
                 );
                 error!("{}", e_msg);
-                if client {
-                    return Err(Error::new(ErrorKind::InvalidData, e_msg));
-                } else {
-                    continue;
-                }
+                return Err(Error::new(ErrorKind::InvalidData, e_msg));
             }
+        };
 
-            if n != total_expected_len {
-                error!(
-                "UDP_R({}): The header specified that the packet size was {} bytes.\
-                However, {} bytes were read. Discarding this possibly corrupted packet",
-                cid, total_expected_len, n
-            );
-                continue;
+        let msg = match deser_fn(&self.buff[4..]) {
+            Ok(msg) => msg,
+            Err(e) => {
+                let e_msg = format!("UDP: Deserialization error occurred. {}", e);
+                error!("{}", e_msg);
+                return Err(Error::new(ErrorKind::InvalidData, e_msg));
             }
+        };
 
-            let deser_fn = match deser.get(header.mid) {
-                Some(d) => *d,
-                None => {
-                    error!(
-                    "UDP_R({}): Invalid MId read: {}. Max MId: {}.",
-                    cid,
-                    header.mid,
-                    deser.len() - 1
-                );
-                    continue;
-                }
-            };
-
-            let msg = match deser_fn(&buff[4..]) {
-                Ok(msg) => msg,
-                Err(e) => {
-                    error!("UDP_R({}): Deserialization error occurred. {}", cid, e);
-                    continue;
-                }
-            };
-
-            trace!(
-            "TCP_R({}): Received packet with MId: {}, len: {}",
-            cid,
+        trace!(
+            "UDP: Received packet with MId: {}, len: {}",
             header.mid,
             total_expected_len
         );
-            if let Err(_) = messages.send((header.mid, msg, addr)) {
-                // The receiver (or more likely the entire connection type) was dropped.
-                // This means we should disconnect.
-                return Ok(());
-            }
-        }
+
+        Ok((header.mid, msg))
     }
 
     /// Disconnects from the server. You should ***always*** call this
@@ -374,6 +361,7 @@ where
         self.tcp.flush()?;
         self.tcp.shutdown(Shutdown::Both)?;
         // No shutdown method on udp.
+        self.status = Status::Closed;
         Ok(())
     }
 
@@ -407,7 +395,7 @@ where
 
         match transport {
             Transport::TCP => self.send_tcp(mid, b),
-            Transport::UDP => todo!(),
+            Transport::UDP => self.send_udp(mid, b),
         }
     }
 
@@ -432,14 +420,15 @@ where
     /// before default time. This will clear the messages between frames.
     pub fn recv_msgs(&mut self) -> u32 {
         let mut i = 0;
+
         while let Ok((mid, msg)) = self.recv_tcp() {
             i += 1;
             self.msg_buff[mid].push(msg);
         }
-        // while let (mid, msg, _addr) = self.recv_udp() { // UDP
-        //     i += 1;
-            // self.msg_buff[mid].push(msg);
-        // }
+        while let Ok((mid, msg)) = self.recv_udp() {
+            i += 1;
+            self.msg_buff[mid].push(msg);
+        }
         i
     }
 
