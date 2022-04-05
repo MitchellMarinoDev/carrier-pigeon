@@ -1,5 +1,5 @@
 use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, RESPONSE_TYPE_MID};
-use crate::net::{CId, DeserFn, NetError, SerFn, Status, Transport};
+use crate::net::{CId, DeserFn, Header, MAX_PACKET_SIZE, NetError, SerFn, Status, Transport};
 use crate::tcp::TcpCon;
 use crate::MId;
 use hashbrown::HashMap;
@@ -7,11 +7,14 @@ use log::{debug, error, trace};
 use std::any::{Any, TypeId};
 use std::fmt::{Display, Formatter};
 use std::io;
+use std::io::{ErrorKind, Read};
 use std::marker::PhantomData;
-use std::net::{SocketAddr, TcpListener, UdpSocket};
+use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
+use std::time::Duration;
 use crossbeam_channel::internal::SelectHandle;
-use crossbeam_channel::Receiver;
-use tokio::net::TcpStream;
+use crossbeam_channel::{Receiver, Sender};
+
+const TIMEOUT: Duration = Duration::from_millis(10_000);
 
 /// A server.
 ///
@@ -34,6 +37,12 @@ where
     /// Each [`MId`] has its own vector.
     msg_buff: Vec<Vec<(CId, Box<dyn Any + Send + Sync>)>>,
 
+    /// The sender that corresponds with the `new_cons` receiver.
+    new_cons_sender: Sender<(TcpStream, C)>,
+    /// The receiver of new connections with their connection packets.
+    new_cons: Receiver<(TcpStream, C)>,
+    /// The listener for new connections.
+    listener: TcpListener,
     /// The TCP connection for this client.
     tcp: HashMap<CId, TcpStream>,
     /// The UDP connection for this client.
@@ -74,6 +83,7 @@ where
         parts: MsgTableParts<C, R, D>,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(listen_addr)?;
+        listener.set_nonblocking(true)?;
         listen_addr = listener.local_addr().unwrap();
         let udp = UdpSocket::bind(listen_addr).unwrap();
 
@@ -85,8 +95,13 @@ where
             msg_buff.push(vec![]);
         }
 
+        let new_cons_channel = crossbeam_channel::bounded(4);
+
         Ok(Server {
             msg_buff,
+            new_cons_sender: new_cons_channel.0,
+            new_cons: new_cons_channel.1,
+            listener,
             tcp: HashMap::new(),
             udp,
             cid_addr: Default::default(),
@@ -109,20 +124,38 @@ where
 
     /// Handle the new connection attempts by calling the given hook.
     pub fn handle_new_cons(&mut self, hook: &mut dyn FnMut(C) -> (bool, R)) -> u32 {
+        // Start waiting on the connection packets for new connections.
+        while let Ok((mut new_con, addr)) = self.listener.accept() {
+            // Spawn a thread to handle receiving the connection packet of the connection.
+            let sender = self.new_cons_sender.clone();
+            let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
+            std::thread::spawn(move || {
+
+                let mut buff = [0; MAX_PACKET_SIZE];
+                new_con.set_read_timeout(Some(TIMEOUT))?;
+                new_con.read_exact(&mut buff[..4])?;
+                let header = Header::from_be_bytes(&buff[..4]);
+                if header.mid != CONNECTION_TYPE_MID {
+                    let msg =
+                        format!(
+                            "Expected the first packet to be of type Connection Packet (MId: {}) got MId: {}",
+                            CONNECTION_TYPE_MID, header.mid
+                        );
+                    return Err(io::Error::new(ErrorKind::InvalidData, msg));
+                }
+                new_con.read_exact(&mut buff[..header.len])?;
+                new_con.set_nonblocking(true)?;
+
+                let con_msg = deser_fn(&buff[..header.len])?.downcast::<C>().unwrap();
+
+                let _ = sender.send((new_con, *con_msg));
+                Ok(())
+            });
+        }
+
         let mut i = 0;
-        while let Ok((new_con, msg)) = self.new_cons.try_recv() {
-            // The type of `msg` is already checked and safe to downcast.
-            let msg = msg.downcast().map_err(|_| "").unwrap();
-            trace!("Handling new connection {}.", new_con.cid());
-            let (accept, response_msg) = (*hook)(*msg);
-            new_con.send(RESPONSE_TYPE_MID, &response_msg).unwrap();
-            if accept {
-                trace!("Connection {} accepted.", new_con.cid());
-                self.add_tcp_con(new_con);
-            } else {
-                trace!("Connection {} rejected.", new_con.cid());
-            }
-            i += 1;
+        while let Ok((new_con, c)) = self.new_cons.try_recv() {
+
         }
         i
     }
@@ -334,7 +367,6 @@ async fn listen<D: Any + Send + Sync>(
     new_cons: Sender<(TcpCon<D>, Box<dyn Any + Send + Sync>)>,
     deser: Vec<DeserFn>,
     ser: Vec<SerFn>,
-    rt: Handle,
 ) -> io::Result<()> {
     let mut current_cid: CId = 1;
 
