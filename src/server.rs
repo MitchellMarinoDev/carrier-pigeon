@@ -10,7 +10,7 @@ use std::io;
 use std::io::{ErrorKind, Read};
 use std::marker::PhantomData;
 use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use crossbeam_channel::internal::SelectHandle;
 use crossbeam_channel::{Receiver, Sender};
 
@@ -32,15 +32,16 @@ where
     R: Any + Send + Sync,
     D: Any + Send + Sync,
 {
+    /// The buffer used for sending and receiving packets
+    buff: [u8; MAX_PACKET_SIZE],
     /// The received message buffer.
     ///
     /// Each [`MId`] has its own vector.
     msg_buff: Vec<Vec<(CId, Box<dyn Any + Send + Sync>)>>,
 
-    /// The sender that corresponds with the `new_cons` receiver.
-    new_cons_sender: Sender<(TcpStream, C)>,
-    /// The receiver of new connections with their connection packets.
-    new_cons: Receiver<(TcpStream, C)>,
+    /// The pending connections (Connections that are established but have
+    /// not sent a connection packet yet).
+    new_cons: Vec<(TcpStream, Option<Header>, Instant)>,
     /// The listener for new connections.
     listener: TcpListener,
     /// The TCP connection for this client.
@@ -95,12 +96,10 @@ where
             msg_buff.push(vec![]);
         }
 
-        let new_cons_channel = crossbeam_channel::bounded(4);
-
         Ok(Server {
+            buff: [0; MAX_PACKET_SIZE],
             msg_buff,
-            new_cons_sender: new_cons_channel.0,
-            new_cons: new_cons_channel.1,
+            new_cons: vec![],
             listener,
             tcp: HashMap::new(),
             udp,
@@ -125,39 +124,56 @@ where
     /// Handle the new connection attempts by calling the given hook.
     pub fn handle_new_cons(&mut self, hook: &mut dyn FnMut(C) -> (bool, R)) -> u32 {
         // Start waiting on the connection packets for new connections.
+        // TODO: add cap to connections that we are handeling.
+        // TODO: add a timeout to the functions.
         while let Ok((mut new_con, addr)) = self.listener.accept() {
-            // Spawn a thread to handle receiving the connection packet of the connection.
-            let sender = self.new_cons_sender.clone();
-            let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
-            std::thread::spawn(move || {
+            self.new_cons.push((new_con, None, Instant::now()));
+        }
 
-                let mut buff = [0; MAX_PACKET_SIZE];
-                new_con.set_read_timeout(Some(TIMEOUT))?;
-                new_con.read_exact(&mut buff[..4])?;
-                let header = Header::from_be_bytes(&buff[..4]);
-                if header.mid != CONNECTION_TYPE_MID {
-                    let msg =
-                        format!(
-                            "Expected the first packet to be of type Connection Packet (MId: {}) got MId: {}",
-                            CONNECTION_TYPE_MID, header.mid
-                        );
-                    return Err(io::Error::new(ErrorKind::InvalidData, msg));
+        // Handle timeout
+        let mut remove = vec![];
+        for (i, (con, header, time)) in self.new_cons.iter_mut().enumerate() {
+            // TODO: functionize
+
+            // TODO: make the timeout configurable
+            if time.elapsed() > TIMEOUT {
+                remove.push(i)
+            }
+
+            // Receive the header first.
+            if header.is_none() {
+                // TODO: change this 4 to a const everywhere
+                if con.read_exact(&mut self.buff[..4]).is_err() {
+                    continue;
                 }
-                new_con.read_exact(&mut buff[..header.len])?;
-                new_con.set_nonblocking(true)?;
+                let h = Header::from_be_bytes(&self.buff[..4]);
+                if h.mid != CONNECTION_TYPE_MID {
+                    remove.push(i);
+                    continue;
+                }
+                *header = Some(h);
+            }
 
-                let con_msg = deser_fn(&buff[..header.len])?.downcast::<C>().unwrap();
-
-                let _ = sender.send((new_con, *con_msg));
-                Ok(())
-            });
+            // Header has been received: Read data.
+            if let Some(h) = header {
+                if con.read_exact(&mut self.buff[..h.len]).is_err() {
+                    continue;
+                }
+                let con_msg = self.parts.deser[CONNECTION_TYPE_MID](&self.buff[..h.len]);
+                if con_msg.is_err() {
+                    continue;
+                }
+                let con_msg = con_msg.unwrap();
+                let con_msg = *con_msg.downcast::<C>().map_err(|_| "").unwrap();
+                hook(con_msg);
+                remove.push(i);
+            }
+        }
+        for i in remove {
+            self.new_cons.remove(i);
         }
 
-        let mut i = 0;
-        while let Ok((new_con, c)) = self.new_cons.try_recv() {
-
-        }
-        i
+        0
     }
 
     /// Handles the disconnect events.
@@ -169,6 +185,7 @@ where
     /// an IO error occurs on the send or receive task.
     pub fn handle_disconnects(
         &mut self,
+        // TODO: change to one fn taking a Status<D>
         discon: &mut dyn FnMut(CId, &D),
         drop: &mut dyn FnMut(CId, &io::Error),
     ) -> (u32, u32) {
@@ -177,12 +194,8 @@ where
         // disconnect, drop counts.
         let mut i = (0, 0);
 
-        for (cid, con) in self.tcp.iter_mut() {
-            con.update_status();
-
-            if con.open() {
-                continue;
-            }
+        // TODO: create a list of inactive connections.
+        for (cid, con) in todo!() {
             println!("CId: {} dead", cid);
 
             if let Some(result) = con.get_recv_status() {
@@ -272,7 +285,7 @@ where
     /// Returns None if the type T was not registered.
     pub fn recv<T: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = (CId, &T)>> {
         let tid = TypeId::of::<T>();
-        let mid = *self.tid_map.get(&tid)?;
+        let mid = *self.parts.tid_map.get(&tid)?;
 
         Some(
             self.msg_buff[mid]
@@ -361,77 +374,78 @@ where
     }
 }
 
+// TODO: Remove
 /// Note: Will **not** stop automatically and needs to be aborted.
-async fn listen<D: Any + Send + Sync>(
-    listener: TcpListener,
-    new_cons: Sender<(TcpCon<D>, Box<dyn Any + Send + Sync>)>,
-    deser: Vec<DeserFn>,
-    ser: Vec<SerFn>,
-) -> io::Result<()> {
-    let mut current_cid: CId = 1;
-
-    loop {
-        let (stream, _addr) = listener.accept().await?;
-
-        // Get a new CId for the new connection
-        let cid = current_cid;
-        current_cid += 1;
-
-        // Turn the socket into a [`TcpCon`]
-        let con = TcpCon::from_stream(cid, stream, deser.clone(), ser.clone(), rt.clone());
-
-        // Spawn a new task for handling the new connection
-        rt.spawn(establish_con(con, new_cons.clone()));
-    }
-}
-
-/// A branch task, spawned for each new connection from the listening task.
-async fn establish_con<D: Any + Send + Sync>(
-    mut con: TcpCon<D>,
-    new_cons: Sender<(TcpCon<D>, Box<dyn Any + Send + Sync>)>,
-) {
-    let cid = con.cid();
-
-    let (mid, msg) = match con.recv().await {
-        Some(msg) => msg,
-        None => {
-            error!("TCP_C({}): New connection didn't get a single packet.", cid,);
-            return;
-        }
-    };
-
-    if mid != CONNECTION_TYPE_MID {
-        error!(
-            "TCP_C({}): First packet did not have MId {}; It was {}. Dropping connection.",
-            cid, CONNECTION_TYPE_MID, mid
-        );
-        return;
-    }
-
-    // Pass back the connection attempt.
-    if let Err(_e) = new_cons.send((con, msg)).await {
-        error!(
-            "TCP_C({}): Error while sending a new connection back to the server. \
-            This could be due to a long lived connection attempt, or more likely, \
-            The listening task did not get aborted when the server closed and is \
-            listening longer than It should.",
-            cid
-        );
-        return;
-    }
-    debug!("TCP_C({}): New connection established.", cid);
-}
-
-impl<C, R, D> Drop for Server<C, R, D>
-where
-    C: Any + Send + Sync,
-    R: Any + Send + Sync,
-    D: Any + Send + Sync,
-{
-    fn drop(&mut self) {
-        self.listen_task.abort();
-    }
-}
+// async fn listen<D: Any + Send + Sync>(
+//     listener: TcpListener,
+//     new_cons: Sender<(TcpCon<D>, Box<dyn Any + Send + Sync>)>,
+//     deser: Vec<DeserFn>,
+//     ser: Vec<SerFn>,
+// ) -> io::Result<()> {
+//     let mut current_cid: CId = 1;
+//
+//     loop {
+//         let (stream, _addr) = listener.accept().await?;
+//
+//         // Get a new CId for the new connection
+//         let cid = current_cid;
+//         current_cid += 1;
+//
+//         // Turn the socket into a [`TcpCon`]
+//         // let con = TcpCon::from_stream(cid, stream, deser.clone(), ser.clone(), rt.clone());
+//
+//         // Spawn a new task for handling the new connection
+//         rt.spawn(establish_con(con, new_cons.clone()));
+//     }
+// }
+//
+// /// A branch task, spawned for each new connection from the listening task.
+// async fn establish_con<D: Any + Send + Sync>(
+//     mut con: TcpCon<D>,
+//     new_cons: Sender<(TcpCon<D>, Box<dyn Any + Send + Sync>)>,
+// ) {
+//     let cid = con.cid();
+//
+//     let (mid, msg) = match con.recv().await {
+//         Some(msg) => msg,
+//         None => {
+//             error!("TCP_C({}): New connection didn't get a single packet.", cid,);
+//             return;
+//         }
+//     };
+//
+//     if mid != CONNECTION_TYPE_MID {
+//         error!(
+//             "TCP_C({}): First packet did not have MId {}; It was {}. Dropping connection.",
+//             cid, CONNECTION_TYPE_MID, mid
+//         );
+//         return;
+//     }
+//
+//     // Pass back the connection attempt.
+//     if let Err(_e) = new_cons.send((con, msg)).await {
+//         error!(
+//             "TCP_C({}): Error while sending a new connection back to the server. \
+//             This could be due to a long lived connection attempt, or more likely, \
+//             The listening task did not get aborted when the server closed and is \
+//             listening longer than It should.",
+//             cid
+//         );
+//         return;
+//     }
+//     debug!("TCP_C({}): New connection established.", cid);
+// }
+//
+// impl<C, R, D> Drop for Server<C, R, D>
+// where
+//     C: Any + Send + Sync,
+//     R: Any + Send + Sync,
+//     D: Any + Send + Sync,
+// {
+//     fn drop(&mut self) {
+//         self.listen_task.abort();
+//     }
+// }
 
 #[derive(Debug)]
 pub struct PendingServer<C, R, D>
