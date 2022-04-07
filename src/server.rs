@@ -1,7 +1,6 @@
-use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, RESPONSE_TYPE_MID};
-use crate::net::{CId, DeserFn, Header, MAX_PACKET_SIZE, NetError, SerFn, Status, Transport};
+use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID};
+use crate::net::{CId, Header, MAX_PACKET_SIZE, NetError, Transport};
 use crate::tcp::TcpCon;
-use crate::MId;
 use hashbrown::HashMap;
 use log::{debug, error, trace};
 use std::any::{Any, TypeId};
@@ -12,7 +11,7 @@ use std::marker::PhantomData;
 use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::time::{Duration, Instant};
 use crossbeam_channel::internal::SelectHandle;
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::{Receiver};
 
 const TIMEOUT: Duration = Duration::from_millis(10_000);
 
@@ -24,8 +23,6 @@ const TIMEOUT: Duration = Duration::from_millis(10_000);
 ///
 /// This will manage multiple connections to clients. Each connection
 /// will have a TCP and UDP connection on the same address and port.
-///
-///
 pub struct Server<C, R, D>
 where
     C: Any + Send + Sync,
@@ -126,47 +123,23 @@ where
         // Start waiting on the connection packets for new connections.
         // TODO: add cap to connections that we are handeling.
         // TODO: add a timeout to the functions.
-        while let Ok((mut new_con, addr)) = self.listener.accept() {
+        while let Ok((mut new_con, _addr)) = self.listener.accept() {
             self.new_cons.push((new_con, None, Instant::now()));
         }
 
-        // Handle timeout
+        // Handle the new connections.
         let mut remove = vec![];
         for (i, (con, header, time)) in self.new_cons.iter_mut().enumerate() {
-            // TODO: functionize
-
-            // TODO: make the timeout configurable
-            if time.elapsed() > TIMEOUT {
-                remove.push(i)
-            }
-
-            // Receive the header first.
-            if header.is_none() {
-                // TODO: change this 4 to a const everywhere
-                if con.read_exact(&mut self.buff[..4]).is_err() {
-                    continue;
-                }
-                let h = Header::from_be_bytes(&self.buff[..4]);
-                if h.mid != CONNECTION_TYPE_MID {
+            match self.handle_new_con(con, header, time) {
+                Ok(Some(c)) => {
+                    hook(c);
                     remove.push(i);
-                    continue;
-                }
-                *header = Some(h);
-            }
-
-            // Header has been received: Read data.
-            if let Some(h) = header {
-                if con.read_exact(&mut self.buff[..h.len]).is_err() {
-                    continue;
-                }
-                let con_msg = self.parts.deser[CONNECTION_TYPE_MID](&self.buff[..h.len]);
-                if con_msg.is_err() {
-                    continue;
-                }
-                let con_msg = con_msg.unwrap();
-                let con_msg = *con_msg.downcast::<C>().map_err(|_| "").unwrap();
-                hook(con_msg);
-                remove.push(i);
+                },
+                Ok(None) => {},
+                Err(e) => {
+                    error!("Error in handling a pending connection. {}", e);
+                    remove.push(i);
+                },
             }
         }
         for i in remove {
@@ -174,6 +147,60 @@ where
         }
 
         0
+    }
+
+    /// Handles a new connection by trying to read the connection packet.
+    ///
+    /// If there is an error in connection (including timeout) this will
+    /// return `Err(e)`. If the connection is not finished it will return
+    /// `Ok(None)`. If the connection opened sucessfully, it will return
+    /// `Ok(Some(c))`.
+    ///
+    /// If this returns an error, it should be removed from the list of
+    /// pending connections. If it returns Ok(Some(c)) it should also be
+    /// removed, as it has finished connecting successfully. It should
+    /// not be removed from this list if it returns Ok(None), as that
+    /// means the connection is still pending.
+    fn handle_new_con(
+        &mut self,
+        // TODO: struct \/ \/
+        con: &mut TcpStream,
+        header: &mut Option<Header>,
+        time: &mut Instant
+    ) -> io::Result<Option<C>> {
+        // TODO: make the timeout configurable.
+        if time.elapsed() > TIMEOUT {
+            return Err(io::Error::new(ErrorKind::TimedOut, "The new connection did not send a connection packet in time."));
+        }
+
+        // Receive the header first.
+        if header.is_none() {
+            // TODO: change this 4 to a const everywhere.
+            con.read_exact(&mut self.buff[..4])?;
+
+            let h = Header::from_be_bytes(&self.buff[..4]);
+            if h.mid != CONNECTION_TYPE_MID {
+                let msg = format!(
+                    "Expected MId {}, got MId {}.",
+                    CONNECTION_TYPE_MID, h.mid
+                );
+                return Err(io::Error::new(ErrorKind::InvalidData, msg));
+            }
+            *header = Some(h);
+        }
+
+        // Header has been received: Read data.
+        if let Some(h) = header {
+            con.read_exact(&mut self.buff[..h.len])?;
+
+            let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
+            let con_msg = deser_fn(&self.buff[..h.len])
+                .map_err(|_| io::Error::new(ErrorKind::TimedOut, "Encountered a serialization error when handling a new connection."))?;
+
+            let con_msg = *con_msg.downcast::<C>().unwrap();
+            return Ok(Some(con_msg));
+        }
+        Ok(None)
     }
 
     /// Handles the disconnect events.
