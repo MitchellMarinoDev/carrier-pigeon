@@ -4,6 +4,7 @@ use std::io;
 use std::io::{Error, ErrorKind, Read, Write};
 use std::marker::PhantomData;
 use std::net::{Shutdown, SocketAddr, TcpStream, UdpSocket};
+use std::time::Duration;
 use crossbeam_channel::internal::SelectHandle;
 use crossbeam_channel::Receiver;
 use log::{debug, error, trace, warn};
@@ -81,9 +82,10 @@ where
         let local_addr = tcp.local_addr().unwrap();
         trace!("TcpStream established from {} to {}", local_addr, tcp.peer_addr().unwrap());
         let udp = UdpSocket::bind(local_addr)?;
-        trace!("UdpSocket bound to {}", udp.local_addr().unwrap());
         udp.connect(peer)?;
-        trace!("UdpSocket connected");
+        trace!("UdpSocket connected from {} to {}", udp.local_addr().unwrap(), udp.peer_addr().unwrap());
+
+        tcp.set_read_timeout(Some(Duration::from_millis(10_000)))?;
 
         let mid_count = parts.tid_map.len();
         let mut msg_buff = Vec::with_capacity(mid_count);
@@ -100,15 +102,14 @@ where
             parts,
             _pd: PhantomData,
         };
-        debug!("Client constructed. Sending connection message...");
 
         // Send connection packet
         client.send(&con_msg)?;
-        debug!("Client connection message sent. Awaiting response...");
+        trace!("Client connection message sent. Awaiting response...");
 
         // Get response packet.
         let (r_mid, response) = client.recv_tcp()?;
-        debug!("Got response packet from the server.");
+        trace!("Got response packet from the server.");
 
         if r_mid != RESPONSE_TYPE_MID {
             let msg = format!(

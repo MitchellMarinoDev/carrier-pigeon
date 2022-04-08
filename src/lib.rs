@@ -18,6 +18,7 @@ pub mod udp;
 mod client;
 mod message_table;
 mod server;
+mod header;
 
 pub use client::Client;
 pub use message_table::{MsgTable, MsgTableParts, SortedMsgTable, MsgRegError};
