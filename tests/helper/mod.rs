@@ -1,12 +1,13 @@
 #![allow(unused)]
 //! Helper functions and types to make setting up the tests easier.
 
+use log::debug;
 use tokio::runtime::Handle;
 use crate::helper::test_packets::{Connection, Disconnect, get_table_parts, Response};
 
 pub mod test_packets;
 
-const ADDR_LOCAL: &str = "0.0.0.0:7788";
+const ADDR_LOCAL: &str = "127.0.0.1:0";
 
 pub type Client = carrier_pigeon::Client<Connection, Response, Disconnect>;
 pub type Server = carrier_pigeon::Server<Connection, Response, Disconnect>;
@@ -16,14 +17,13 @@ pub type Server = carrier_pigeon::Server<Connection, Response, Disconnect>;
 pub fn create_client_server_pair() -> (Client, Server) {
     let parts = get_table_parts();
 
-    // Create server.
+    debug!("Creating server.");
     let mut server = Server::new(ADDR_LOCAL.parse().unwrap(), parts.clone())
-        .blocking_recv()
-        .unwrap()
         .unwrap();
     let addr = server.listen_addr();
-    println!("Server created on addr: {}", addr);
+    debug!("Server created on addr: {}", addr);
 
+    debug!("Creating client.");
     // Start client connection.
     let client = Client::new(addr, parts, Connection::new("John"));
 
@@ -34,6 +34,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
 
     // Finish the client connection.
     let (client, response_msg) = client.block().unwrap();
+    debug!("Client created on addr: {}", client.local_addr());
 
     assert_eq!(response_msg, Response::Accepted);
 

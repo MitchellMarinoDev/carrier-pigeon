@@ -3,6 +3,8 @@
 use std::any::Any;
 use crate::net::TaskStatus::{Done, Failed, Running};
 use std::fmt::{Debug, Display, Formatter};
+use std::io;
+use std::io::Error;
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::error::TryRecvError;
 
@@ -56,6 +58,29 @@ impl Header {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::net::Header;
+
+    #[test]
+    fn to_from_bytes() {
+        let points = vec![
+            (0, 0),
+            (2, 2),
+            (100, 34),
+            (65530, 982),
+        ];
+
+        for point in points {
+            let header = Header::new(point.0, point.1);
+            let ser = header.to_be_bytes();
+            let de = Header::from_be_bytes(&ser);
+            assert_eq!(header, de);
+        }
+    }
+}
+
+
 /// An enum representing the 2 possible transports.
 ///
 /// - TCP is reliable but slower.
@@ -98,9 +123,9 @@ pub type MId = usize;
 pub type CId = u32;
 
 /// The function used to deserialize a message.
-pub type DeserFn = fn(&[u8]) -> Result<Box<dyn Any + Send + Sync>, NetError>;
+pub type DeserFn = fn(&[u8]) -> Result<Box<dyn Any + Send + Sync>, io::Error>;
 /// The function used to serialize a message.
-pub type SerFn = fn(&(dyn Any + Send + Sync)) -> Result<Vec<u8>, NetError>;
+pub type SerFn = fn(&(dyn Any + Send + Sync)) -> Result<Vec<u8>, io::Error>;
 
 pub enum Resp<R, C> {
     Accepted(R, C),
@@ -171,7 +196,7 @@ impl<T> TaskStatus<T> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug)]
 /// An enum for the possible states of a connection
 pub enum Status<D> {
     /// The connection is still live.
@@ -181,7 +206,19 @@ pub enum Status<D> {
     /// The connection is closed because we chose to close the connection.
     Closed,
     /// The connection was dropped without sending a disconnection packet.
-    Dropped,
+    Dropped(Error),
+}
+
+impl<D: Display> Display for Status<D> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Connected => write!(f, "Connected"),
+            Self::Disconnected(d) => write!(f, "Disconnected with packet {}", d),
+            Self::Closed => write!(f, "Closed"),
+            Self::Dropped(e) => write!(f, "Dropped with error {}", e),
+        }
+
+    }
 }
 
 impl<D> Status<D> {
@@ -199,10 +236,10 @@ impl<D> Status<D> {
         }
     }
 
-    pub fn dropped(&self) -> bool {
+    pub fn dropped(&self) -> Option<&Error>{
         match self {
-            Status::Dropped => true,
-            _ => false,
+            Status::Dropped(e) => Some(e),
+            _ => None,
         }
     }
 

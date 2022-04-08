@@ -13,7 +13,7 @@
 
 use crate::shared::{Connection, Disconnect, Msg, Response};
 use carrier_pigeon::{MsgTable, Server, Transport};
-use log::{error, LevelFilter};
+use log::LevelFilter;
 use simple_logger::SimpleLogger;
 use std::env;
 use std::time::Duration;
@@ -32,9 +32,6 @@ fn main() {
     let addr = args.next().unwrap_or("127.0.0.1:7797".to_owned());
     let addr = addr.parse().expect("Could not parse address.");
 
-    // Create a tokio runtime.
-    let rt = tokio::runtime::Runtime::new().unwrap();
-
     // Create the message table.
     // This should be the same on the client and server.
     let mut table = MsgTable::new();
@@ -43,12 +40,10 @@ fn main() {
     let parts = table.build::<Connection, Response, Disconnect>().unwrap();
 
     // Start the server.
-    let server = Server::new(addr, parts, rt.handle().clone());
+    let server = Server::new(addr, parts);
 
     // Block until the server is finished being created.
     let mut server = server
-        .blocking_recv()
-        .unwrap()
         .expect("Failed to create server.");
 
     let blacklisted_users = vec!["John", "Jane"];
@@ -64,11 +59,8 @@ fn main() {
         // This should be called every once in a while to clean up so that the
         // server doesn't send packets to disconnected clients.
         server.handle_disconnects(
-            &mut |cid, discon_msg| {
-                println!("CId {} disconnected for reason: {}", cid, discon_msg.reason);
-            },
-            &mut |cid, error| {
-                error!("CId {} was dropped because of error: {}", cid, error);
+            &mut |cid, status| {
+                println!("CId {} disconnected with status: {:?}", cid, status);
             },
         );
 
@@ -88,7 +80,11 @@ fn main() {
         });
 
         let mut cids_to_disconnect = vec![];
-        for (cid, msg) in server.recv::<Msg>().unwrap() {
+
+        let msgs = server.recv::<Msg>().unwrap()
+            .map(|(cid, msg)| (cid, msg.clone()))
+            .collect::<Vec<_>>();
+        for (cid, msg) in msgs {
             println!(
                 "Client {} sent message: {}: \"{}\"",
                 cid, msg.from, msg.text
@@ -101,7 +97,7 @@ fn main() {
             }
 
             // Broadcast the message to all other clients.
-            server.broadcast_except(msg, cid).unwrap();
+            server.broadcast_except(&msg, cid).unwrap();
         }
         for cid in cids_to_disconnect {
             server

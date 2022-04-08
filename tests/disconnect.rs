@@ -1,6 +1,7 @@
 //! Disconnect and Drop tests.
 use simple_logger::SimpleLogger;
 use std::time::Duration;
+use log::debug;
 use crate::helper::create_client_server_pair;
 use crate::helper::test_packets::Disconnect;
 
@@ -10,12 +11,13 @@ mod helper;
 fn graceful_disconnect() {
     // Create a simple logger
     let _ = SimpleLogger::new()
-        .with_level(log::LevelFilter::Debug)
+        .with_level(log::LevelFilter::Trace)
         .init();
 
     {
         // Client Disconnect Test
         let (mut client, mut server) = create_client_server_pair();
+        debug!("Client server pair created.");
 
         client
             .disconnect(&Disconnect::new("Testing Disconnect Client."))
@@ -24,21 +26,22 @@ fn graceful_disconnect() {
         // Give the client enough time to send the disconnect packet.
         std::thread::sleep(Duration::from_millis(100));
 
-        let counts = server.handle_disconnects(
-            &mut |_cid, discon_msg| {
-                assert_eq!(*discon_msg, Disconnect::new("Testing Disconnect Client."));
-            },
-            &mut |_cid, _error| {
-                panic!("No connections were supposed to be dropped");
+        debug!("Attempting to receive msgs");
+        let recv_count = server.recv_msgs();
+        debug!("Msgs recieved");
+        let discon_count = server.handle_disconnects(
+            &mut |_cid, status| {
+                assert_eq!(status.disconnected(), Some(&Disconnect::new("Testing Disconnect Client.")));
             },
         );
 
-        assert_eq!(counts, (1, 0));
+        assert_eq!(recv_count, 1);
+        assert_eq!(discon_count, 1);
     }
 
     {
         // Server Disconnect Test
-        let (mut client, mut server) = create_client_server_pair();
+        let (client, mut server) = create_client_server_pair();
 
         server
             .disconnect(&Disconnect::new("Testing Disconnect Server."), 1)
@@ -58,7 +61,7 @@ fn graceful_disconnect() {
 fn drop_test() {
     // Create a simple logger
     let _ = SimpleLogger::new()
-        .with_level(log::LevelFilter::Debug)
+        .with_level(log::LevelFilter::Trace)
         .init();
 
     {
@@ -70,7 +73,7 @@ fn drop_test() {
         std::thread::sleep(Duration::from_millis(100));
 
         // Make sure the client is dropped abruptly
-        assert!(client.status().dropped());
+        assert!(client.status().dropped().is_some());
     }
 
     {
@@ -82,15 +85,12 @@ fn drop_test() {
         std::thread::sleep(Duration::from_millis(100));
 
         let counts = server.handle_disconnects(
-            &mut |_cid, _msg| {
-                panic!("There should not be a gracefull disconnect.");
-            },
-            &mut |_cid, _e| {
-                println!("Dropped connection with error");
-            },
+            &mut |_cid, status| {
+                assert!(status.dropped().is_some(), "Expected status to be dropped");
+            }
         );
 
-        // make sure there was 1 drop and 0 graceful disconnects.
-        assert_eq!(counts, (0, 1));
+        // make sure there was 1 disconnect handled.
+        assert_eq!(counts, 1);
     }
 }

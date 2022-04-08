@@ -1,17 +1,15 @@
-use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID};
-use crate::net::{CId, Header, MAX_PACKET_SIZE, NetError, Transport};
-use crate::tcp::TcpCon;
+use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID};
+use crate::net::{CId, DeserFn, Header, MAX_PACKET_SIZE, MAX_SAFE_PACKET_SIZE, NetError, Status, Transport};
 use hashbrown::HashMap;
-use log::{debug, error, trace};
+use log::{debug, error, trace, warn};
 use std::any::{Any, TypeId};
-use std::fmt::{Display, Formatter};
 use std::io;
-use std::io::{ErrorKind, Read};
+use std::io::{Error, ErrorKind, Read, Write};
+use std::io::ErrorKind::WouldBlock;
 use std::marker::PhantomData;
-use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
+use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::time::{Duration, Instant};
-use crossbeam_channel::internal::SelectHandle;
-use crossbeam_channel::{Receiver};
+use crate::MId;
 
 const TIMEOUT: Duration = Duration::from_millis(10_000);
 
@@ -29,6 +27,8 @@ where
     R: Any + Send + Sync,
     D: Any + Send + Sync,
 {
+    /// The current cid. incremented then assigned to new connections.
+    current_cid: CId,
     /// The buffer used for sending and receiving packets
     buff: [u8; MAX_PACKET_SIZE],
     /// The received message buffer.
@@ -38,7 +38,9 @@ where
 
     /// The pending connections (Connections that are established but have
     /// not sent a connection packet yet).
-    new_cons: Vec<(TcpStream, Option<Header>, Instant)>,
+    new_cons: Vec<(TcpStream, Instant)>,
+    /// Disconnected connections.
+    disconnected: Vec<(CId, Status<D>)>,
     /// The listener for new connections.
     listener: TcpListener,
     /// The TCP connection for this client.
@@ -81,9 +83,10 @@ where
         parts: MsgTableParts<C, R, D>,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(listen_addr)?;
-        listener.set_nonblocking(true)?;
         listen_addr = listener.local_addr().unwrap();
+        listener.set_nonblocking(true)?;
         let udp = UdpSocket::bind(listen_addr).unwrap();
+        udp.set_nonblocking(true)?;
 
         debug!("New server created at {}.", listen_addr);
 
@@ -94,9 +97,11 @@ where
         }
 
         Ok(Server {
+            current_cid: 0,
             buff: [0; MAX_PACKET_SIZE],
             msg_buff,
             new_cons: vec![],
+            disconnected: vec![],
             listener,
             tcp: HashMap::new(),
             udp,
@@ -107,14 +112,274 @@ where
         })
     }
 
+    /// A function that encapsulates the sending logic for the TCP transport.
+    fn send_tcp(&mut self, cid: CId, mid: MId, packet: Vec<u8>) -> io::Result<()> {
+        if !self.alive(cid) {
+            return Err(Error::new(ErrorKind::InvalidData, "Invalid CId."));
+        }
+
+        let total_len = packet.len() + 4;
+        // Check if the packet is valid, and should be sent.
+        if total_len > MAX_PACKET_SIZE {
+            error!(
+                "TCP: Outgoing packet size is greater than the maximum packet size ({}). \
+				MId: {}, size: {}. Discarding packet.",
+                MAX_PACKET_SIZE, mid, total_len
+            );
+            return Err(Error::new(ErrorKind::InvalidData, "The packet was too long"))
+        }
+        if packet.len() > MAX_SAFE_PACKET_SIZE {
+            warn!(
+                "TCP: Outgoing packet size is greater than the maximum SAFE packet size.\
+			    MId: {}, size: {}. Sending packet anyway.",
+                mid, total_len
+            );
+        }
+        // Packet can be sent!
+
+        let header = Header::new(mid, packet.len());
+        let h_bytes = header.to_be_bytes();
+        // write the header and packet to the buffer to combine them.
+        for (i, b) in h_bytes.into_iter().chain(packet.into_iter()).enumerate() {
+            self.buff[i] = b;
+        }
+
+        // Send
+        trace!(
+            "TCP: Sending packet with MId: {}, len: {}",
+            mid, total_len
+        );
+        let n = self.tcp.get_mut(&cid).unwrap().write(&self.buff[..total_len])?;
+
+        // Make sure it sent correctly.
+        if n != total_len {
+            error!(
+                "TCP: Couldn't send all the bytes of a packet (mid: {}). \
+				Wanted to send {} but could only send {}.",
+                mid, total_len, n
+            );
+        }
+        Ok(())
+    }
+
+    /// A function that encapsulates the sending logic for the UDP transport.
+    fn send_udp(&mut self, cid: CId, mid: MId, packet: Vec<u8>) -> io::Result<()> {
+        if !self.alive(cid) {
+            return Err(Error::new(ErrorKind::InvalidData, "Invalid CId."));
+        }
+
+        let total_len = packet.len() + 4;
+
+        // Check if the packet is valid, and should be sent.
+        if total_len > MAX_PACKET_SIZE {
+            let msg = format!(
+                "UDP: Outgoing packet size is greater than the maximum packet size ({}). \
+                MId: {}, size: {}. Discarding packet.",
+                MAX_PACKET_SIZE, mid, total_len
+            );
+            error!("{}", msg);
+            return Err(Error::new(ErrorKind::InvalidData, msg));
+        }
+
+        if total_len > MAX_SAFE_PACKET_SIZE {
+            warn!(
+                "UDP: Outgoing packet size is greater than the maximum SAFE packet size.\
+                MId: {}, size: {}. Sending packet anyway.",
+                mid, total_len
+            );
+        }
+        // Packet can be sent!
+
+        let addr = self.cid_addr[&cid];
+        let header = Header::new(mid, packet.len());
+        let h_bytes = header.to_be_bytes();
+        // put the header in the front of the packet
+        for (i, b) in h_bytes.into_iter().chain(packet.into_iter()).enumerate() {
+            self.buff[i] = b;
+        }
+
+        // Send
+        trace!("UDP: Sending mid {}.", mid);
+        let n = self.udp.send_to(&self.buff[..total_len], addr)?;
+
+        // Make sure it sent correctly.
+        if n != total_len {
+            error!(
+                "UDP: Couldn't send all the bytes of a packet (mid: {}). \
+				Wanted to send {} but could only send {}",
+                mid, total_len, n
+            );
+        }
+        Ok(())
+    }
+
+    /// A function that encapsulates the receiving logic for the TCP transport.
+    ///
+    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
+    /// no more packets can be yielded without blocking.
+    fn recv_tcp(&mut self, cid: CId) -> io::Result<(MId, Box<dyn Any + Send + Sync>)> {
+        if !self.alive(cid) {
+            return Err(Error::new(ErrorKind::InvalidData, "Invalid CId."));
+        }
+        let tcp = self.tcp.get_mut(&cid).unwrap();
+
+        let h_n = tcp.read(&mut self.buff[..4])?;
+
+        if h_n == 0 {
+            let e_msg = format!("TCP: The peer closed the connection.");
+            debug!("{}", e_msg);
+            return Err(Error::new(ErrorKind::ConnectionAborted, e_msg));
+        } else if h_n < 4 {
+            let e_msg = format!("TCP: Not enough bytes for header ({}).", h_n);
+            warn!("{}", e_msg);
+            return Err(Error::new(ErrorKind::ConnectionAborted, e_msg));
+        }
+
+        let header = Header::from_be_bytes(&self.buff[..4]);
+        if header.mid > self.parts.mid_count() {
+            let e_msg = format!(
+                "TCP: Got a packet specifying MId {}, but the maximum MId is {}.",
+                header.mid, self.parts.mid_count()
+            );
+            return Err(Error::new(ErrorKind::InvalidData, e_msg));
+        }
+
+        if header.len + 4 > MAX_PACKET_SIZE {
+            let e_msg = format!(
+                "TCP: The header of a received packet indicates a size of {},\
+	                but the max allowed packet size is {}.\
+					carrier-pigeon never sends a packet greater than this. \
+					This packet was likely not sent by carrier-pigeon. \
+	                Discarding this packet.",
+                header.len, MAX_PACKET_SIZE
+            );
+            error!("{}", e_msg);
+            return Err(Error::new(ErrorKind::InvalidData, e_msg));
+        }
+
+        // Read data.
+        tcp.read_exact(&mut self.buff[..header.len])?;
+        trace!("TCP: Received msg of MId {}, len {}, from CId {}", header.mid, header.len, cid);
+
+        let deser_fn = match self.parts.deser.get(header.mid) {
+            Some(d) => *d,
+            None => {
+                let msg = format!(
+                    "Invalid MId {} read from peer. Max MId: {}.",
+                    header.mid,
+                    self.parts.deser.len()-1
+                );
+                return Err(Error::new(ErrorKind::InvalidData, msg));
+            }
+        };
+
+        let msg = deser_fn(&self.buff[..header.len])
+            .map_err(|_| Error::new(ErrorKind::InvalidData, "Got error when deserializing data from peer."))?;
+
+        if header.mid == DISCONNECT_TYPE_MID {
+            // Remote connection disconnected.
+            debug!("TCP: Remote computer sent disconnect packet.");
+        }
+
+        trace!(
+            "TCP: Received packet with MId: {}, len: {}",
+            header.mid,
+            header.len + 4
+        );
+        Ok((header.mid, msg))
+    }
+
+    /// A function that encapsulates the receiving logic for the UDP transport.
+    ///
+    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
+    /// no more packets can be yielded without blocking. [`InvalidData`] likely means
+    /// carrier-pigeon detected bad data.
+    pub fn recv_udp(&mut self) -> io::Result<(CId, MId, Box<dyn Any + Send + Sync>)> {
+        // Receive the data.
+        let (n, from) = self.udp.recv_from(&mut self.buff)?;
+        let cid = self.addr_cid[&from];
+
+        if n == 0 {
+            let e_msg = format!("UDP: The connection was dropped.");
+            warn!("{}", e_msg);
+            return Err(Error::new(ErrorKind::ConnectionAborted, e_msg));
+        }
+
+        let header = Header::from_be_bytes(&self.buff[..4]);
+        if header.mid > self.parts.mid_count() {
+            let e_msg = format!(
+                "UDP: Got a packet specifying MId {}, but the maximum MId is {}.",
+                header.mid, self.parts.mid_count()
+            );
+            return Err(Error::new(ErrorKind::InvalidData, e_msg));
+        }
+        let total_expected_len = header.len + 4;
+
+        if total_expected_len > MAX_PACKET_SIZE {
+            let e_msg = format!(
+                "UDP: The header of a received packet indicates a size of {}, \
+                but the max allowed packet size is {}.\
+                carrier-pigeon never sends a packet greater than this. \
+                This packet was likely not sent by carrier-pigeon. \
+                Discarding this packet.",
+                total_expected_len, MAX_PACKET_SIZE
+            );
+            error!("{}", e_msg);
+            return Err(Error::new(ErrorKind::InvalidData, e_msg));
+        }
+
+        if n != total_expected_len {
+            let e_msg = format!(
+                "UDP: The header specified that the packet size was {} bytes.\
+                However, {} bytes were read. Discarding invalid packet.",
+                total_expected_len, n
+            );
+            error!("{}", e_msg);
+            return Err(Error::new(ErrorKind::InvalidData, e_msg));
+        }
+
+        let deser_fn = match self.parts.deser.get(header.mid) {
+            Some(d) => *d,
+            None => {
+                let e_msg = format!(
+                    "UDP: Invalid MId read: {}. Max MId: {}.",
+                    header.mid,
+                    self.parts.deser.len() - 1
+                );
+                error!("{}", e_msg);
+                return Err(Error::new(ErrorKind::InvalidData, e_msg));
+            }
+        };
+
+        let msg = match deser_fn(&self.buff[4..]) {
+            Ok(msg) => msg,
+            Err(e) => {
+                let e_msg = format!("UDP: Deserialization error occurred. {}", e);
+                error!("{}", e_msg);
+                return Err(Error::new(ErrorKind::InvalidData, e_msg));
+            }
+        };
+        trace!("UDP: Received msg of MId {}, len {}, from CId {}", header.mid, header.len, cid);
+
+        Ok((cid, header.mid, msg))
+    }
+
+
     /// Disconnects from the given `cid`. You should always disconnect
     /// all clients before dropping the server to let the clients know
     /// that you intentionally disconnected. The `discon_msg` allows you
     /// to give a reason for the disconnect.
-    pub fn disconnect<T: Any + Send + Sync>(&mut self, discon_msg: &T, cid: CId) -> Result<(), NetError> {
+    pub fn disconnect<T: Any + Send + Sync>(&mut self, discon_msg: &T, cid: CId) -> io::Result<()> {
+        if !self.alive(cid) {
+            return Err(io::Error::new(ErrorKind::InvalidData, "Invalid CId."));
+        }
         debug!("Disconnecting CId {}", cid);
         self.send_to(cid, discon_msg)?;
-        self.rm_tcp_con(cid)?;
+        let tcp = self.tcp.get_mut(&cid).unwrap();
+        tcp.flush()?;
+        tcp.shutdown(Shutdown::Both)?;
+        // No shutdown method on udp.
+        self.disconnected.push((cid, Status::Closed));
         Ok(())
     }
 
@@ -123,129 +388,108 @@ where
         // Start waiting on the connection packets for new connections.
         // TODO: add cap to connections that we are handeling.
         // TODO: add a timeout to the functions.
-        while let Ok((mut new_con, _addr)) = self.listener.accept() {
-            self.new_cons.push((new_con, None, Instant::now()));
+        while let Ok((new_con, _addr)) = self.listener.accept() {
+            debug!("New connection attempt.");
+            new_con.set_nonblocking(true).unwrap();
+            self.new_cons.push((new_con, Instant::now()));
         }
 
+        let mut accept_count = 0;
         // Handle the new connections.
         let mut remove = vec![];
-        for (i, (con, header, time)) in self.new_cons.iter_mut().enumerate() {
-            match self.handle_new_con(con, header, time) {
+        let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
+        for (idx, (con, time)) in self.new_cons.iter_mut().enumerate() {
+            match Self::handle_new_con(&mut self.buff, deser_fn, con, time) {
                 Ok(Some(c)) => {
-                    hook(c);
-                    remove.push(i);
+                    let (acc, r) = hook(c);
+                    if acc {
+                        debug!("Accepted new connection at {}.", con.peer_addr().unwrap());
+                        accept_count += 1;
+                    }
+                    remove.push((idx, Some(r)));
                 },
                 Ok(None) => {},
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {},
                 Err(e) => {
                     error!("Error in handling a pending connection. {}", e);
-                    remove.push(i);
+                    remove.push((idx, None));
                 },
             }
         }
-        for i in remove {
-            self.new_cons.remove(i);
+        for (idx, resp) in remove {
+            let (con, _) = self.new_cons.remove(idx);
+            // If `resp` is Some, the connection was accepted and
+            // we need to send the response packet.
+            // TODO: this process might be able to be inlined if `send()` calls take immutable refs to self
+            if let Some(r) = resp {
+                let cid = self.add_tcp_con(con);
+                let _ = self.send_to(cid, &r);
+            }
         }
 
-        0
+        accept_count
     }
 
     /// Handles a new connection by trying to read the connection packet.
     ///
     /// If there is an error in connection (including timeout) this will
     /// return `Err(e)`. If the connection is not finished it will return
-    /// `Ok(None)`. If the connection opened sucessfully, it will return
+    /// `Ok(None)`. If the connection opened successfully, it will return
     /// `Ok(Some(c))`.
     ///
-    /// If this returns an error, it should be removed from the list of
-    /// pending connections. If it returns Ok(Some(c)) it should also be
-    /// removed, as it has finished connecting successfully. It should
-    /// not be removed from this list if it returns Ok(None), as that
-    /// means the connection is still pending.
+    /// If this returns an error other than a `WouldBlock` error, it should
+    /// be removed from the list of pending connections. If it returns
+    /// Ok(Some(c)) it should also be removed, as it has finished connecting
+    /// successfully. It should not be removed from this list if it returns
+    /// Ok(None), as that means the connection is still pending.
     fn handle_new_con(
-        &mut self,
-        // TODO: struct \/ \/
+        buff: &mut [u8],
+        deser_fn: DeserFn,
         con: &mut TcpStream,
-        header: &mut Option<Header>,
-        time: &mut Instant
+        time: &Instant
     ) -> io::Result<Option<C>> {
         // TODO: make the timeout configurable.
         if time.elapsed() > TIMEOUT {
-            return Err(io::Error::new(ErrorKind::TimedOut, "The new connection did not send a connection packet in time."));
+            return Err(Error::new(ErrorKind::TimedOut, "The new connection did not send a connection packet in time."));
         }
 
-        // Receive the header first.
-        if header.is_none() {
-            // TODO: change this 4 to a const everywhere.
-            con.read_exact(&mut self.buff[..4])?;
+        // Peak the first 4 bytes for the header.
+        if con.peek(&mut buff[..4])? != 4 {
+            return Ok(None);
+        }
+        let h = Header::from_be_bytes(&buff[..4]);
 
-            let h = Header::from_be_bytes(&self.buff[..4]);
-            if h.mid != CONNECTION_TYPE_MID {
-                let msg = format!(
-                    "Expected MId {}, got MId {}.",
-                    CONNECTION_TYPE_MID, h.mid
-                );
-                return Err(io::Error::new(ErrorKind::InvalidData, msg));
-            }
-            *header = Some(h);
+        if h.mid != CONNECTION_TYPE_MID {
+            let msg = format!(
+                "Expected MId {}, got MId {}.",
+                CONNECTION_TYPE_MID, h.mid
+            );
+            return Err(Error::new(ErrorKind::InvalidData, msg));
         }
 
-        // Header has been received: Read data.
-        if let Some(h) = header {
-            con.read_exact(&mut self.buff[..h.len])?;
+        con.read_exact(&mut buff[..h.len+4])?;
 
-            let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
-            let con_msg = deser_fn(&self.buff[..h.len])
-                .map_err(|_| io::Error::new(ErrorKind::TimedOut, "Encountered a serialization error when handling a new connection."))?;
+        let con_msg = deser_fn(&buff[4..h.len+4])
+            .map_err(|o| Error::new(ErrorKind::InvalidData, format!("Encountered a deserialization error when handling a new connection. {}", o)))?;
 
-            let con_msg = *con_msg.downcast::<C>().unwrap();
-            return Ok(Some(con_msg));
-        }
-        Ok(None)
+        let con_msg = *con_msg.downcast::<C>().unwrap();
+        Ok(Some(con_msg))
     }
 
     /// Handles the disconnect events.
-    ///
-    /// The `discon` hook is fired for the clients that gracefully disconnect.
-    ///
-    /// The `drop` hook is called for the clients that are dropped (disconnects
-    /// without sending a disconnect packet), or in any other circumstance where
-    /// an IO error occurs on the send or receive task.
     pub fn handle_disconnects(
         &mut self,
-        // TODO: change to one fn taking a Status<D>
-        discon: &mut dyn FnMut(CId, &D),
-        drop: &mut dyn FnMut(CId, &io::Error),
-    ) -> (u32, u32) {
+        hook: &mut dyn FnMut(CId, Status<D>),
+    ) -> u32 {
         let mut cids_to_rm = vec![];
 
-        // disconnect, drop counts.
-        let mut i = (0, 0);
+        // disconnect counts.
+        let mut i = 0;
 
-        // TODO: create a list of inactive connections.
-        for (cid, con) in todo!() {
-            println!("CId: {} dead", cid);
-
-            if let Some(result) = con.get_recv_status() {
-                // Not open due to a receive error.
-                match result {
-                    Ok(discon_msg) => {
-                        i.0 += 1; // inc discon count
-                        discon(*cid, &*discon_msg)
-                    }
-                    Err(e) => {
-                        i.1 += 1; // inc drop count
-                        drop(*cid, e)
-                    }
-                }
-            } else if let Some(Err(e)) = con.get_send_status() {
-                // Not open due to a send error.
-                i.1 += 1; // inc drop count
-                drop(*cid, e);
-            } else {
-                error!("The connection closed because disconnect() was called.");
-            }
-
-            cids_to_rm.push(*cid);
+        for (cid, status) in self.disconnected.drain(..) {
+            hook(cid, status);
+            cids_to_rm.push(cid);
+            i += 1;
         }
 
         // Remove the CIds
@@ -253,6 +497,7 @@ where
             debug!("Removing CId {}", cid);
             self.rm_tcp_con(cid).unwrap();
         }
+
         i
     }
 
@@ -264,42 +509,42 @@ where
     /// If the message type isn't registered, this will return
     /// [`Error::TypeNotRegistered`]. If the msg fails to be
     /// serialized this will return [`Error::SerdeError`].
-    pub fn send_to<T: Any + Send + Sync>(&self, cid: CId, msg: &T) -> Result<(), NetError> {
-        let addr = match self.cid_addr.get(&cid) {
-            Some(addr) => *addr,
-            None => return Err(NetError::InvalidCId),
-        };
-
+    pub fn send_to<T: Any + Send + Sync>(&mut self, cid: CId, msg: &T) -> io::Result<()> {
         let tid = TypeId::of::<T>();
-        if !self.tid_map.contains_key(&tid) {
-            return Err(NetError::TypeNotRegistered);
+        if !self.valid_tid(tid) {
+            return Err(io::Error::new(ErrorKind::InvalidData, "Type not registered."));
         }
-        let mid = self.tid_map[&tid];
-        let transport = self.transports[mid];
+        let mid = self.parts.tid_map[&tid];
+        let transport = self.parts.transports[mid];
+        let ser_fn = self.parts.ser[mid];
+        let b = ser_fn(msg)
+            .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Serialization Error."))?;
 
+        debug!("Sending message of MId {}, len {}, to CId {}", mid, b.len(), cid);
         match transport {
-            Transport::TCP => self.tcp[&cid].send(mid, msg),
-            Transport::UDP => self.udp.send_to(mid, msg, addr),
+            Transport::TCP => self.send_tcp(cid, mid, b),
+            Transport::UDP => self.send_udp(cid, mid, b),
         }?;
 
         Ok(())
     }
 
     /// Broadcasts a message to all connected clients.
-    pub fn broadcast<T: Any + Send + Sync>(&self, msg: &T) -> Result<(), NetError> {
-        for cid in self.cid_addr.iter().map(|t| t.0) {
-            self.send_to(*cid, msg)?;
+    pub fn broadcast<T: Any + Send + Sync>(&mut self, msg: &T) -> io::Result<()> {
+        for cid in self.cids().collect::<Vec<_>>() {
+            self.send_to(cid, msg)?;
         }
         Ok(())
     }
 
     /// Broadcasts a message to all connected clients except the [`CId`] `cid`.
-    pub fn broadcast_except<T: Any + Send + Sync>(&self, msg: &T, cid: CId) -> Result<(), NetError> {
+    pub fn broadcast_except<T: Any + Send + Sync>(&mut self, msg: &T, cid: CId) -> io::Result<()> {
         for cid in self
             .cid_addr
             .iter()
             .map(|t| *t.0)
             .filter(|o_cid| *o_cid != cid)
+            .collect::<Vec<_>>()
         {
             self.send_to(cid, msg)?;
         }
@@ -328,23 +573,56 @@ where
     /// before default time. This will clear the messages between frames.
     pub fn recv_msgs(&mut self) -> u32 {
         let mut i = 0;
-        for (cid, tcp) in self.tcp.iter_mut() {
-            while let Some((mid, msg)) = tcp.try_recv() {
-                trace!("getting tcp msg with mid: {}", mid);
-                self.msg_buff[mid].push((*cid, msg));
-                i += 1;
+        // TCP
+        'cid_loop:
+        for cid in self.cids().collect::<Vec<_>>() {
+            // Loop through all the messages in the tcp connection.
+            loop {
+                let recv = self.recv_tcp(cid);
+                match recv {
+                    // End of data.
+                    Err(e) if e.kind() == WouldBlock => break,
+                    // Other error occurred.
+                    Err(e) => {
+                        error!("TCP: An error occurred while receiving a message. {}", e);
+                        self.disconnected.push((cid, Status::Dropped(e)));
+                        break;
+                    },
+                    // Got a message.
+                    Ok((mid, msg)) => {
+                        if mid == DISCONNECT_TYPE_MID {
+                            debug!("Disconnecting peer {}", cid);
+                            let discon = msg.downcast::<D>().unwrap();
+                            self.disconnected.push((cid, Status::Disconnected(*discon)));
+                            continue 'cid_loop;
+                        }
+
+                        self.msg_buff[mid].push((cid, msg));
+                        i += 1;
+                    },
+                }
             }
         }
 
-        while let Some((mid, msg, addr)) = self.udp.try_recv() {
-            if let Some(cid) = self.addr_cid.get(&addr) {
-                i += 1;
-                trace!("Getting udp msg with mid: {}", mid);
-                self.msg_buff[mid].push((*cid, msg));
-            } else {
-                debug!("Getting udp msg from invalid addr {}", addr);
+        // UDP
+        loop {
+            let recv = self.recv_udp();
+            match recv {
+                // End of data.
+                Err(e) if e.kind() == WouldBlock => break,
+                // Other error occurred.
+                Err(e) => {
+                    error!("UDP: An error occurred while receiving a message. {}", e);
+                    break;
+                },
+                // Got a message.
+                Ok((cid, mid, msg)) => {
+                    self.msg_buff[mid].push((cid, msg));
+                    i += 1;
+                },
             }
         }
+
         i
     }
 
@@ -357,12 +635,21 @@ where
 
     /// Gets the address that the server is listening on.
     pub fn listen_addr(&self) -> SocketAddr {
-        self.listen_addr
+        self.listener.local_addr().unwrap()
     }
 
     /// An iterator of the [`CId`]s.
     pub fn cids(&self) -> impl Iterator<Item = CId> + '_ {
         self.cid_addr.keys().map(|cid| *cid)
+    }
+
+    /// Returns whether the connection of the given CId is live.
+    pub fn alive(&self, cid: CId) -> bool {
+        self.cid_addr.contains_key(&cid)
+    }
+
+    pub fn valid_tid(&self, tid: TypeId) -> bool {
+        self.parts.tid_map.contains_key(&tid)
     }
 
     /// The number of active connections.
@@ -384,12 +671,14 @@ where
 
     // Private:
     /// Adds a TCP connection.
-    fn add_tcp_con(&mut self, con: TcpCon<D>) {
-        let cid = con.cid();
-        let peer_addr = con.peer_addr();
+    fn add_tcp_con(&mut self, con: TcpStream) -> CId {
+        self.current_cid += 1;
+        let cid = self.current_cid;
+        let peer_addr = con.peer_addr().unwrap();
         self.tcp.insert(cid, con);
         self.addr_cid.insert(peer_addr, cid);
         self.cid_addr.insert(cid, peer_addr);
+        self.current_cid
     }
 
     /// Removes a TCP connection.
@@ -402,7 +691,7 @@ where
 }
 
 // TODO: Remove
-/// Note: Will **not** stop automatically and needs to be aborted.
+// /// Note: Will **not** stop automatically and needs to be aborted.
 // async fn listen<D: Any + Send + Sync>(
 //     listener: TcpListener,
 //     new_cons: Sender<(TcpCon<D>, Box<dyn Any + Send + Sync>)>,
@@ -473,52 +762,3 @@ where
 //         self.listen_task.abort();
 //     }
 // }
-
-#[derive(Debug)]
-pub struct PendingServer<C, R, D>
-    where
-        C: Any + Send + Sync,
-        R: Any + Send + Sync,
-        D: Any + Send + Sync,
-{
-    channel: Receiver<io::Result<Server<C, R, D>>>,
-}
-
-// Impl display so that `get()` can be unwrapped.
-impl<C, R, D> Display for PendingServer<C, R, D>
-    where
-        C: Any + Send + Sync,
-        R: Any + Send + Sync,
-        D: Any + Send + Sync,
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Pending client connection ({}).", if self.done() { "done" } else { "not done" })
-    }
-}
-
-impl<C, R, D> PendingServer<C, R, D>
-    where
-        C: Any + Send + Sync,
-        R: Any + Send + Sync,
-        D: Any + Send + Sync,
-{
-    /// Returns whether the client is finished connecting.
-    pub fn done(&self) -> bool {
-        self.channel.is_ready()
-    }
-
-    /// Gets the client. This will yield a value if [`done()`](Self::done)
-    /// returned `true`.
-    pub fn get(self) -> Result<io::Result<(Server<C, R, D>, R)>, Self> {
-        if self.done() {
-            Ok(self.channel.recv().unwrap())
-        } else {
-            Err(self)
-        }
-    }
-
-    /// Blocks until the client is ready.
-    pub fn block(self) -> io::Result<(Server<C, R, D>, R)> {
-        self.channel.recv().unwrap()
-    }
-}

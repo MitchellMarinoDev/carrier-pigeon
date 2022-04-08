@@ -13,9 +13,6 @@ fn send_recv() {
         .with_level(log::LevelFilter::Debug)
         .init();
 
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let rt = runtime.handle();
-
     // CLIENT TO SERVER
     let (mut client, mut server) = create_client_server_pair();
 

@@ -73,10 +73,16 @@ where
         parts: MsgTableParts<C, R, D>,
         con_msg: C,
     ) -> io::Result<(Self, R)> {
+        debug!("Attempting to create a client connection to {}", peer);
+        // TODO: add timeout.
+        // TODO: add an option to get udp addr
         // TCP & UDP Connections.
         let tcp = TcpStream::connect(peer)?;
-        let udp = UdpSocket::bind("::")?;
+        trace!("TcpStream established");
+        let udp = UdpSocket::bind("0.0.0.0:0")?;
+        trace!("UdpSocket bound to {}", udp.local_addr().unwrap());
         udp.connect(peer)?;
+        trace!("UdpSocket connected");
 
         let mid_count = parts.tid_map.len();
         let mut msg_buff = Vec::with_capacity(mid_count);
@@ -93,6 +99,7 @@ where
             parts,
             _pd: PhantomData,
         };
+        debug!("Client constructed. Sending connection message...");
 
         // Send connection packet
         client.send(&con_msg)?;
@@ -222,6 +229,7 @@ where
     /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
     /// no more packets can be yielded without blocking.
     fn recv_tcp(&mut self) -> io::Result<(MId, Box<dyn Any + Send + Sync>)> {
+        // TODO: peak to not block
         let h_n = self.tcp.read(&mut self.buff[..4])?;
 
         if h_n == 0 {
@@ -234,6 +242,13 @@ where
             return Err(Error::new(ErrorKind::ConnectionAborted, e_msg));
         }
         let header = Header::from_be_bytes(&self.buff[..4]);
+        if header.mid > self.parts.mid_count() {
+            let e_msg = format!(
+                "TCP: Got a packet specifying MId {}, but the maximum MId is {}.",
+                header.mid, self.parts.mid_count()
+            );
+            return Err(Error::new(ErrorKind::InvalidData, e_msg));
+        }
 
         if header.len + 4 > MAX_PACKET_SIZE {
             let e_msg = format!(
@@ -295,6 +310,13 @@ where
         }
 
         let header = Header::from_be_bytes(&self.buff[..4]);
+        if header.mid > self.parts.mid_count() {
+            let e_msg = format!(
+                "UDP: Got a packet specifying MId {}, but the maximum MId is {}.",
+                header.mid, self.parts.mid_count()
+            );
+            return Err(Error::new(ErrorKind::InvalidData, e_msg));
+        }
         let total_expected_len = header.len + 4;
 
         if total_expected_len > MAX_PACKET_SIZE {
@@ -361,6 +383,7 @@ where
         self.tcp.flush()?;
         self.tcp.shutdown(Shutdown::Both)?;
         // No shutdown method on udp.
+        // TODO: check status on send client and server
         self.status = Status::Closed;
         Ok(())
     }
@@ -440,13 +463,13 @@ where
     }
 
     /// Gets the local address.
-    pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.tcp.local_addr()
+    pub fn local_addr(&self) -> SocketAddr {
+        self.tcp.local_addr().unwrap()
     }
 
     /// Gets the address of the peer.
-    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
-        self.tcp.peer_addr()
+    pub fn peer_addr(&self) -> SocketAddr {
+        self.tcp.peer_addr().unwrap()
     }
 }
 

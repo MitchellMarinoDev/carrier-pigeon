@@ -6,9 +6,9 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::any::{Any, TypeId};
 use std::fmt::{Display, Formatter};
+use std::io;
 use std::marker::PhantomData;
 use MsgRegError::NonUniqueIdentifier;
-use crate::NetError::{Deser, Ser};
 
 /// A type for collecting the parts needed to send
 /// a struct over the network.
@@ -126,9 +126,12 @@ impl MsgTable {
 
         // Get the serialize and deserialize functions
         let deser_fn: DeserFn = |bytes: &[u8]|
-            bincode::deserialize::<T>(bytes).map(|d| Box::new(d) as Box<dyn Any + Send + Sync>).map_err(|_| Deser);
+            bincode::deserialize::<T>(bytes)
+                .map(|d| Box::new(d) as Box<dyn Any + Send + Sync>)
+                .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("{}", o)));
         let ser_fn: SerFn = |m: &(dyn Any + Send + Sync)|
-            bincode::serialize(m.downcast_ref::<T>().unwrap()).map_err(|_| Ser);
+            bincode::serialize(m.downcast_ref::<T>().unwrap())
+                .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("{}", o)));
 
         Ok((tid, transport, ser_fn, deser_fn))
     }
@@ -258,9 +261,12 @@ impl SortedMsgTable {
 
         // Get the serialize and deserialize functions
         let deser_fn: DeserFn = |bytes: &[u8]|
-            bincode::deserialize::<T>(bytes).map(|d| Box::new(d) as Box<dyn Any + Send + Sync>).map_err(|_| Deser);
+            bincode::deserialize::<T>(bytes)
+                .map(|d| Box::new(d) as Box<dyn Any + Send + Sync>)
+                .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("{}", o)));
         let ser_fn: SerFn = |m: &(dyn Any + Send + Sync)|
-            bincode::serialize(m.downcast_ref::<T>().unwrap()).map_err(|_| Ser);
+            bincode::serialize(m.downcast_ref::<T>().unwrap())
+                .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("{}", o)));
 
         Ok((identifier, tid, transport, ser_fn, deser_fn))
     }
@@ -317,6 +323,18 @@ impl SortedMsgTable {
             deser,
             _pd: PhantomData,
         })
+    }
+}
+
+impl<C, R, D> MsgTableParts<C, R, D>
+where
+    C: Any + Send + Sync,
+    R: Any + Send + Sync,
+    D: Any + Send + Sync,
+{
+    // TODO: use this function call in all appropriate senarios.
+    pub fn mid_count(&self) -> usize {
+        self.transports.len()
     }
 }
 
