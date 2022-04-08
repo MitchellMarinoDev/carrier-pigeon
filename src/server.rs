@@ -299,6 +299,10 @@ where
         let (n, from) = self.udp.recv_from(&mut self.buff)?;
         let cid = self.addr_cid[&from];
 
+        if !self.alive(cid) {
+            return Err(Error::new(ErrorKind::Other, "Received data from a address that is not connected."));
+        }
+
         if n == 0 {
             let e_msg = format!("UDP: The connection was dropped.");
             warn!("{}", e_msg);
@@ -590,6 +594,7 @@ where
                     },
                     // Got a message.
                     Ok((mid, msg)) => {
+                        i += 1;
                         if mid == DISCONNECT_TYPE_MID {
                             debug!("Disconnecting peer {}", cid);
                             let discon = msg.downcast::<D>().unwrap();
@@ -598,7 +603,6 @@ where
                         }
 
                         self.msg_buff[mid].push((cid, msg));
-                        i += 1;
                     },
                 }
             }

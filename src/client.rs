@@ -78,8 +78,9 @@ where
         // TODO: add an option to get udp addr
         // TCP & UDP Connections.
         let tcp = TcpStream::connect(peer)?;
-        trace!("TcpStream established");
-        let udp = UdpSocket::bind("0.0.0.0:0")?;
+        let local_addr = tcp.local_addr().unwrap();
+        trace!("TcpStream established from {} to {}", local_addr, tcp.peer_addr().unwrap());
+        let udp = UdpSocket::bind(local_addr)?;
         trace!("UdpSocket bound to {}", udp.local_addr().unwrap());
         udp.connect(peer)?;
         trace!("UdpSocket connected");
@@ -444,10 +445,31 @@ where
     pub fn recv_msgs(&mut self) -> u32 {
         let mut i = 0;
 
-        while let Ok((mid, msg)) = self.recv_tcp() {
-            i += 1;
-            self.msg_buff[mid].push(msg);
+        // TCP
+        loop {
+            if !self.status.connected() { break; }
+
+            let recv = self.recv_tcp();
+            match recv {
+                // No more data.
+                Err(e) if e.kind() == ErrorKind::WouldBlock => break,
+                // IO Error occurred.
+                Err(e) => {
+                    error!("IO Error occurred while receiving data. {}", e);
+                    self.status = Status::Dropped(e);
+                },
+                // Successfully got a message.
+                Ok((mid, msg)) => {
+                    i += 1;
+                    if mid == DISCONNECT_TYPE_MID {
+                        self.status = Status::Disconnected(*msg.downcast().unwrap());
+                    } else {
+                        self.msg_buff[mid].push(msg);
+                    }
+                },
+            }
         }
+
         while let Ok((mid, msg)) = self.recv_udp() {
             i += 1;
             self.msg_buff[mid].push(msg);

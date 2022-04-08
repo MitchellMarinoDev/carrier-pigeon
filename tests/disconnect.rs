@@ -41,7 +41,7 @@ fn graceful_disconnect() {
 
     {
         // Server Disconnect Test
-        let (client, mut server) = create_client_server_pair();
+        let (mut client, mut server) = create_client_server_pair();
 
         server
             .disconnect(&Disconnect::new("Testing Disconnect Server."), 1)
@@ -50,6 +50,8 @@ fn graceful_disconnect() {
         // Give the server enough time to send the disconnect packet.
         std::thread::sleep(Duration::from_millis(100));
 
+        let count = client.recv_msgs();
+        assert_eq!(count, 1);
         assert_eq!(
             client.status().disconnected().unwrap(),
             &Disconnect::new("Testing Disconnect Server.")
@@ -66,12 +68,13 @@ fn drop_test() {
 
     {
         // Server Drop Client.
-        let (client, server) = create_client_server_pair();
+        let (mut client, server) = create_client_server_pair();
         drop(server);
 
         // Give the server enough time for the connection to sever.
         std::thread::sleep(Duration::from_millis(100));
 
+        client.recv_msgs();
         // Make sure the client is dropped abruptly
         assert!(client.status().dropped().is_some());
     }
@@ -84,6 +87,7 @@ fn drop_test() {
         // Give the server enough time for the connection to sever.
         std::thread::sleep(Duration::from_millis(100));
 
+        server.recv_msgs();
         let counts = server.handle_disconnects(
             &mut |_cid, status| {
                 assert!(status.dropped().is_some(), "Expected status to be dropped");
