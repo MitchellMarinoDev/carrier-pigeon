@@ -1,3 +1,9 @@
+use crate::message_table::{MsgTableParts, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID};
+use crate::net::{Header, Status, Transport, MAX_PACKET_SIZE, MAX_SAFE_PACKET_SIZE};
+use crate::MId;
+use crossbeam_channel::internal::SelectHandle;
+use crossbeam_channel::Receiver;
+use log::{debug, error, trace, warn};
 use std::any::{Any, TypeId};
 use std::fmt::{Display, Formatter};
 use std::io;
@@ -5,12 +11,6 @@ use std::io::{Error, ErrorKind, Read, Write};
 use std::marker::PhantomData;
 use std::net::{Shutdown, SocketAddr, TcpStream, UdpSocket};
 use std::time::Duration;
-use crossbeam_channel::internal::SelectHandle;
-use crossbeam_channel::Receiver;
-use log::{debug, error, trace, warn};
-use crate::MId;
-use crate::message_table::{DISCONNECT_TYPE_MID, MsgTableParts, RESPONSE_TYPE_MID};
-use crate::net::{Header, MAX_PACKET_SIZE, MAX_SAFE_PACKET_SIZE, Status, Transport};
 
 /// A Client connection.
 ///
@@ -59,13 +59,9 @@ where
     ) -> PendingClient<C, R, D> {
         let (client_tx, client_rx) = crossbeam_channel::bounded(1);
 
-        std::thread::spawn(move || {
-            client_tx.send(Self::new_blocking(peer, parts, con_msg))
-        });
+        std::thread::spawn(move || client_tx.send(Self::new_blocking(peer, parts, con_msg)));
 
-        PendingClient {
-            channel: client_rx,
-        }
+        PendingClient { channel: client_rx }
     }
 
     /// Creates a new [`Client`] asynchronously.
@@ -80,10 +76,18 @@ where
         // TCP & UDP Connections.
         let tcp = TcpStream::connect(peer)?;
         let local_addr = tcp.local_addr().unwrap();
-        trace!("TcpStream established from {} to {}", local_addr, tcp.peer_addr().unwrap());
+        trace!(
+            "TcpStream established from {} to {}",
+            local_addr,
+            tcp.peer_addr().unwrap()
+        );
         let udp = UdpSocket::bind(local_addr)?;
         udp.connect(peer)?;
-        trace!("UdpSocket connected from {} to {}", udp.local_addr().unwrap(), udp.peer_addr().unwrap());
+        trace!(
+            "UdpSocket connected from {} to {}",
+            udp.local_addr().unwrap(),
+            udp.peer_addr().unwrap()
+        );
 
         tcp.set_read_timeout(Some(Duration::from_millis(10_000)))?;
 
@@ -114,8 +118,7 @@ where
         if r_mid != RESPONSE_TYPE_MID {
             let msg = format!(
                 "Client: First received packet was MId: {} not MId: {} (Response packet)",
-                r_mid,
-                RESPONSE_TYPE_MID
+                r_mid, RESPONSE_TYPE_MID
             );
             error!("{}", msg);
             return Err(Error::new(ErrorKind::InvalidData, msg));
@@ -144,7 +147,10 @@ where
 				MId: {}, size: {}. Discarding packet.",
                 MAX_PACKET_SIZE, mid, total_len
             );
-            return Err(io::Error::new(ErrorKind::InvalidData, "The packet was too long"))
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "The packet was too long",
+            ));
         }
         if packet.len() > MAX_SAFE_PACKET_SIZE {
             warn!(
@@ -163,10 +169,7 @@ where
         }
 
         // Send
-        trace!(
-            "TCP: Sending packet with MId: {}, len: {}",
-            mid, total_len
-        );
+        trace!("TCP: Sending packet with MId: {}, len: {}", mid, total_len);
         let n = self.tcp.write(&self.buff[..total_len])?;
 
         // Make sure it sent correctly.
@@ -247,7 +250,8 @@ where
         if header.mid > self.parts.mid_count() {
             let e_msg = format!(
                 "TCP: Got a packet specifying MId {}, but the maximum MId is {}.",
-                header.mid, self.parts.mid_count()
+                header.mid,
+                self.parts.mid_count()
             );
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
@@ -274,14 +278,18 @@ where
                 let msg = format!(
                     "Invalid MId {} read from peer. Max MId: {}.",
                     header.mid,
-                    self.parts.deser.len()-1
+                    self.parts.deser.len() - 1
                 );
                 return Err(io::Error::new(ErrorKind::InvalidData, msg));
             }
         };
 
-        let msg = deser_fn(&self.buff[..header.len])
-            .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Got error when deserializing data from peer."))?;
+        let msg = deser_fn(&self.buff[..header.len]).map_err(|_| {
+            io::Error::new(
+                ErrorKind::InvalidData,
+                "Got error when deserializing data from peer.",
+            )
+        })?;
 
         if header.mid == DISCONNECT_TYPE_MID {
             // Remote connection disconnected.
@@ -315,7 +323,8 @@ where
         if header.mid > self.parts.mid_count() {
             let e_msg = format!(
                 "UDP: Got a packet specifying MId {}, but the maximum MId is {}.",
-                header.mid, self.parts.mid_count()
+                header.mid,
+                self.parts.mid_count()
             );
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
@@ -410,7 +419,10 @@ where
     pub fn send<T: Any + Send + Sync>(&mut self, msg: &T) -> io::Result<()> {
         let tid = TypeId::of::<T>();
         if !self.parts.tid_map.contains_key(&tid) {
-            return Err(io::Error::new(ErrorKind::InvalidData, "Type not registered."));
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "Type not registered.",
+            ));
         }
         let mid = self.parts.tid_map[&tid];
         let transport = self.parts.transports[mid];
@@ -448,7 +460,9 @@ where
 
         // TCP
         loop {
-            if !self.status.connected() { break; }
+            if !self.status.connected() {
+                break;
+            }
 
             let recv = self.recv_tcp();
             match recv {
@@ -458,7 +472,7 @@ where
                 Err(e) => {
                     error!("IO Error occurred while receiving data. {}", e);
                     self.status = Status::Dropped(e);
-                },
+                }
                 // Successfully got a message.
                 Ok((mid, msg)) => {
                     i += 1;
@@ -467,7 +481,7 @@ where
                     } else {
                         self.msg_buff[mid].push(msg);
                     }
-                },
+                }
             }
         }
 
@@ -514,7 +528,11 @@ where
     D: Any + Send + Sync,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Pending client connection ({}).", if self.done() { "done" } else { "not done" })
+        write!(
+            f,
+            "Pending client connection ({}).",
+            if self.done() { "done" } else { "not done" }
+        )
     }
 }
 
@@ -544,4 +562,3 @@ where
         self.channel.recv().unwrap()
     }
 }
-

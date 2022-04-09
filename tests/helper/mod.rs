@@ -1,9 +1,9 @@
 #![allow(unused)]
 //! Helper functions and types to make setting up the tests easier.
 
+use crate::helper::test_packets::{get_table_parts, Connection, Disconnect, Response};
 use log::debug;
 use tokio::runtime::Handle;
-use crate::helper::test_packets::{Connection, Disconnect, get_table_parts, Response};
 
 pub mod test_packets;
 
@@ -18,8 +18,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
     let parts = get_table_parts();
 
     debug!("Creating server.");
-    let mut server = Server::new(ADDR_LOCAL.parse().unwrap(), parts.clone())
-        .unwrap();
+    let mut server = Server::new(ADDR_LOCAL.parse().unwrap(), parts.clone()).unwrap();
     let addr = server.listen_addr();
     debug!("Server created on addr: {}", addr);
 

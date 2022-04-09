@@ -1,9 +1,9 @@
 //! Tests for testing the functionality of the [`MsgTable`] and [`SortedMsgTable`].
-use std::any::TypeId;
-use hashbrown::HashMap;
-use carrier_pigeon::{MsgRegError, MsgTable, SortedMsgTable};
-use carrier_pigeon::Transport::{TCP, UDP};
 use crate::helper::test_packets::{Connection, Disconnect, Response, TcpPacket, UdpPacket};
+use carrier_pigeon::Transport::{TCP, UDP};
+use carrier_pigeon::{MsgRegError, MsgTable, SortedMsgTable};
+use hashbrown::HashMap;
+use std::any::TypeId;
 
 mod helper;
 
@@ -13,15 +13,24 @@ mod helper;
 fn errors() {
     let mut table = MsgTable::new();
     table.register::<TcpPacket>(TCP).unwrap();
-    assert_eq!(table.register::<TcpPacket>(TCP), Err(MsgRegError::TypeAlreadyRegistered));
+    assert_eq!(
+        table.register::<TcpPacket>(TCP),
+        Err(MsgRegError::TypeAlreadyRegistered)
+    );
 
     let mut table = SortedMsgTable::new();
     table.register::<TcpPacket>(TCP, "test::TcpPacket").unwrap();
-    assert_eq!(table.register::<TcpPacket>(TCP, "test::TcpPacket2"), Err(MsgRegError::TypeAlreadyRegistered));
+    assert_eq!(
+        table.register::<TcpPacket>(TCP, "test::TcpPacket2"),
+        Err(MsgRegError::TypeAlreadyRegistered)
+    );
 
     let mut table = SortedMsgTable::new();
     table.register::<TcpPacket>(TCP, "test::TcpPacket").unwrap();
-    assert_eq!(table.register::<UdpPacket>(TCP, "test::TcpPacket"), Err(MsgRegError::NonUniqueIdentifier));
+    assert_eq!(
+        table.register::<UdpPacket>(TCP, "test::TcpPacket"),
+        Err(MsgRegError::NonUniqueIdentifier)
+    );
 }
 
 /// Tests MsgTableParts generation.
@@ -31,7 +40,6 @@ fn parts_gen() {
     table.register::<TcpPacket>(TCP).unwrap();
     table.register::<UdpPacket>(UDP).unwrap();
 
-
     // Expected result:
     let mut tid_map = HashMap::new();
     tid_map.insert(TypeId::of::<Connection>(), 0);
@@ -40,13 +48,7 @@ fn parts_gen() {
     tid_map.insert(TypeId::of::<TcpPacket>(), 3);
     tid_map.insert(TypeId::of::<UdpPacket>(), 4);
 
-    let transports = vec![
-        TCP,
-        TCP,
-        TCP,
-        TCP,
-        UDP,
-    ];
+    let transports = vec![TCP, TCP, TCP, TCP, UDP];
 
     let parts = table.build::<Connection, Response, Disconnect>().unwrap();
 

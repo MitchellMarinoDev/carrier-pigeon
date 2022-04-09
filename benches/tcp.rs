@@ -44,7 +44,6 @@ fn send_single_tcp_small(b: &mut Bencher) {
     })
 }
 
-
 #[bench]
 fn send_multiple_tcp_big(b: &mut Bencher) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
@@ -61,7 +60,9 @@ fn send_multiple_tcp_big(b: &mut Bencher) {
             client.send(&msg).unwrap();
         }
         let mut n = 0;
-        while n < 100 { n += server.recv_msgs(); }
+        while n < 100 {
+            n += server.recv_msgs();
+        }
         assert_eq!(server.recv::<TcpPacket>().unwrap().count(), 100);
     })
 }
@@ -82,7 +83,9 @@ fn send_multiple_tcp_small(b: &mut Bencher) {
             client.send(&msg).unwrap();
         }
         let mut n = 0;
-        while n < 100 { n += server.recv_msgs(); }
+        while n < 100 {
+            n += server.recv_msgs();
+        }
         assert_eq!(server.recv::<TcpPacket>().unwrap().count(), 100);
     })
 }

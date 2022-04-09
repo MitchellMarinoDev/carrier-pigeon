@@ -14,6 +14,7 @@
 //! `disconnect-me`.
 
 use crate::shared::{Connection, Disconnect, Msg, Response};
+use carrier_pigeon::net::Status;
 use carrier_pigeon::{Client, MsgTable, Transport};
 use log::LevelFilter;
 use simple_logger::SimpleLogger;
@@ -21,7 +22,6 @@ use std::io::stdin;
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::time::Duration;
 use std::{env, thread};
-use carrier_pigeon::net::Status;
 
 mod shared;
 
@@ -53,8 +53,7 @@ fn main() {
     let client = Client::new(addr, parts, con_msg);
 
     // Block until the connection is made.
-    let (mut client, resp) = client.block()
-        .expect("Failed to connect to server.");
+    let (mut client, resp) = client.block().expect("Failed to connect to server.");
 
     match resp {
         Response::Accepted => println!("We were accepted!"),

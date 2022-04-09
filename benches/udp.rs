@@ -60,7 +60,9 @@ fn send_multiple_udp_big(b: &mut Bencher) {
             client.send(&msg).unwrap();
         }
         let mut n = 0;
-        while n < 100 { n += server.recv_msgs(); }
+        while n < 100 {
+            n += server.recv_msgs();
+        }
         assert_eq!(server.recv::<UdpPacket>().unwrap().count(), 100);
     })
 }
@@ -81,7 +83,9 @@ fn send_multiple_udp_small(b: &mut Bencher) {
             client.send(&msg).unwrap();
         }
         let mut n = 0;
-        while n < 100 { n += server.recv_msgs(); }
+        while n < 100 {
+            n += server.recv_msgs();
+        }
         assert_eq!(server.recv::<UdpPacket>().unwrap().count(), 100);
     })
 }

@@ -125,13 +125,15 @@ impl MsgTable {
         }
 
         // Get the serialize and deserialize functions
-        let deser_fn: DeserFn = |bytes: &[u8]|
+        let deser_fn: DeserFn = |bytes: &[u8]| {
             bincode::deserialize::<T>(bytes)
                 .map(|d| Box::new(d) as Box<dyn Any + Send + Sync>)
-                .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("{}", o)));
-        let ser_fn: SerFn = |m: &(dyn Any + Send + Sync)|
+                .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("{}", o)))
+        };
+        let ser_fn: SerFn = |m: &(dyn Any + Send + Sync)| {
             bincode::serialize(m.downcast_ref::<T>().unwrap())
-                .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("{}", o)));
+                .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("{}", o)))
+        };
 
         Ok((tid, transport, ser_fn, deser_fn))
     }
@@ -194,11 +196,7 @@ impl SortedMsgTable {
     }
 
     /// Registers a message type so that it can be sent over the network.
-    pub fn register<T>(
-        &mut self,
-        transport: Transport,
-        identifier: &str,
-    ) -> Result<(), MsgRegError>
+    pub fn register<T>(&mut self, transport: Transport, identifier: &str) -> Result<(), MsgRegError>
     where
         T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
@@ -209,13 +207,14 @@ impl SortedMsgTable {
 
     /// Registers a message type with custom serialization and deserialization logic.
     pub fn register_custom<T>(
-        &mut self, transport: Transport,
+        &mut self,
+        transport: Transport,
         identifier: &str,
         ser: SerFn,
         deser: DeserFn,
     ) -> Result<(), MsgRegError>
-        where
-            T: Any + Send + Sync,
+    where
+        T: Any + Send + Sync,
     {
         let identifier = identifier.into();
 
@@ -260,13 +259,15 @@ impl SortedMsgTable {
         }
 
         // Get the serialize and deserialize functions
-        let deser_fn: DeserFn = |bytes: &[u8]|
+        let deser_fn: DeserFn = |bytes: &[u8]| {
             bincode::deserialize::<T>(bytes)
                 .map(|d| Box::new(d) as Box<dyn Any + Send + Sync>)
-                .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("{}", o)));
-        let ser_fn: SerFn = |m: &(dyn Any + Send + Sync)|
+                .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("{}", o)))
+        };
+        let ser_fn: SerFn = |m: &(dyn Any + Send + Sync)| {
             bincode::serialize(m.downcast_ref::<T>().unwrap())
-                .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("{}", o)));
+                .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("{}", o)))
+        };
 
         Ok((identifier, tid, transport, ser_fn, deser_fn))
     }
@@ -352,7 +353,7 @@ impl Display for MsgRegError {
         match self {
             TypeAlreadyRegistered => {
                 write!(f, "Type was already registered.")
-            },
+            }
             NonUniqueIdentifier => {
                 write!(f, "The identifier was not unique.")
             }

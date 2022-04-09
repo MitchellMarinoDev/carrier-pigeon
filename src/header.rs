@@ -45,12 +45,7 @@ mod tests {
 
     #[test]
     fn to_from_bytes() {
-        let points = vec![
-            (0, 0),
-            (2, 2),
-            (100, 34),
-            (65530, 982),
-        ];
+        let points = vec![(0, 0), (2, 2), (100, 34), (65530, 982)];
 
         for point in points {
             let header = Header::new(point.0, point.1);

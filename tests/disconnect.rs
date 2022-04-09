@@ -1,9 +1,9 @@
 //! Disconnect and Drop tests.
-use simple_logger::SimpleLogger;
-use std::time::Duration;
-use log::debug;
 use crate::helper::create_client_server_pair;
 use crate::helper::test_packets::Disconnect;
+use log::debug;
+use simple_logger::SimpleLogger;
+use std::time::Duration;
 
 mod helper;
 
@@ -29,11 +29,12 @@ fn graceful_disconnect() {
         debug!("Attempting to receive msgs");
         let recv_count = server.recv_msgs();
         debug!("Msgs recieved");
-        let discon_count = server.handle_disconnects(
-            &mut |_cid, status| {
-                assert_eq!(status.disconnected(), Some(&Disconnect::new("Testing Disconnect Client.")));
-            },
-        );
+        let discon_count = server.handle_disconnects(&mut |_cid, status| {
+            assert_eq!(
+                status.disconnected(),
+                Some(&Disconnect::new("Testing Disconnect Client."))
+            );
+        });
 
         assert_eq!(recv_count, 1);
         assert_eq!(discon_count, 1);
@@ -88,11 +89,9 @@ fn drop_test() {
         std::thread::sleep(Duration::from_millis(100));
 
         server.recv_msgs();
-        let counts = server.handle_disconnects(
-            &mut |_cid, status| {
-                assert!(status.dropped().is_some(), "Expected status to be dropped");
-            }
-        );
+        let counts = server.handle_disconnects(&mut |_cid, status| {
+            assert!(status.dropped().is_some(), "Expected status to be dropped");
+        });
 
         // make sure there was 1 disconnect handled.
         assert_eq!(counts, 1);

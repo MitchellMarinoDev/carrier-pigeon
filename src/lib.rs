@@ -16,11 +16,11 @@ pub mod tcp;
 pub mod udp;
 
 mod client;
+mod header;
 mod message_table;
 mod server;
-mod header;
 
 pub use client::Client;
-pub use message_table::{MsgTable, MsgTableParts, SortedMsgTable, MsgRegError};
+pub use message_table::{MsgRegError, MsgTable, MsgTableParts, SortedMsgTable};
 pub use net::{CId, MId, NetError, Transport};
 pub use server::Server;

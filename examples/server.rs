@@ -43,8 +43,7 @@ fn main() {
     let server = Server::new(addr, parts);
 
     // Block until the server is finished being created.
-    let mut server = server
-        .expect("Failed to create server.");
+    let mut server = server.expect("Failed to create server.");
 
     let blacklisted_users = vec!["John", "Jane"];
 
@@ -58,11 +57,9 @@ fn main() {
 
         // This should be called every once in a while to clean up so that the
         // server doesn't send packets to disconnected clients.
-        server.handle_disconnects(
-            &mut |cid, status| {
-                println!("CId {} disconnected with status: {:?}", cid, status);
-            },
-        );
+        server.handle_disconnects(&mut |cid, status| {
+            println!("CId {} disconnected with status: {:?}", cid, status);
+        });
 
         // This handles the new connections with whatever logic you want.
         server.handle_new_cons(&mut |con_msg| {
@@ -81,7 +78,9 @@ fn main() {
 
         let mut cids_to_disconnect = vec![];
 
-        let msgs = server.recv::<Msg>().unwrap()
+        let msgs = server
+            .recv::<Msg>()
+            .unwrap()
             .map(|(cid, msg)| (cid, msg.clone()))
             .collect::<Vec<_>>();
         for (cid, msg) in msgs {

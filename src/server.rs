@@ -1,15 +1,17 @@
 use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID};
-use crate::net::{CId, DeserFn, Header, MAX_PACKET_SIZE, MAX_SAFE_PACKET_SIZE, NetError, Status, Transport};
+use crate::net::{
+    CId, DeserFn, Header, NetError, Status, Transport, MAX_PACKET_SIZE, MAX_SAFE_PACKET_SIZE,
+};
+use crate::MId;
 use hashbrown::HashMap;
 use log::{debug, error, trace, warn};
 use std::any::{Any, TypeId};
 use std::io;
-use std::io::{Error, ErrorKind, Read, Write};
 use std::io::ErrorKind::WouldBlock;
+use std::io::{Error, ErrorKind, Read, Write};
 use std::marker::PhantomData;
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::time::{Duration, Instant};
-use crate::MId;
 
 const TIMEOUT: Duration = Duration::from_millis(10_000);
 
@@ -78,10 +80,7 @@ where
     ///
     /// Creates a new [`Server`] asynchronously, passing back a oneshot receiver.
     /// This oneshot receiver allows you to wait on the connection however you like.
-    pub fn new(
-        mut listen_addr: SocketAddr,
-        parts: MsgTableParts<C, R, D>,
-    ) -> io::Result<Self> {
+    pub fn new(mut listen_addr: SocketAddr, parts: MsgTableParts<C, R, D>) -> io::Result<Self> {
         let listener = TcpListener::bind(listen_addr)?;
         listen_addr = listener.local_addr().unwrap();
         listener.set_nonblocking(true)?;
@@ -126,7 +125,10 @@ where
 				MId: {}, size: {}. Discarding packet.",
                 MAX_PACKET_SIZE, mid, total_len
             );
-            return Err(Error::new(ErrorKind::InvalidData, "The packet was too long"))
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "The packet was too long",
+            ));
         }
         if packet.len() > MAX_SAFE_PACKET_SIZE {
             warn!(
@@ -145,11 +147,12 @@ where
         }
 
         // Send
-        trace!(
-            "TCP: Sending packet with MId: {}, len: {}",
-            mid, total_len
-        );
-        let n = self.tcp.get_mut(&cid).unwrap().write(&self.buff[..total_len])?;
+        trace!("TCP: Sending packet with MId: {}, len: {}", mid, total_len);
+        let n = self
+            .tcp
+            .get_mut(&cid)
+            .unwrap()
+            .write(&self.buff[..total_len])?;
 
         // Make sure it sent correctly.
         if n != total_len {
@@ -239,7 +242,8 @@ where
         if header.mid > self.parts.mid_count() {
             let e_msg = format!(
                 "TCP: Got a packet specifying MId {}, but the maximum MId is {}.",
-                header.mid, self.parts.mid_count()
+                header.mid,
+                self.parts.mid_count()
             );
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
@@ -259,7 +263,12 @@ where
 
         // Read data.
         tcp.read_exact(&mut self.buff[..header.len])?;
-        trace!("TCP: Received msg of MId {}, len {}, from CId {}", header.mid, header.len, cid);
+        trace!(
+            "TCP: Received msg of MId {}, len {}, from CId {}",
+            header.mid,
+            header.len,
+            cid
+        );
 
         let deser_fn = match self.parts.deser.get(header.mid) {
             Some(d) => *d,
@@ -267,14 +276,18 @@ where
                 let msg = format!(
                     "Invalid MId {} read from peer. Max MId: {}.",
                     header.mid,
-                    self.parts.deser.len()-1
+                    self.parts.deser.len() - 1
                 );
                 return Err(Error::new(ErrorKind::InvalidData, msg));
             }
         };
 
-        let msg = deser_fn(&self.buff[..header.len])
-            .map_err(|_| Error::new(ErrorKind::InvalidData, "Got error when deserializing data from peer."))?;
+        let msg = deser_fn(&self.buff[..header.len]).map_err(|_| {
+            Error::new(
+                ErrorKind::InvalidData,
+                "Got error when deserializing data from peer.",
+            )
+        })?;
 
         if header.mid == DISCONNECT_TYPE_MID {
             // Remote connection disconnected.
@@ -300,7 +313,10 @@ where
         let cid = self.addr_cid[&from];
 
         if !self.alive(cid) {
-            return Err(Error::new(ErrorKind::Other, "Received data from a address that is not connected."));
+            return Err(Error::new(
+                ErrorKind::Other,
+                "Received data from a address that is not connected.",
+            ));
         }
 
         if n == 0 {
@@ -313,7 +329,8 @@ where
         if header.mid > self.parts.mid_count() {
             let e_msg = format!(
                 "UDP: Got a packet specifying MId {}, but the maximum MId is {}.",
-                header.mid, self.parts.mid_count()
+                header.mid,
+                self.parts.mid_count()
             );
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
@@ -363,11 +380,15 @@ where
                 return Err(Error::new(ErrorKind::InvalidData, e_msg));
             }
         };
-        trace!("UDP: Received msg of MId {}, len {}, from CId {}", header.mid, header.len, cid);
+        trace!(
+            "UDP: Received msg of MId {}, len {}, from CId {}",
+            header.mid,
+            header.len,
+            cid
+        );
 
         Ok((cid, header.mid, msg))
     }
-
 
     /// Disconnects from the given `cid`. You should always disconnect
     /// all clients before dropping the server to let the clients know
@@ -411,13 +432,13 @@ where
                         accept_count += 1;
                     }
                     remove.push((idx, Some(r)));
-                },
-                Ok(None) => {},
-                Err(e) if e.kind() == ErrorKind::WouldBlock => {},
+                }
+                Ok(None) => {}
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {}
                 Err(e) => {
                     error!("Error in handling a pending connection. {}", e);
                     remove.push((idx, None));
-                },
+                }
             }
         }
         for (idx, resp) in remove {
@@ -450,11 +471,14 @@ where
         buff: &mut [u8],
         deser_fn: DeserFn,
         con: &mut TcpStream,
-        time: &Instant
+        time: &Instant,
     ) -> io::Result<Option<C>> {
         // TODO: make the timeout configurable.
         if time.elapsed() > TIMEOUT {
-            return Err(Error::new(ErrorKind::TimedOut, "The new connection did not send a connection packet in time."));
+            return Err(Error::new(
+                ErrorKind::TimedOut,
+                "The new connection did not send a connection packet in time.",
+            ));
         }
 
         // Peak the first 4 bytes for the header.
@@ -464,27 +488,28 @@ where
         let h = Header::from_be_bytes(&buff[..4]);
 
         if h.mid != CONNECTION_TYPE_MID {
-            let msg = format!(
-                "Expected MId {}, got MId {}.",
-                CONNECTION_TYPE_MID, h.mid
-            );
+            let msg = format!("Expected MId {}, got MId {}.", CONNECTION_TYPE_MID, h.mid);
             return Err(Error::new(ErrorKind::InvalidData, msg));
         }
 
-        con.read_exact(&mut buff[..h.len+4])?;
+        con.read_exact(&mut buff[..h.len + 4])?;
 
-        let con_msg = deser_fn(&buff[4..h.len+4])
-            .map_err(|o| Error::new(ErrorKind::InvalidData, format!("Encountered a deserialization error when handling a new connection. {}", o)))?;
+        let con_msg = deser_fn(&buff[4..h.len + 4]).map_err(|o| {
+            Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "Encountered a deserialization error when handling a new connection. {}",
+                    o
+                ),
+            )
+        })?;
 
         let con_msg = *con_msg.downcast::<C>().unwrap();
         Ok(Some(con_msg))
     }
 
     /// Handles the disconnect events.
-    pub fn handle_disconnects(
-        &mut self,
-        hook: &mut dyn FnMut(CId, Status<D>),
-    ) -> u32 {
+    pub fn handle_disconnects(&mut self, hook: &mut dyn FnMut(CId, Status<D>)) -> u32 {
         let mut cids_to_rm = vec![];
 
         // disconnect counts.
@@ -516,7 +541,10 @@ where
     pub fn send_to<T: Any + Send + Sync>(&mut self, cid: CId, msg: &T) -> io::Result<()> {
         let tid = TypeId::of::<T>();
         if !self.valid_tid(tid) {
-            return Err(io::Error::new(ErrorKind::InvalidData, "Type not registered."));
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "Type not registered.",
+            ));
         }
         let mid = self.parts.tid_map[&tid];
         let transport = self.parts.transports[mid];
@@ -524,7 +552,12 @@ where
         let b = ser_fn(msg)
             .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Serialization Error."))?;
 
-        debug!("Sending message of MId {}, len {}, to CId {}", mid, b.len(), cid);
+        debug!(
+            "Sending message of MId {}, len {}, to CId {}",
+            mid,
+            b.len(),
+            cid
+        );
         match transport {
             Transport::TCP => self.send_tcp(cid, mid, b),
             Transport::UDP => self.send_udp(cid, mid, b),
@@ -578,8 +611,7 @@ where
     pub fn recv_msgs(&mut self) -> u32 {
         let mut i = 0;
         // TCP
-        'cid_loop:
-        for cid in self.cids().collect::<Vec<_>>() {
+        'cid_loop: for cid in self.cids().collect::<Vec<_>>() {
             // Loop through all the messages in the tcp connection.
             loop {
                 let recv = self.recv_tcp(cid);
@@ -591,7 +623,7 @@ where
                         error!("TCP: An error occurred while receiving a message. {}", e);
                         self.disconnected.push((cid, Status::Dropped(e)));
                         break;
-                    },
+                    }
                     // Got a message.
                     Ok((mid, msg)) => {
                         i += 1;
@@ -603,7 +635,7 @@ where
                         }
 
                         self.msg_buff[mid].push((cid, msg));
-                    },
+                    }
                 }
             }
         }
@@ -618,12 +650,12 @@ where
                 Err(e) => {
                     error!("UDP: An error occurred while receiving a message. {}", e);
                     break;
-                },
+                }
                 // Got a message.
                 Ok((cid, mid, msg)) => {
                     self.msg_buff[mid].push((cid, msg));
                     i += 1;
-                },
+                }
             }
         }
 

@@ -1,10 +1,10 @@
 //! Networking things that are not specific to either transport.
 
+pub use crate::header::Header;
 use std::any::Any;
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::Error;
-pub use crate::header::Header;
 
 /// The maximum safe packet size that can be sent on udp,
 /// after taking off the possible overheads from the transport.
@@ -16,7 +16,6 @@ pub const MAX_SAFE_PACKET_SIZE: usize = 504;
 /// The absolute maximum packet size that can be received.
 /// This is used for sizing the buffer.
 pub const MAX_PACKET_SIZE: usize = 1024;
-
 
 /// An enum representing the 2 possible transports.
 ///
@@ -103,7 +102,7 @@ impl<D> Status<D> {
         }
     }
 
-    pub fn dropped(&self) -> Option<&Error>{
+    pub fn dropped(&self) -> Option<&Error> {
         match self {
             Status::Dropped(e) => Some(e),
             _ => None,
