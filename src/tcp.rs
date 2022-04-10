@@ -23,17 +23,6 @@ impl TcpCon {
         }
     }
 
-    /// Creates a new [`TcpCon`] by creating a new [`TcpStream`] that connects to `peer`.
-    /// The TcpStream that is created is set to non-blocking.
-    pub fn new(peer: SocketAddr) -> io::Result<Self> {
-        let tcp = TcpStream::connect(peer)?;
-        tcp.set_nonblocking(true)?;
-        Ok(TcpCon {
-            buff: [0; MAX_MESSAGE_SIZE],
-            tcp,
-        })
-    }
-
     /// Sends the payload `payload` to the peer.
     ///
     /// This constructs a header, and builds the message, and sends it.
@@ -111,12 +100,12 @@ impl TcpCon {
     }
 
     /// Returns the socket address of the remote peer of this TCP connection.
-    pub fn peer_addr(&self) -> SocketAddr {
-        self.tcp.peer_addr().unwrap()
+    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
+        self.tcp.peer_addr()
     }
 
     /// Returns the socket address of the local half of this TCP connection.
-    pub fn local_addr(&self) -> SocketAddr {
-        self.tcp.local_addr().unwrap()
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.tcp.local_addr()
     }
 }
