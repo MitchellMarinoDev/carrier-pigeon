@@ -1,9 +1,9 @@
+use crate::net::{MAX_MESSAGE_SIZE, MAX_SAFE_MESSAGE_SIZE};
+use crate::{Header, MId};
+use log::{error, trace, warn};
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, UdpSocket};
-use log::{error, trace, warn};
-use crate::{Header, MId};
-use crate::net::{MAX_MESSAGE_SIZE, MAX_SAFE_MESSAGE_SIZE};
 
 /// A type wrapping a [`UdpSocket`].
 ///
@@ -31,7 +31,12 @@ impl UdpCon {
     pub fn send_to(&mut self, addr: SocketAddr, mid: MId, payload: Vec<u8>) -> io::Result<()> {
         let total_len = self.send_shared(mid, payload)?;
 
-        trace!("UDP: Sending packet with MId: {}, len: {} to {}.", mid, total_len, addr);
+        trace!(
+            "UDP: Sending packet with MId: {}, len: {} to {}.",
+            mid,
+            total_len,
+            addr
+        );
         let n = self.udp.send_to(&self.buff[..total_len], addr)?;
 
         // Make sure it sent correctly.
@@ -97,11 +102,7 @@ impl UdpCon {
     pub fn recv(&mut self) -> io::Result<(MId, &[u8])> {
         let n = self.udp.recv(&mut self.buff)?;
         let (mid, bytes) = self.recv_shared(n)?;
-        trace!(
-            "UDP: Received msg of MId {}, len {}",
-            mid,
-            bytes.len()
-        );
+        trace!("UDP: Received msg of MId {}, len {}", mid, bytes.len());
         Ok((mid, bytes))
     }
 
@@ -151,7 +152,7 @@ impl UdpCon {
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
 
-        Ok((header.mid, &self.buff[4..header.len+4]))
+        Ok((header.mid, &self.buff[4..header.len + 4]))
     }
 
     /// Moves the internal [`TcpStream`] into or out of nonblocking mode.

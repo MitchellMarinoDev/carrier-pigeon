@@ -1,7 +1,7 @@
 use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID};
-use crate::net::{
-    CId, DeserFn, Header, NetError, Status, Transport, MAX_MESSAGE_SIZE,
-};
+use crate::net::{CId, DeserFn, Header, NetError, Status, Transport, MAX_MESSAGE_SIZE};
+use crate::tcp::TcpCon;
+use crate::udp::UdpCon;
 use crate::MId;
 use hashbrown::HashMap;
 use log::{debug, error};
@@ -12,8 +12,6 @@ use std::io::{Error, ErrorKind, Read};
 use std::marker::PhantomData;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::{Duration, Instant};
-use crate::tcp::TcpCon;
-use crate::udp::UdpCon;
 
 const TIMEOUT: Duration = Duration::from_millis(10_000);
 
@@ -286,7 +284,8 @@ where
         if !self.parts.valid_mid(mid) {
             let e_msg = format!(
                 "TCP: Got a packet specifying MId {}, but the maximum MId is {}.",
-                mid, self.parts.mid_count()
+                mid,
+                self.parts.mid_count()
             );
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
@@ -308,7 +307,8 @@ where
         if !self.parts.valid_mid(mid) {
             let e_msg = format!(
                 "TCP: Got a packet specifying MId {}, but the maximum MId is {}.",
-                mid, self.parts.mid_count()
+                mid,
+                self.parts.mid_count()
             );
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
@@ -318,10 +318,12 @@ where
 
         let cid = match self.addr_cid.get(&from) {
             Some(&cid) if self.alive(cid) => cid,
-            _ => return Err(Error::new(
-                ErrorKind::Other,
-                "Received data from a address that is not connected.",
-            )),
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::Other,
+                    "Received data from a address that is not connected.",
+                ))
+            }
         };
 
         Ok((cid, mid, msg))
@@ -373,7 +375,8 @@ where
 
     /// Broadcasts a message to all connected clients except the [`CId`] `cid`.
     pub fn broadcast_except<T: Any + Send + Sync>(&mut self, msg: &T, cid: CId) -> io::Result<()> {
-        for cid in self.cids()
+        for cid in self
+            .cids()
             .filter(|o_cid| *o_cid != cid)
             .collect::<Vec<_>>()
         {
@@ -427,9 +430,6 @@ where
         }
         i
 
-
-
-
         // // TCP
         // 'cid_loop: for cid in self.cids().collect::<Vec<_>>() {
         //     // Loop through all the messages in the tcp connection.
@@ -479,8 +479,6 @@ where
         //     }
         // }
 
-
-
         // let deser_fn = match self.parts.deser.get(header.mid) {
         //             Some(d) => *d,
         //             None => {
@@ -515,7 +513,12 @@ where
     /// Otherwise it adds it to the msg buffer.
     ///
     /// returns weather the tcp connection is done yielding messages.
-    fn handle_tcp(&mut self, count: &mut u32, cid: CId, msg: io::Result<(CId, MId, Box<dyn Any + Send + Sync>)>) -> bool {
+    fn handle_tcp(
+        &mut self,
+        count: &mut u32,
+        cid: CId,
+        msg: io::Result<(CId, MId, Box<dyn Any + Send + Sync>)>,
+    ) -> bool {
         match msg {
             Err(e) if e.kind() == WouldBlock => true,
             // Other error occurred.
@@ -548,7 +551,11 @@ where
     /// Otherwise it adds it to the msg buffer.
     ///
     /// returns weather the udp connection is done yielding messages.
-    fn handle_udp(&mut self, count: &mut u32, msg: io::Result<(CId, MId, Box<dyn Any + Send + Sync>)>) -> bool {
+    fn handle_udp(
+        &mut self,
+        count: &mut u32,
+        msg: io::Result<(CId, MId, Box<dyn Any + Send + Sync>)>,
+    ) -> bool {
         match msg {
             Err(e) if e.kind() == WouldBlock => true,
             // Other error occurred.

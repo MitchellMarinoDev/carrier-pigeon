@@ -128,11 +128,14 @@ impl MsgTable {
         let deser_fn: DeserFn = |bytes: &[u8]| {
             bincode::deserialize::<T>(bytes)
                 .map(|d| Box::new(d) as Box<dyn Any + Send + Sync>)
-                .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("Deser Error: {}", o)))
+                .map_err(|o| {
+                    io::Error::new(io::ErrorKind::InvalidData, format!("Deser Error: {}", o))
+                })
         };
         let ser_fn: SerFn = |m: &(dyn Any + Send + Sync)| {
-            bincode::serialize(m.downcast_ref::<T>().unwrap())
-                .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("Ser Error: {}", o)))
+            bincode::serialize(m.downcast_ref::<T>().unwrap()).map_err(|o| {
+                io::Error::new(io::ErrorKind::InvalidData, format!("Ser Error: {}", o))
+            })
         };
 
         Ok((tid, transport, ser_fn, deser_fn))
@@ -262,11 +265,14 @@ impl SortedMsgTable {
         let deser_fn: DeserFn = |bytes: &[u8]| {
             bincode::deserialize::<T>(bytes)
                 .map(|d| Box::new(d) as Box<dyn Any + Send + Sync>)
-                .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("Deser Error: {}", o)))
+                .map_err(|o| {
+                    io::Error::new(io::ErrorKind::InvalidData, format!("Deser Error: {}", o))
+                })
         };
         let ser_fn: SerFn = |m: &(dyn Any + Send + Sync)| {
-            bincode::serialize(m.downcast_ref::<T>().unwrap())
-                .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("Ser Error: {}", o)))
+            bincode::serialize(m.downcast_ref::<T>().unwrap()).map_err(|o| {
+                io::Error::new(io::ErrorKind::InvalidData, format!("Ser Error: {}", o))
+            })
         };
 
         Ok((identifier, tid, transport, ser_fn, deser_fn))

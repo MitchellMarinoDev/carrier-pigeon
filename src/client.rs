@@ -1,5 +1,7 @@
 use crate::message_table::{MsgTableParts, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID};
 use crate::net::{Status, Transport};
+use crate::tcp::TcpCon;
+use crate::udp::UdpCon;
 use crate::MId;
 use crossbeam_channel::internal::SelectHandle;
 use crossbeam_channel::Receiver;
@@ -11,8 +13,6 @@ use std::io::{Error, ErrorKind};
 use std::marker::PhantomData;
 use std::net::{SocketAddr, TcpStream};
 use std::time::Duration;
-use crate::tcp::TcpCon;
-use crate::udp::UdpCon;
 
 /// A Client connection.
 ///
@@ -91,7 +91,6 @@ where
             udp.peer_addr().unwrap()
         );
 
-
         let mid_count = parts.tid_map.len();
         let mut msg_buff = Vec::with_capacity(mid_count);
         for _ in 0..mid_count {
@@ -157,7 +156,8 @@ where
         if !self.parts.valid_mid(mid) {
             let e_msg = format!(
                 "TCP: Got a packet specifying MId {}, but the maximum MId is {}.",
-                mid, self.parts.mid_count()
+                mid,
+                self.parts.mid_count()
             );
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
@@ -179,7 +179,8 @@ where
         if !self.parts.valid_mid(mid) {
             let e_msg = format!(
                 "TCP: Got a packet specifying MId {}, but the maximum MId is {}.",
-                mid, self.parts.mid_count()
+                mid,
+                self.parts.mid_count()
             );
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }

@@ -1,6 +1,6 @@
-use io::Error;
 use crate::net::{Header, MAX_MESSAGE_SIZE};
 use crate::MId;
+use io::Error;
 use log::{error, trace};
 use std::io;
 use std::io::{ErrorKind, Read, Write};
@@ -56,9 +56,19 @@ impl TcpCon {
     pub fn recv(&mut self) -> io::Result<(MId, &[u8])> {
         // Peak the first 4 bytes for the header.
         match self.tcp.peek(&mut self.buff[..4])? {
-            4 => {}, // Success
-            0 => return Err(Error::new(ErrorKind::ConnectionAborted, "TCP: The peer closed the connection.")),
-            _ => return Err(Error::new(ErrorKind::WouldBlock, "Data for entire message has not arrived yet.")),
+            4 => {} // Success
+            0 => {
+                return Err(Error::new(
+                    ErrorKind::ConnectionAborted,
+                    "TCP: The peer closed the connection.",
+                ))
+            }
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::WouldBlock,
+                    "Data for entire message has not arrived yet.",
+                ))
+            }
         }
         let header = Header::from_be_bytes(&self.buff[..4]);
         let total_expected_len = header.len + 4;
@@ -78,14 +88,14 @@ impl TcpCon {
         }
 
         // Read data. The header will be read again as it was peaked earlier.
-        self.tcp.read_exact(&mut self.buff[..header.len+4])?;
+        self.tcp.read_exact(&mut self.buff[..header.len + 4])?;
         trace!(
             "TCP: Received msg of MId {}, len {}",
             header.mid,
             total_expected_len,
         );
 
-        Ok((header.mid, &self.buff[4..header.len+4]))
+        Ok((header.mid, &self.buff[4..header.len + 4]))
     }
 
     /// Moves the internal [`TcpStream`] into or out of nonblocking mode.
