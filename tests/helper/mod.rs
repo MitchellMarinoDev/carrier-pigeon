@@ -3,7 +3,6 @@
 
 use crate::helper::test_packets::{get_table_parts, Connection, Disconnect, Response};
 use log::debug;
-use tokio::runtime::Handle;
 
 pub mod test_packets;
 

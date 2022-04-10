@@ -7,7 +7,7 @@ use crate::helper::test_packets::UdpPacket;
 mod helper;
 
 #[bench]
-fn send_single_udp_big(b: &mut Bencher) {
+fn single_udp_big(b: &mut Bencher) {
     let (mut client, mut server) = helper::create_client_server_pair();
 
     let string: String = vec!['A'; 504].into_iter().collect();
@@ -23,7 +23,7 @@ fn send_single_udp_big(b: &mut Bencher) {
 }
 
 #[bench]
-fn send_single_udp_small(b: &mut Bencher) {
+fn single_udp_small(b: &mut Bencher) {
     let (mut client, mut server) = helper::create_client_server_pair();
 
     let string: String = vec!['A'; 10].into_iter().collect();
@@ -39,7 +39,7 @@ fn send_single_udp_small(b: &mut Bencher) {
 }
 
 #[bench]
-fn send_multiple_udp_big(b: &mut Bencher) {
+fn many_udp_big(b: &mut Bencher) {
     let (mut client, mut server) = helper::create_client_server_pair();
 
     let string: String = vec!['A'; 504].into_iter().collect();
@@ -59,7 +59,7 @@ fn send_multiple_udp_big(b: &mut Bencher) {
 }
 
 #[bench]
-fn send_multiple_udp_small(b: &mut Bencher) {
+fn many_udp_small(b: &mut Bencher) {
     let (mut client, mut server) = helper::create_client_server_pair();
 
     let string: String = vec!['A'; 10].into_iter().collect();
