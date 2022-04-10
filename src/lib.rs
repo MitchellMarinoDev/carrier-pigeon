@@ -24,3 +24,4 @@ pub use client::Client;
 pub use message_table::{MsgRegError, MsgTable, MsgTableParts, SortedMsgTable};
 pub use net::{CId, MId, NetError, Transport};
 pub use server::Server;
+pub use header::Header;

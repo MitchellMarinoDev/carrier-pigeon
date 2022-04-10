@@ -10,7 +10,7 @@ mod helper;
 fn send_recv() {
     // Create a simple logger
     let _ = SimpleLogger::new()
-        .with_level(log::LevelFilter::Debug)
+        .with_level(log::LevelFilter::Trace)
         .init();
 
     // CLIENT TO SERVER

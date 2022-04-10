@@ -8,10 +8,7 @@ mod helper;
 
 #[bench]
 fn send_single_udp_big(b: &mut Bencher) {
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let rt = runtime.handle();
-
-    let (client, mut server) = helper::create_client_server_pair(rt.clone());
+    let (mut client, mut server) = helper::create_client_server_pair();
 
     let string: String = vec!['A'; 504].into_iter().collect();
     let msg = UdpPacket::new(string);
@@ -27,10 +24,7 @@ fn send_single_udp_big(b: &mut Bencher) {
 
 #[bench]
 fn send_single_udp_small(b: &mut Bencher) {
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let rt = runtime.handle();
-
-    let (client, mut server) = helper::create_client_server_pair(rt.clone());
+    let (mut client, mut server) = helper::create_client_server_pair();
 
     let string: String = vec!['A'; 10].into_iter().collect();
     let msg = UdpPacket::new(string);
@@ -46,10 +40,7 @@ fn send_single_udp_small(b: &mut Bencher) {
 
 #[bench]
 fn send_multiple_udp_big(b: &mut Bencher) {
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let rt = runtime.handle();
-
-    let (client, mut server) = helper::create_client_server_pair(rt.clone());
+    let (mut client, mut server) = helper::create_client_server_pair();
 
     let string: String = vec!['A'; 504].into_iter().collect();
     let msg = UdpPacket::new(string);
@@ -69,10 +60,7 @@ fn send_multiple_udp_big(b: &mut Bencher) {
 
 #[bench]
 fn send_multiple_udp_small(b: &mut Bencher) {
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let rt = runtime.handle();
-
-    let (client, mut server) = helper::create_client_server_pair(rt.clone());
+    let (mut client, mut server) = helper::create_client_server_pair();
 
     let string: String = vec!['A'; 10].into_iter().collect();
     let msg = UdpPacket::new(string);

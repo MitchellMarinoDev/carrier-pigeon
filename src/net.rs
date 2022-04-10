@@ -6,16 +6,21 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::Error;
 
-/// The maximum safe packet size that can be sent on udp,
+/// The maximum safe message size that can be sent on udp,
 /// after taking off the possible overheads from the transport.
 ///
-/// Note that `carrier-pigeon` imposes a 4 byte overhead on every message.
-/// This overhead ***is*** accounted for in this const.
-pub const MAX_SAFE_PACKET_SIZE: usize = 504;
+/// Note that `carrier-pigeon` imposes a 4-byte overhead on every message so
+/// the data may be `MAX_SAFE_MESSAGE_SIZE - 4` or less to be guaranteed to be
+/// deliverable on udp.
+/// [source](https://newbedev.com/what-is-the-largest-safe-udp-packet-size-on-the-internet/)
+pub const MAX_SAFE_MESSAGE_SIZE: usize = 508;
 
-/// The absolute maximum packet size that can be received.
-/// This is used for sizing the buffer.
-pub const MAX_PACKET_SIZE: usize = 1024;
+/// The absolute maximum packet size that can be received. This is used for
+/// sizing the buffer.
+///
+/// Note that `carrier-pigeon` imposes a 4-byte overhead on every message so
+/// the data must be `MAX_MESSAGE_SIZE - 4` or less.
+pub const MAX_MESSAGE_SIZE: usize = 2048;
 
 /// An enum representing the 2 possible transports.
 ///

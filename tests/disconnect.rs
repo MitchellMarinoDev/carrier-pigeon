@@ -26,9 +26,7 @@ fn graceful_disconnect() {
         // Give the client enough time to send the disconnect packet.
         std::thread::sleep(Duration::from_millis(100));
 
-        debug!("Attempting to receive msgs");
         let recv_count = server.recv_msgs();
-        debug!("Msgs recieved");
         let discon_count = server.handle_disconnects(&mut |_cid, status| {
             assert_eq!(
                 status.disconnected(),

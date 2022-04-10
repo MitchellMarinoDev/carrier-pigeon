@@ -1,5 +1,5 @@
 use crate::message_table::{MsgTableParts, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID};
-use crate::net::{Header, Status, Transport, MAX_PACKET_SIZE, MAX_SAFE_PACKET_SIZE};
+use crate::net::{Header, Status, Transport, MAX_MESSAGE_SIZE, MAX_SAFE_MESSAGE_SIZE};
 use crate::MId;
 use crossbeam_channel::internal::SelectHandle;
 use crossbeam_channel::Receiver;
@@ -25,7 +25,7 @@ where
 {
     status: Status<D>,
     /// The buffer used for sending and receiving packets
-    buff: [u8; MAX_PACKET_SIZE],
+    buff: [u8; MAX_MESSAGE_SIZE],
     /// The received message buffer.
     ///
     /// Each [`MId`] has its own vector.
@@ -99,7 +99,7 @@ where
 
         let mut client = Client {
             status: Status::Connected,
-            buff: [0; MAX_PACKET_SIZE],
+            buff: [0; MAX_MESSAGE_SIZE],
             msg_buff,
             tcp,
             udp,
@@ -141,18 +141,18 @@ where
     fn send_tcp(&mut self, mid: MId, packet: Vec<u8>) -> io::Result<()> {
         let total_len = packet.len() + 4;
         // Check if the packet is valid, and should be sent.
-        if total_len > MAX_PACKET_SIZE {
+        if total_len > MAX_MESSAGE_SIZE {
             error!(
                 "TCP: Outgoing packet size is greater than the maximum packet size ({}). \
 				MId: {}, size: {}. Discarding packet.",
-                MAX_PACKET_SIZE, mid, total_len
+                MAX_MESSAGE_SIZE, mid, total_len
             );
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
                 "The packet was too long",
             ));
         }
-        if packet.len() > MAX_SAFE_PACKET_SIZE {
+        if packet.len() > MAX_SAFE_MESSAGE_SIZE {
             warn!(
                 "TCP: Outgoing packet size is greater than the maximum SAFE packet size.\
 			    MId: {}, size: {}. Sending packet anyway.",
@@ -188,17 +188,17 @@ where
         let total_len = packet.len() + 4;
 
         // Check if the packet is valid, and should be sent.
-        if total_len > MAX_PACKET_SIZE {
+        if total_len > MAX_MESSAGE_SIZE {
             let msg = format!(
                 "UDP: Outgoing packet size is greater than the maximum packet size ({}). \
                 MId: {}, size: {}. Discarding packet.",
-                MAX_PACKET_SIZE, mid, total_len
+                MAX_MESSAGE_SIZE, mid, total_len
             );
             error!("{}", msg);
             return Err(io::Error::new(ErrorKind::InvalidData, msg));
         }
 
-        if total_len > MAX_SAFE_PACKET_SIZE {
+        if total_len > MAX_SAFE_MESSAGE_SIZE {
             warn!(
                 "UDP: Outgoing packet size is greater than the maximum SAFE packet size.\
                 MId: {}, size: {}. Sending packet anyway.",
@@ -256,14 +256,14 @@ where
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
 
-        if header.len + 4 > MAX_PACKET_SIZE {
+        if header.len + 4 > MAX_MESSAGE_SIZE {
             let e_msg = format!(
                 "TCP: The header of a received packet indicates a size of {},\
 	                but the max allowed packet size is {}.\
 					carrier-pigeon never sends a packet greater than this. \
 					This packet was likely not sent by carrier-pigeon. \
 	                Discarding this packet.",
-                header.len, MAX_PACKET_SIZE
+                header.len, MAX_MESSAGE_SIZE
             );
             error!("{}", e_msg);
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
@@ -330,14 +330,14 @@ where
         }
         let total_expected_len = header.len + 4;
 
-        if total_expected_len > MAX_PACKET_SIZE {
+        if total_expected_len > MAX_MESSAGE_SIZE {
             let e_msg = format!(
                 "UDP: The header of a received packet indicates a size of {}, \
                 but the max allowed packet size is {}.\
                 carrier-pigeon never sends a packet greater than this. \
                 This packet was likely not sent by carrier-pigeon. \
                 Discarding this packet.",
-                total_expected_len, MAX_PACKET_SIZE
+                total_expected_len, MAX_MESSAGE_SIZE
             );
             error!("{}", e_msg);
             return Err(Error::new(ErrorKind::InvalidData, e_msg));

@@ -1,15 +1,16 @@
 use crate::MId;
 
+// TODO: perhaps use a union here.
 /// A header to be sent before the actual contents of the packet.
 ///
-/// `len` and `mid` are sent as u16s.
+/// `len` and `mid` are sent as big endian u16s.
 /// This means they have a max value of **`65535`**.
 /// This shouldn't pose any real issues.
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 pub struct Header {
     /// The message id.
     pub mid: MId,
-    /// Then length of the packet without the header.
+    /// Then length of the packet ***without the header***.
     pub len: usize,
 }
 
