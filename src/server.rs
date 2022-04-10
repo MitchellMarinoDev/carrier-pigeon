@@ -268,7 +268,7 @@ where
             None => return Err(Error::new(ErrorKind::InvalidData, "Invalid CId.")),
         };
 
-        self.udp.send(mid, addr, payload)
+        self.udp.send_to(addr, mid, payload)
     }
 
     /// A function that encapsulates the receiving logic for the TCP transport.
@@ -294,12 +294,6 @@ where
         let deser_fn = self.parts.deser[mid];
         let msg = deser_fn(bytes)?;
 
-        // TODO: move
-        if mid == DISCONNECT_TYPE_MID {
-            // Remote connection disconnected.
-            debug!("TCP: Connection {} sent disconnect packet.", cid);
-        }
-
         Ok((cid, mid, msg))
     }
 
@@ -309,7 +303,7 @@ where
     /// no more packets can be yielded without blocking. [`InvalidData`] likely means
     /// carrier-pigeon detected bad data.
     pub fn recv_udp(&mut self) -> io::Result<(CId, MId, Box<dyn Any + Send + Sync>)> {
-        let (from, mid, bytes) = self.udp.recv()?;
+        let (from, mid, bytes) = self.udp.recv_from()?;
 
         if !self.parts.valid_mid(mid) {
             let e_msg = format!(
@@ -415,14 +409,11 @@ where
         // TODO: dont collect after interior mutability send impl.
         for cid in self.cids().collect::<Vec<_>>() {
             loop {
-                println!("looping");
-
                 let msg = self.recv_tcp(cid);
                 if self.handle_tcp(&mut i, cid, msg) {
                     // Done yielding messages.
                     break;
                 }
-
             }
         }
 
@@ -622,7 +613,7 @@ where
     fn add_tcp_con(&mut self, con: TcpCon) -> CId {
         self.current_cid += 1;
         let cid = self.current_cid;
-        let peer_addr = con.peer_addr();
+        let peer_addr = con.peer_addr().unwrap();
         self.tcp.insert(cid, con);
         self.addr_cid.insert(peer_addr, cid);
         self.cid_addr.insert(cid, peer_addr);
