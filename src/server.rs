@@ -4,7 +4,7 @@ use crate::net::{
 };
 use crate::MId;
 use hashbrown::HashMap;
-use log::{debug, error, trace};
+use log::{debug, error};
 use std::any::{Any, TypeId};
 use std::io;
 use std::io::ErrorKind::WouldBlock;
@@ -80,8 +80,7 @@ where
 {
     /// Creates a new [`Server`].
     ///
-    /// Creates a new [`Server`] asynchronously, passing back a oneshot receiver.
-    /// This oneshot receiver allows you to wait on the connection however you like.
+    /// Creates a new [`Server`] listening on the address `listen_addr`.
     pub fn new(mut listen_addr: SocketAddr, parts: MsgTableParts<C, R, D>) -> io::Result<Self> {
         let listener = TcpListener::bind(listen_addr)?;
         listen_addr = listener.local_addr().unwrap();
@@ -110,88 +109,6 @@ where
             parts,
             _pd: PhantomData,
         })
-    }
-
-    /// A function that encapsulates the sending logic for the TCP transport.
-    fn send_tcp(&mut self, cid: CId, mid: MId, payload: Vec<u8>) -> io::Result<()> {
-        let tcp = match self.tcp.get_mut(&cid) {
-            Some(tcp) => tcp,
-            None => return Err(Error::new(ErrorKind::InvalidData, "Invalid CId.")),
-        };
-
-        tcp.send(mid, payload)
-    }
-
-    /// A function that encapsulates the sending logic for the UDP transport.
-    fn send_udp(&mut self, cid: CId, mid: MId, payload: Vec<u8>) -> io::Result<()> {
-        let addr = match self.cid_addr.get(&cid) {
-            Some(addr) => *addr,
-            None => return Err(Error::new(ErrorKind::InvalidData, "Invalid CId.")),
-        };
-
-        self.udp.send(mid, addr, payload)
-    }
-
-    /// A function that encapsulates the receiving logic for the TCP transport.
-    ///
-    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
-    /// no more packets can be yielded without blocking.
-    fn recv_tcp(&mut self, cid: CId) -> io::Result<(CId, MId, Box<dyn Any + Send + Sync>)> {
-        let tcp = match self.tcp.get_mut(&cid) {
-            Some(tcp) => tcp,
-            None => return Err(Error::new(ErrorKind::InvalidData, "Invalid CId.")),
-        };
-
-        let (mid, bytes) = tcp.recv()?;
-
-        if !self.parts.valid_mid(mid) {
-            let e_msg = format!(
-                "TCP: Got a packet specifying MId {}, but the maximum MId is {}.",
-                mid, self.parts.mid_count()
-            );
-            return Err(Error::new(ErrorKind::InvalidData, e_msg));
-        }
-
-        let deser_fn = self.parts.deser[mid];
-        let msg = deser_fn(bytes)?;
-
-        // TODO: move
-        if mid == DISCONNECT_TYPE_MID {
-            // Remote connection disconnected.
-            debug!("TCP: Connection {} sent disconnect packet.", cid);
-        }
-
-        Ok((cid, mid, msg))
-    }
-
-    /// A function that encapsulates the receiving logic for the UDP transport.
-    ///
-    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
-    /// no more packets can be yielded without blocking. [`InvalidData`] likely means
-    /// carrier-pigeon detected bad data.
-    pub fn recv_udp(&mut self) -> io::Result<(CId, MId, Box<dyn Any + Send + Sync>)> {
-        let (from, mid, bytes) = self.udp.recv()?;
-
-        if !self.parts.valid_mid(mid) {
-            let e_msg = format!(
-                "TCP: Got a packet specifying MId {}, but the maximum MId is {}.",
-                mid, self.parts.mid_count()
-            );
-            return Err(Error::new(ErrorKind::InvalidData, e_msg));
-        }
-
-        let deser_fn = self.parts.deser[mid];
-        let msg = deser_fn(bytes)?;
-
-        let cid = match self.addr_cid.get(&from) {
-            Some(&cid) if self.alive(cid) => cid,
-            _ => return Err(Error::new(
-                ErrorKind::Other,
-                "Received data from a address that is not connected.",
-            )),
-        };
-
-        Ok((cid, mid, msg))
     }
 
     /// Disconnects from the given `cid`. You should always disconnect
@@ -334,6 +251,88 @@ where
         i
     }
 
+    /// A function that encapsulates the sending logic for the TCP transport.
+    fn send_tcp(&mut self, cid: CId, mid: MId, payload: Vec<u8>) -> io::Result<()> {
+        let tcp = match self.tcp.get_mut(&cid) {
+            Some(tcp) => tcp,
+            None => return Err(Error::new(ErrorKind::InvalidData, "Invalid CId.")),
+        };
+
+        tcp.send(mid, payload)
+    }
+
+    /// A function that encapsulates the sending logic for the UDP transport.
+    fn send_udp(&mut self, cid: CId, mid: MId, payload: Vec<u8>) -> io::Result<()> {
+        let addr = match self.cid_addr.get(&cid) {
+            Some(addr) => *addr,
+            None => return Err(Error::new(ErrorKind::InvalidData, "Invalid CId.")),
+        };
+
+        self.udp.send(mid, addr, payload)
+    }
+
+    /// A function that encapsulates the receiving logic for the TCP transport.
+    ///
+    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
+    /// no more packets can be yielded without blocking.
+    fn recv_tcp(&mut self, cid: CId) -> io::Result<(CId, MId, Box<dyn Any + Send + Sync>)> {
+        let tcp = match self.tcp.get_mut(&cid) {
+            Some(tcp) => tcp,
+            None => return Err(Error::new(ErrorKind::InvalidData, "Invalid CId.")),
+        };
+
+        let (mid, bytes) = tcp.recv()?;
+
+        if !self.parts.valid_mid(mid) {
+            let e_msg = format!(
+                "TCP: Got a packet specifying MId {}, but the maximum MId is {}.",
+                mid, self.parts.mid_count()
+            );
+            return Err(Error::new(ErrorKind::InvalidData, e_msg));
+        }
+
+        let deser_fn = self.parts.deser[mid];
+        let msg = deser_fn(bytes)?;
+
+        // TODO: move
+        if mid == DISCONNECT_TYPE_MID {
+            // Remote connection disconnected.
+            debug!("TCP: Connection {} sent disconnect packet.", cid);
+        }
+
+        Ok((cid, mid, msg))
+    }
+
+    /// A function that encapsulates the receiving logic for the UDP transport.
+    ///
+    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
+    /// no more packets can be yielded without blocking. [`InvalidData`] likely means
+    /// carrier-pigeon detected bad data.
+    pub fn recv_udp(&mut self) -> io::Result<(CId, MId, Box<dyn Any + Send + Sync>)> {
+        let (from, mid, bytes) = self.udp.recv()?;
+
+        if !self.parts.valid_mid(mid) {
+            let e_msg = format!(
+                "TCP: Got a packet specifying MId {}, but the maximum MId is {}.",
+                mid, self.parts.mid_count()
+            );
+            return Err(Error::new(ErrorKind::InvalidData, e_msg));
+        }
+
+        let deser_fn = self.parts.deser[mid];
+        let msg = deser_fn(bytes)?;
+
+        let cid = match self.addr_cid.get(&from) {
+            Some(&cid) if self.alive(cid) => cid,
+            _ => return Err(Error::new(
+                ErrorKind::Other,
+                "Received data from a address that is not connected.",
+            )),
+        };
+
+        Ok((cid, mid, msg))
+    }
+
     /// Sends a message to the [`CId`] `cid`.
     ///
     /// ## Errors
@@ -380,10 +379,7 @@ where
 
     /// Broadcasts a message to all connected clients except the [`CId`] `cid`.
     pub fn broadcast_except<T: Any + Send + Sync>(&mut self, msg: &T, cid: CId) -> io::Result<()> {
-        for cid in self
-            .cid_addr
-            .iter()
-            .map(|t| *t.0)
+        for cid in self.cids()
             .filter(|o_cid| *o_cid != cid)
             .collect::<Vec<_>>()
         {
