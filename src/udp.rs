@@ -14,15 +14,8 @@ pub(crate) struct UdpCon {
 }
 
 impl UdpCon {
-    /// Creates a new [`UdpCon`] from the [`UdpSocket`] `udp`.
-    pub fn from_socket(udp: UdpSocket) -> Self {
-        UdpCon {
-            buff: [0; MAX_MESSAGE_SIZE],
-            udp,
-        }
-    }
-
     /// Creates a new [`UdpCon`] by creating a new [`UdpSocket`] that connects to `peer`.
+    /// Sets the socket to non-blocking.
     pub fn new(local: SocketAddr, peer: Option<SocketAddr>) -> io::Result<Self> {
         let udp = UdpSocket::bind(local)?;
         if let Some(peer) = peer {
@@ -35,7 +28,42 @@ impl UdpCon {
         })
     }
 
-    pub fn send(&mut self, mid: MId, addr: SocketAddr, payload: Vec<u8>) -> io::Result<()> {
+    pub fn send_to(&mut self, addr: SocketAddr, mid: MId, payload: Vec<u8>) -> io::Result<()> {
+        let total_len = self.send_shared(mid, payload)?;
+
+        trace!("UDP: Sending packet with MId: {}, len: {} to {}.", mid, total_len, addr);
+        let n = self.udp.send_to(&self.buff[..total_len], addr)?;
+
+        // Make sure it sent correctly.
+        if n != total_len {
+            error!(
+                "UDP: Couldn't send all the bytes of a packet (mid: {}). \
+				Wanted to send {} but could only send {}",
+                mid, total_len, n
+            );
+        }
+        Ok(())
+    }
+
+    pub fn send(&mut self, mid: MId, payload: Vec<u8>) -> io::Result<()> {
+        let total_len = self.send_shared(mid, payload)?;
+
+        trace!("UDP: Sending packet with MId: {}, len: {}.", mid, total_len);
+        let n = self.udp.send(&self.buff[..total_len])?;
+
+        // Make sure it sent correctly.
+        if n != total_len {
+            error!(
+                "UDP: Couldn't send all the bytes of a packet (mid: {}). \
+				Wanted to send {} but could only send {}.",
+                mid, total_len, n
+            );
+        }
+        Ok(())
+    }
+
+    /// The shared code for sending a message.
+    fn send_shared(&mut self, mid: MId, payload: Vec<u8>) -> io::Result<usize> {
         let total_len = payload.len() + 4;
         // Check if the packet is valid, and should be sent.
         if total_len > MAX_MESSAGE_SIZE {
@@ -63,26 +91,34 @@ impl UdpCon {
         for (i, b) in h_bytes.into_iter().chain(payload.into_iter()).enumerate() {
             self.buff[i] = b;
         }
-
-        // Send
-        trace!("UDP: Sending packet with MId: {}, len: {}", mid, total_len);
-        let n = self.udp.send_to(&self.buff[..total_len], addr)?;
-
-        // Make sure it sent correctly.
-        if n != total_len {
-            error!(
-                "UDP: Couldn't send all the bytes of a packet (mid: {}). \
-				Wanted to send {} but could only send {}",
-                mid, total_len, n
-            );
-        }
-        Ok(())
+        Ok(total_len)
     }
 
-    pub fn recv(&mut self) -> io::Result<(SocketAddr, MId, &[u8])> {
-        // Receive the data.
-        let (n, from) = self.udp.recv_from(&mut self.buff)?;
+    pub fn recv(&mut self) -> io::Result<(MId, &[u8])> {
+        let n = self.udp.recv(&mut self.buff)?;
+        let (mid, bytes) = self.recv_shared(n)?;
+        trace!(
+            "UDP: Received msg of MId {}, len {}",
+            mid,
+            bytes.len()
+        );
+        Ok((mid, bytes))
+    }
 
+    pub fn recv_from(&mut self) -> io::Result<(SocketAddr, MId, &[u8])> {
+        let (n, from) = self.udp.recv_from(&mut self.buff)?;
+        let (mid, bytes) = self.recv_shared(n)?;
+        trace!(
+            "UDP: Received msg of MId {}, len {}, from {}",
+            mid,
+            bytes.len(),
+            from
+        );
+        Ok((from, mid, bytes))
+    }
+
+    fn recv_shared(&mut self, n: usize) -> io::Result<(MId, &[u8])> {
+        // Data should already be received.
         if n == 0 {
             let e_msg = format!("UDP: The connection was dropped.");
             warn!("{}", e_msg);
@@ -115,13 +151,21 @@ impl UdpCon {
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
 
-        trace!(
-            "UDP: Received msg of MId {}, len {}, from {}",
-            header.mid,
-            total_expected_len,
-            from
-        );
+        Ok((header.mid, &self.buff[4..header.len+4]))
+    }
 
-        Ok((from, header.mid, &self.buff[4..header.len+4]))
+    /// Moves the internal [`TcpStream`] into or out of nonblocking mode.
+    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
+        self.udp.set_nonblocking(nonblocking)
+    }
+
+    /// Returns the socket address of the remote peer of this TCP connection.
+    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
+        self.udp.peer_addr()
+    }
+
+    /// Returns the socket address of the local half of this TCP connection.
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.udp.local_addr()
     }
 }
