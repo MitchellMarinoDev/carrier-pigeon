@@ -9,7 +9,7 @@ mod std_helper;
 
 #[bench]
 fn single_std_udp_big(b: &mut Bencher) {
-    let (mut s1, mut s2) = create_udp_pair();
+    let (s1, s2) = create_udp_pair();
 
     let msg = ['A' as u8; 504];
     let mut buff = [0; 504];
@@ -23,7 +23,7 @@ fn single_std_udp_big(b: &mut Bencher) {
 
 #[bench]
 fn single_std_udp_small(b: &mut Bencher) {
-    let (mut s1, mut s2) = create_udp_pair();
+    let (s1, s2) = create_udp_pair();
 
     let msg = ['A' as u8; 10];
     let mut buff = [0; 10];
@@ -37,7 +37,7 @@ fn single_std_udp_small(b: &mut Bencher) {
 
 #[bench]
 fn many_std_udp_big(b: &mut Bencher) {
-    let (mut s1, mut s2) = create_udp_pair();
+    let (s1, s2) = create_udp_pair();
 
     let msg = ['A' as u8; 504];
     let mut buff = [0; 504];
@@ -56,7 +56,7 @@ fn many_std_udp_big(b: &mut Bencher) {
 
 #[bench]
 fn many_std_udp_small(b: &mut Bencher) {
-    let (mut s1, mut s2) = create_udp_pair();
+    let (s1, s2) = create_udp_pair();
 
     let msg = ['A' as u8; 10];
     let mut buff = [0; 10];
