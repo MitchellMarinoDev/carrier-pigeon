@@ -6,7 +6,7 @@ use log::debug;
 
 pub mod test_packets;
 
-const ADDR_LOCAL: &str = "127.0.0.1:0";
+pub const ADDR_LOCAL: &str = "127.0.0.1:0";
 
 pub type Client = carrier_pigeon::Client<Connection, Response, Disconnect>;
 pub type Server = carrier_pigeon::Server<Connection, Response, Disconnect>;
@@ -32,7 +32,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
 
     // Finish the client connection.
     let (client, response_msg) = client.block().unwrap();
-    debug!("Client created on addr: {}", client.local_addr());
+    debug!("Client created on addr: {}", client.local_addr().unwrap());
 
     assert_eq!(response_msg, Response::Accepted);
 

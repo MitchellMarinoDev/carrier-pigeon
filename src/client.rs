@@ -7,7 +7,7 @@ use crossbeam_channel::internal::SelectHandle;
 use crossbeam_channel::Receiver;
 use log::{debug, error, trace};
 use std::any::{Any, TypeId};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::marker::PhantomData;
@@ -72,7 +72,6 @@ where
         con_msg: C,
     ) -> io::Result<(Self, R)> {
         debug!("Attempting to create a client connection to {}", peer);
-        // TODO: add timeout.
         // TODO: add an option to get udp addr
         // TCP & UDP Connections.
         let tcp = TcpStream::connect(peer)?;
@@ -306,13 +305,28 @@ where
     }
 
     /// Gets the local address.
-    pub fn local_addr(&self) -> SocketAddr {
-        self.tcp.local_addr().unwrap()
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.tcp.local_addr()
     }
 
     /// Gets the address of the peer.
-    pub fn peer_addr(&self) -> SocketAddr {
-        self.tcp.peer_addr().unwrap()
+    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
+        self.tcp.peer_addr()
+    }
+}
+
+impl<C, R, D> Debug for Client<C, R, D>
+where
+    C: Any + Send + Sync,
+    R: Any + Send + Sync,
+    D: Any + Send + Sync + Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Client")
+            .field("status", self.status())
+            .field("local", &self.local_addr())
+            .field("peer", &self.peer_addr())
+            .finish()
     }
 }
 
