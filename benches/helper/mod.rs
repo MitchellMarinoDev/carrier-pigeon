@@ -32,7 +32,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
 
     // Finish the client connection.
     let (client, response_msg) = client.block().unwrap();
-    debug!("Client created on addr: {}", client.local_addr());
+    debug!("Client created on addr: {}", client.local_addr().unwrap());
 
     assert_eq!(response_msg, Response::Accepted);
 
