@@ -1,17 +1,25 @@
+//! Benches the raw [`TcpCon`] and [`UdpCon`] abstractions.
+
 #![feature(test)]
 extern crate test;
 
-use std::io::{Read, Write};
 use test::Bencher;
+use carrier_pigeon::tcp::TcpCon;
 use crate::helper::create_tcp_pair;
+use crate::helper::test_packets::TcpPacket;
 
 mod helper;
 
 #[bench]
 fn single_std_tcp_big(b: &mut Bencher) {
-    let (mut s1, mut s2) = create_tcp_pair();
+    let (s1, s2) = create_tcp_pair();
+    let mut s1 = TcpCon::from_stream(s1);
+    s1.set_nonblocking(true);
+    let mut s2 = TcpCon::from_stream(s2);
+    s2.set_nonblocking(true);
 
-    let msg = ['A' as u8; 504];
+    let string: String = vec!['A'; 504].into_iter().collect();
+    let msg = TcpPacket::new(string);
     let mut buff = [0; 504];
 
     b.iter(|| {

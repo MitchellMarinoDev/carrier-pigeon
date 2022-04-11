@@ -8,7 +8,7 @@ use std::net::{SocketAddr, UdpSocket};
 /// A type wrapping a [`UdpSocket`].
 ///
 /// Provides read/write abstractions for sending `carrier-pigeon` messages.
-pub(crate) struct UdpCon {
+pub struct UdpCon {
     buff: [u8; MAX_MESSAGE_SIZE],
     udp: UdpSocket,
 }

@@ -9,7 +9,7 @@ use std::net::{Shutdown, SocketAddr, TcpStream};
 /// A type wrapping a [`TcpStream`].
 ///
 /// Provides read/write abstractions for sending `carrier-pigeon` messages.
-pub(crate) struct TcpCon {
+pub struct TcpCon {
     buff: [u8; MAX_MESSAGE_SIZE],
     tcp: TcpStream,
 }

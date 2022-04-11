@@ -2,10 +2,9 @@
 extern crate test;
 
 use test::Bencher;
+use crate::helper::create_udp_pair;
 
-use crate::std_helper::create_udp_pair;
-
-mod std_helper;
+mod helper;
 
 #[bench]
 fn single_std_udp_big(b: &mut Bencher) {
