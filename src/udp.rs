@@ -28,7 +28,7 @@ impl UdpCon {
         })
     }
 
-    pub fn send_to(&mut self, addr: SocketAddr, mid: MId, payload: Vec<u8>) -> io::Result<()> {
+    pub fn send_to(&mut self, addr: SocketAddr, mid: MId, payload: &[u8]) -> io::Result<()> {
         let total_len = self.send_shared(mid, payload)?;
 
         trace!(
@@ -50,7 +50,7 @@ impl UdpCon {
         Ok(())
     }
 
-    pub fn send(&mut self, mid: MId, payload: Vec<u8>) -> io::Result<()> {
+    pub fn send(&mut self, mid: MId, payload: &[u8]) -> io::Result<()> {
         let total_len = self.send_shared(mid, payload)?;
 
         trace!("UDP: Sending packet with MId: {}, len: {}.", mid, total_len);
@@ -68,7 +68,7 @@ impl UdpCon {
     }
 
     /// The shared code for sending a message.
-    fn send_shared(&mut self, mid: MId, payload: Vec<u8>) -> io::Result<usize> {
+    fn send_shared(&mut self, mid: MId, payload: &[u8]) -> io::Result<usize> {
         let total_len = payload.len() + 4;
         // Check if the packet is valid, and should be sent.
         if total_len > MAX_MESSAGE_SIZE {
@@ -93,8 +93,8 @@ impl UdpCon {
         let header = Header::new(mid, payload.len());
         let h_bytes = header.to_be_bytes();
         // put the header in the front of the packet
-        for (i, b) in h_bytes.into_iter().chain(payload.into_iter()).enumerate() {
-            self.buff[i] = b;
+        for (i, b) in h_bytes.iter().chain(payload.iter()).enumerate() {
+            self.buff[i] = *b;
         }
         Ok(total_len)
     }

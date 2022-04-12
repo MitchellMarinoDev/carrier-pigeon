@@ -26,7 +26,7 @@ impl TcpCon {
     /// Sends the payload `payload` to the peer.
     ///
     /// This constructs a header, and builds the message, and sends it.
-    pub fn send(&mut self, mid: MId, payload: Vec<u8>) -> io::Result<()> {
+    pub fn send(&mut self, mid: MId, payload: &[u8]) -> io::Result<()> {
         let total_len = payload.len() + 4;
         // Check if the packet is valid, and should be sent.
         if total_len > MAX_MESSAGE_SIZE {
@@ -43,8 +43,9 @@ impl TcpCon {
         let header = Header::new(mid, payload.len());
         let h_bytes = header.to_be_bytes();
         // write the header and packet to the buffer to combine them.
-        for (i, b) in h_bytes.into_iter().chain(payload.into_iter()).enumerate() {
-            self.buff[i] = b;
+
+        for (i, b) in h_bytes.iter().chain(payload.iter()).enumerate() {
+            self.buff[i] = *b;
         }
 
         // Send

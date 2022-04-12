@@ -250,7 +250,7 @@ where
     }
 
     /// A function that encapsulates the sending logic for the TCP transport.
-    fn send_tcp(&mut self, cid: CId, mid: MId, payload: Vec<u8>) -> io::Result<()> {
+    fn send_tcp(&mut self, cid: CId, mid: MId, payload: &[u8]) -> io::Result<()> {
         let tcp = match self.tcp.get_mut(&cid) {
             Some(tcp) => tcp,
             None => return Err(Error::new(ErrorKind::InvalidData, "Invalid CId.")),
@@ -260,7 +260,7 @@ where
     }
 
     /// A function that encapsulates the sending logic for the UDP transport.
-    fn send_udp(&mut self, cid: CId, mid: MId, payload: Vec<u8>) -> io::Result<()> {
+    fn send_udp(&mut self, cid: CId, mid: MId, payload: &[u8]) -> io::Result<()> {
         let addr = match self.cid_addr.get(&cid) {
             Some(addr) => *addr,
             None => return Err(Error::new(ErrorKind::InvalidData, "Invalid CId.")),
@@ -358,8 +358,8 @@ where
             cid
         );
         match transport {
-            Transport::TCP => self.send_tcp(cid, mid, b),
-            Transport::UDP => self.send_udp(cid, mid, b),
+            Transport::TCP => self.send_tcp(cid, mid, &b[..]),
+            Transport::UDP => self.send_udp(cid, mid, &b[..]),
         }?;
 
         Ok(())

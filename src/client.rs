@@ -136,12 +136,12 @@ where
     }
 
     /// A function that encapsulates the sending logic for the TCP transport.
-    fn send_tcp(&mut self, mid: MId, payload: Vec<u8>) -> io::Result<()> {
+    fn send_tcp(&mut self, mid: MId, payload: &[u8]) -> io::Result<()> {
         self.tcp.send(mid, payload)
     }
 
     /// A function that encapsulates the sending logic for the UDP transport.
-    fn send_udp(&mut self, mid: MId, payload: Vec<u8>) -> io::Result<()> {
+    fn send_udp(&mut self, mid: MId, payload: &[u8]) -> io::Result<()> {
         self.udp.send(mid, payload)
     }
 
@@ -236,8 +236,8 @@ where
             .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Serialization Error."))?;
 
         match transport {
-            Transport::TCP => self.send_tcp(mid, b),
-            Transport::UDP => self.send_udp(mid, b),
+            Transport::TCP => self.send_tcp(mid, &b),
+            Transport::UDP => self.send_udp(mid, &b),
         }
     }
 
