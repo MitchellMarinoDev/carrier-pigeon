@@ -27,7 +27,10 @@ fn single_raw_tcp_big(b: &mut Bencher) {
 
 // #[bench]
 // fn single_std_tcp_small(b: &mut Bencher) {
-//     let (mut s1, mut s2) = create_tcp_pair();
+//     let (s1, s2) = create_tcp_pair();
+//     let mut s1 = TcpCon::from_stream(s1);
+//     s1.set_nonblocking(true).unwrap();
+//     let mut s2 = TcpCon::from_stream(s2);
 //
 //     let msg = ['A' as u8; 10];
 //     let mut buff = [0; 10];

@@ -18,6 +18,14 @@ fn ser(b: &mut Bencher) {
 }
 
 #[bench]
+fn ser_size(b: &mut Bencher) {
+    let udp = black_box(UdpPacket::new("Short Message"));
+    b.iter(|| {
+        black_box(bincode::serialized_size(&udp).unwrap());
+    })
+}
+
+#[bench]
 fn deser(b: &mut Bencher) {
     let udp = black_box(UdpPacket::new("Short Message"));
     let bytes = bincode::serialize(&udp).unwrap();
