@@ -93,8 +93,11 @@ impl UdpCon {
         let header = Header::new(mid, payload.len());
         let h_bytes = header.to_be_bytes();
         // put the header in the front of the packet
-        for (i, b) in h_bytes.iter().chain(payload.iter()).enumerate() {
-            self.buff[i] = *b;
+        for (i, b) in h_bytes.into_iter().enumerate() {
+            self.buff[i] = b;
+        }
+        for (i, b) in payload.iter().enumerate() {
+            self.buff[i+4] = *b;
         }
         Ok(total_len)
     }
