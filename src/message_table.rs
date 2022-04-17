@@ -87,7 +87,8 @@ impl MsgTable {
     /// Registers a message type with custom serialization and deserialization logic.
     /// The type when calling the SerFn is guaranteed to be `&T`, so it can be downcast safely with
     /// `m.downcast_ref::<T>().unwrap()`. The DeserFn **MUST** return a `Box<T>`
-    /// (though rust's type safety will allow you to return Box<Any>).
+    /// (though rust's type safety will allow you to return Box<Any>). carrier-pigeon will panic if
+    /// you return anything other than Box<T>.
     pub fn register_custom<T>(
         &mut self,
         transport: Transport,
@@ -215,7 +216,8 @@ impl SortedMsgTable {
     /// Registers a message type with custom serialization and deserialization logic.
     /// The type when calling the SerFn is guaranteed to be `&T`, so it can be downcast safely with
     /// `m.downcast_ref::<T>().unwrap()`. The DeserFn **MUST** return a `Box<T>`
-    /// (though rust's type safety will allow you to return Box<Any>).
+    /// (though rust's type safety will allow you to return Box<Any>). carrier-pigeon will panic if
+    /// you return anything other than Box<T>.
     pub fn register_custom<T>(
         &mut self,
         identifier: &str,
