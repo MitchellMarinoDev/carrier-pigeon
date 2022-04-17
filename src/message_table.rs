@@ -80,8 +80,7 @@ impl MsgTable {
     where
         T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
-        let registration = self.get_registration::<T>(transport)?;
-        self.table.push(registration);
+        self.table.push(self.get_registration::<T>(transport)?);
         Ok(())
     }
 
@@ -95,16 +94,7 @@ impl MsgTable {
     where
         T: Any + Send + Sync,
     {
-        // Get the type.
-        let tid = TypeId::of::<T>();
-
-        // Check if it has been registered already.
-        if self.table.iter().any(|(t, _, _, _)| *t == tid) {
-            return Err(TypeAlreadyRegistered);
-        }
-
-        let registration = (tid, transport, ser, deser);
-        self.table.push(registration);
+        self.table.push(self.get_custom_registration::<T>(transport, ser, deser)?);
         Ok(())
     }
 
@@ -116,14 +106,6 @@ impl MsgTable {
     where
         T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
-        // Get the type.
-        let tid = TypeId::of::<T>();
-
-        // Check if it has been registered already.
-        if self.table.iter().any(|(t, _, _, _)| *t == tid) {
-            return Err(TypeAlreadyRegistered);
-        }
-
         // Get the serialize and deserialize functions
         let deser_fn: DeserFn = |bytes: &[u8]| {
             bincode::deserialize::<T>(bytes)
@@ -138,7 +120,27 @@ impl MsgTable {
             })
         };
 
-        Ok((tid, transport, ser_fn, deser_fn))
+        self.get_custom_registration::<T>(transport, ser_fn, deser_fn)
+    }
+
+    /// Builds the things needed for a custom registration
+    fn get_custom_registration<T> (
+        &self,
+        transport: Transport,
+        ser: SerFn,
+        deser: DeserFn,
+    ) -> Result<(TypeId, Transport, SerFn, DeserFn), MsgRegError>
+    where
+        T: Any + Send + Sync
+    {
+        // Get the type.
+        let tid = TypeId::of::<T>();
+
+        // Check if it has been registered already.
+        if self.table.iter().any(|(t, _, _, _)| *t == tid) {
+            return Err(TypeAlreadyRegistered);
+        }
+        Ok((tid, transport, ser, deser))
     }
 
     /// Builds the [`MsgTable`] into useful parts.
@@ -203,16 +205,15 @@ impl SortedMsgTable {
     where
         T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
-        let registration = self.get_registration::<T>(transport, identifier.into())?;
-        self.table.push(registration);
+        self.table.push(self.get_registration::<T>(identifier.into(), transport)?);
         Ok(())
     }
 
     /// Registers a message type with custom serialization and deserialization logic.
     pub fn register_custom<T>(
         &mut self,
-        transport: Transport,
         identifier: &str,
+        transport: Transport,
         ser: SerFn,
         deser: DeserFn,
     ) -> Result<(), MsgRegError>
@@ -242,25 +243,12 @@ impl SortedMsgTable {
     /// Builds the things needed for the registration.
     fn get_registration<T>(
         &self,
-        transport: Transport,
         identifier: String,
+        transport: Transport,
     ) -> Result<(String, TypeId, Transport, SerFn, DeserFn), MsgRegError>
     where
         T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
-        // Check if the identifier has been registered already.
-        if self.table.iter().any(|(id, _, _, _, _)| *id == identifier) {
-            return Err(NonUniqueIdentifier);
-        }
-
-        // Get the type.
-        let tid = TypeId::of::<T>();
-
-        // Check if it has been registered already.
-        if self.table.iter().any(|(_, t, _, _, _)| *t == tid) {
-            return Err(TypeAlreadyRegistered);
-        }
-
         // Get the serialize and deserialize functions
         let deser_fn: DeserFn = |bytes: &[u8]| {
             bincode::deserialize::<T>(bytes)
@@ -275,8 +263,36 @@ impl SortedMsgTable {
             })
         };
 
-        Ok((identifier, tid, transport, ser_fn, deser_fn))
+        self.get_custom_registration::<T>(identifier, transport, ser_fn, deser_fn)
     }
+
+    /// Builds the things needed for a custom registration
+    fn get_custom_registration<T> (
+        &self,
+        identifier: String,
+        transport: Transport,
+        ser: SerFn,
+        deser: DeserFn,
+    ) -> Result<(String, TypeId, Transport, SerFn, DeserFn), MsgRegError>
+    where
+        T: Any + Send + Sync
+    {
+        // Check if the identifier has been registered already.
+        if self.table.iter().any(|(id, _, _, _, _)| *id == identifier) {
+            return Err(NonUniqueIdentifier);
+        }
+
+        // Get the type.
+        let tid = TypeId::of::<T>();
+
+        // Check if it has been registered already.
+        if self.table.iter().any(|(_, t, _, _, _)| *t == tid) {
+            return Err(TypeAlreadyRegistered);
+        }
+
+        Ok((identifier, tid, transport, ser, deser))
+    }
+
 
     /// Builds the [`SortedMsgTable`] into useful parts.
     ///
@@ -297,9 +313,9 @@ impl SortedMsgTable {
         // Always prepend the Connection and Disconnect types first.
         // This gives them universal MIds.
         let con_discon_types = [
-            self.get_registration::<C>(Transport::TCP, "carrier-pigeon::connection".to_owned())?,
-            self.get_registration::<R>(Transport::TCP, "carrier-pigeon::response".to_owned())?,
-            self.get_registration::<D>(Transport::TCP, "carrier-pigeon::disconnect".to_owned())?,
+            self.get_registration::<C>("carrier-pigeon::connection".to_owned(), Transport::TCP)?,
+            self.get_registration::<R>("carrier-pigeon::response".to_owned(), Transport::TCP)?,
+            self.get_registration::<D>("carrier-pigeon::disconnect".to_owned(), Transport::TCP)?,
         ];
 
         // Sort by identifier string so that registration order doesn't matter.
