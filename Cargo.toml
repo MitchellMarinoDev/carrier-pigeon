@@ -1,6 +1,6 @@
 [package]
 name = "carrier-pigeon"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Mitchell Marino <mitchoah@gmail.com>"]
 edition = "2021"
 description = "A rusty networking library for games."
@@ -8,7 +8,7 @@ readme = "README.md"
 repository = "https://github.com/MitchellMarinoDev/carrier-pigeon/"
 license = "MIT OR Apache-2.0"
 keywords = ["game", "gamedev", "networking"]
-categories = ["game-development", "network-programming", "asynchronous"]
+categories = ["game-development", "network-programming"]
 autoexamples = false
 
 [[example]]
@@ -22,6 +22,7 @@ serde = { version = "~1.0", features = ["derive"] }
 simple_logger = "2.1.0"
 
 [dependencies]
+crossbeam-channel = "0.5.4"
 serde = "~1.0"
 bincode = "~1.3"
 hashbrown = "~0.12"
