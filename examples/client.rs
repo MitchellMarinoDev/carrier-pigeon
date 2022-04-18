@@ -14,6 +14,7 @@
 //! `disconnect-me`.
 
 use crate::shared::{Connection, Disconnect, Msg, Response};
+use carrier_pigeon::net::Status;
 use carrier_pigeon::{Client, MsgTable, Transport};
 use log::LevelFilter;
 use simple_logger::SimpleLogger;
@@ -38,9 +39,6 @@ fn main() {
 
     let username = args.next().unwrap_or("MyUser".to_owned());
 
-    // Create a tokio runtime.
-    let rt = tokio::runtime::Runtime::new().unwrap();
-
     // Create the message table.
     // This should be the same on the client and server.
     let mut table = MsgTable::new();
@@ -52,13 +50,10 @@ fn main() {
     };
 
     // Start the connection to the server.
-    let client = Client::new(addr, parts, con_msg, rt.handle().clone());
+    let client = Client::new(addr, parts, con_msg);
 
     // Block until the connection is made.
-    let (mut client, resp) = client
-        .blocking_recv()
-        .unwrap()
-        .expect("Failed to connect to server.");
+    let (mut client, resp) = client.block().expect("Failed to connect to server.");
 
     match resp {
         Response::Accepted => println!("We were accepted!"),
@@ -103,16 +98,9 @@ fn main() {
             }
         }
 
-        if let Some(d) = client.get_disconnect() {
+        if let Status::Disconnected(msg) = client.status() {
             // Client was disconnected.
-            match d {
-                Ok(msg) => {
-                    println!("Disconnected for reason {}", msg.reason);
-                }
-                Err(e) => {
-                    println!("Error occurred. {}", e);
-                }
-            }
+            println!("Disconnected for reason {}", msg.reason);
             break;
         }
 

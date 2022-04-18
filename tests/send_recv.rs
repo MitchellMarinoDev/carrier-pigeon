@@ -1,8 +1,8 @@
 //! Simple send/receive tests.
-use std::time::Duration;
-use simple_logger::SimpleLogger;
 use crate::helper::create_client_server_pair;
 use crate::helper::test_packets::{TcpPacket, UdpPacket};
+use simple_logger::SimpleLogger;
+use std::time::Duration;
 
 mod helper;
 
@@ -10,23 +10,24 @@ mod helper;
 fn send_recv() {
     // Create a simple logger
     let _ = SimpleLogger::new()
-        .with_level(log::LevelFilter::Debug)
+        .with_level(log::LevelFilter::Trace)
         .init();
 
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let rt = runtime.handle();
-
     // CLIENT TO SERVER
-    let (mut client, mut server) = create_client_server_pair(rt.clone());
+    let (mut client, mut server) = create_client_server_pair();
 
     // Send 10 tcp packets.
     for i in 0..10 {
-        client.send(&TcpPacket::new(format!("Test TCP Packet {}", i))).unwrap();
+        client
+            .send(&TcpPacket::new(format!("Test TCP Packet {}", i)))
+            .unwrap();
     }
 
     // Send 10 udp packets.
     for i in 0..10 {
-        client.send(&UdpPacket::new(format!("Test UDP Packet {}", i))).unwrap();
+        client
+            .send(&UdpPacket::new(format!("Test UDP Packet {}", i)))
+            .unwrap();
     }
 
     // Give the client enough time to send the packets.
@@ -53,18 +54,21 @@ fn send_recv() {
         assert!(udp_packets.contains(&&UdpPacket::new(msg)));
     }
 
-
     // SERVER TO CLIENT
     println!("Cids: {:?}", server.cids().collect::<Vec<_>>());
 
     // Send 10 tcp packets.
     for i in 0..10 {
-        server.send_to(1, &TcpPacket::new(format!("Test TCP Packet {}", i))).unwrap();
+        server
+            .send_to(1, &TcpPacket::new(format!("Test TCP Packet {}", i)))
+            .unwrap();
     }
 
     // Send 10 udp packets.
     for i in 0..10 {
-        server.send_to(1, &UdpPacket::new(format!("Test UDP Packet {}", i))).unwrap();
+        server
+            .send_to(1, &UdpPacket::new(format!("Test UDP Packet {}", i)))
+            .unwrap();
     }
 
     // Give the client enough time to send the packets.

@@ -1,8 +1,9 @@
 //! Disconnect and Drop tests.
-use simple_logger::SimpleLogger;
-use std::time::Duration;
 use crate::helper::create_client_server_pair;
 use crate::helper::test_packets::Disconnect;
+use log::debug;
+use simple_logger::SimpleLogger;
+use std::time::Duration;
 
 mod helper;
 
@@ -10,15 +11,13 @@ mod helper;
 fn graceful_disconnect() {
     // Create a simple logger
     let _ = SimpleLogger::new()
-        .with_level(log::LevelFilter::Debug)
+        .with_level(log::LevelFilter::Trace)
         .init();
-
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let rt = runtime.handle();
 
     {
         // Client Disconnect Test
-        let (mut client, mut server) = create_client_server_pair(rt.clone());
+        let (mut client, mut server) = create_client_server_pair();
+        debug!("Client server pair created.");
 
         client
             .disconnect(&Disconnect::new("Testing Disconnect Client."))
@@ -27,21 +26,21 @@ fn graceful_disconnect() {
         // Give the client enough time to send the disconnect packet.
         std::thread::sleep(Duration::from_millis(100));
 
-        let counts = server.handle_disconnects(
-            &mut |_cid, discon_msg| {
-                assert_eq!(*discon_msg, Disconnect::new("Testing Disconnect Client."));
-            },
-            &mut |_cid, _error| {
-                panic!("No connections were supposed to be dropped");
-            },
-        );
+        let recv_count = server.recv_msgs();
+        let discon_count = server.handle_disconnects(&mut |_cid, status| {
+            assert_eq!(
+                status.disconnected(),
+                Some(&Disconnect::new("Testing Disconnect Client."))
+            );
+        });
 
-        assert_eq!(counts, (1, 0));
+        assert_eq!(recv_count, 1);
+        assert_eq!(discon_count, 1);
     }
 
     {
         // Server Disconnect Test
-        let (mut client, mut server) = create_client_server_pair(rt.clone());
+        let (mut client, mut server) = create_client_server_pair();
 
         server
             .disconnect(&Disconnect::new("Testing Disconnect Server."), 1)
@@ -50,8 +49,10 @@ fn graceful_disconnect() {
         // Give the server enough time to send the disconnect packet.
         std::thread::sleep(Duration::from_millis(100));
 
+        let count = client.recv_msgs();
+        assert_eq!(count, 1);
         assert_eq!(
-            client.get_disconnect().unwrap().as_ref().unwrap(),
+            client.status().disconnected().unwrap(),
             &Disconnect::new("Testing Disconnect Server.")
         );
     }
@@ -61,41 +62,36 @@ fn graceful_disconnect() {
 fn drop_test() {
     // Create a simple logger
     let _ = SimpleLogger::new()
-        .with_level(log::LevelFilter::Debug)
+        .with_level(log::LevelFilter::Trace)
         .init();
-
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let rt = runtime.handle();
 
     {
         // Server Drop Client.
-        let (mut client, server) = create_client_server_pair(rt.clone());
+        let (mut client, server) = create_client_server_pair();
         drop(server);
 
         // Give the server enough time for the connection to sever.
         std::thread::sleep(Duration::from_millis(100));
 
-        assert!(client.get_disconnect().unwrap().is_err());
+        client.recv_msgs();
+        // Make sure the client is dropped abruptly
+        assert!(client.status().dropped().is_some());
     }
 
     {
         // Client Drop Server.
-        let (client, mut server) = create_client_server_pair(rt.clone());
+        let (client, mut server) = create_client_server_pair();
         drop(client);
 
         // Give the server enough time for the connection to sever.
         std::thread::sleep(Duration::from_millis(100));
 
-        let counts = server.handle_disconnects(
-            &mut |_cid, _msg| {
-                panic!("There should not be a gracefull disconnect.");
-            },
-            &mut |_cid, _e| {
-                println!("Dropped connection with error");
-            },
-        );
+        server.recv_msgs();
+        let counts = server.handle_disconnects(&mut |_cid, status| {
+            assert!(status.dropped().is_some(), "Expected status to be dropped");
+        });
 
-        // make sure there was 1 drop and 0 graceful disconnects.
-        assert_eq!(counts, (0, 1));
+        // make sure there was 1 disconnect handled.
+        assert_eq!(counts, 1);
     }
 }
