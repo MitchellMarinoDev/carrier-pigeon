@@ -72,7 +72,6 @@ where
         con_msg: C,
     ) -> io::Result<(Self, R)> {
         debug!("Attempting to create a client connection to {}", peer);
-        // TODO: add an option to get udp addr
         // TCP & UDP Connections.
         let tcp = TcpStream::connect(peer)?;
         tcp.set_read_timeout(Some(Duration::from_millis(10_000)))?;
@@ -90,9 +89,8 @@ where
             udp.peer_addr().unwrap()
         );
 
-        let mid_count = parts.tid_map.len();
         let mut msg_buff = Vec::with_capacity(mid_count);
-        for _ in 0..mid_count {
+        for _ in 0..parts.mid_count() {
             msg_buff.push(vec![]);
         }
 
@@ -199,7 +197,6 @@ where
         self.send(discon_msg)?;
         self.tcp.close()?;
         // No shutdown method on udp.
-        // TODO: check status on send client and server
         self.status = Status::Closed;
         Ok(())
     }
@@ -223,7 +220,7 @@ where
     /// serialized this will return [`NetError::SerdeError`].
     pub fn send<T: Any + Send + Sync>(&mut self, msg: &T) -> io::Result<()> {
         let tid = TypeId::of::<T>();
-        if !self.parts.tid_map.contains_key(&tid) {
+        if !self.parts.valid_tid(tid) {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
                 "Type not registered.",
@@ -304,7 +301,7 @@ where
         }
     }
 
-    /// Gets the local address.
+    /// Gets the local -ess.
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.tcp.local_addr()
     }

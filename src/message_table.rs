@@ -363,7 +363,6 @@ where
     R: Any + Send + Sync,
     D: Any + Send + Sync,
 {
-    // TODO: use this function call in all appropriate senarios.
     /// Gets the number of registered `MId`s.
     pub fn mid_count(&self) -> usize {
         self.transports.len()
@@ -372,6 +371,11 @@ where
     /// Checks if the [`MId`] `mid` is valid.
     pub fn valid_mid(&self, mid: MId) -> bool {
         mid <= self.mid_count()
+    }
+
+    /// Checks if the [`TypeId`] `tid` is registered.
+    pub fn valid_tid(&self, tid: TypeId) -> bool {
+        self.tid_map.contains_key(&tid)
     }
 }
 

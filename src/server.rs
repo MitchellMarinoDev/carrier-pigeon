@@ -129,8 +129,7 @@ where
     /// Handle the new connection attempts by calling the given hook.
     pub fn handle_new_cons(&mut self, hook: &mut dyn FnMut(C) -> (bool, R)) -> u32 {
         // Start waiting on the connection packets for new connections.
-        // TODO: add cap to connections that we are handeling.
-        // TODO: add a timeout to the functions.
+        // TODO: add cap to connections that we are handling.
         while let Ok((new_con, _addr)) = self.listener.accept() {
             debug!("New connection attempt.");
             new_con.set_nonblocking(true).unwrap();
@@ -163,7 +162,6 @@ where
             let (stream, _) = self.new_cons.remove(idx);
             // If `resp` is Some, the connection was accepted and
             // we need to send the response packet.
-            // TODO: this process might be able to be inlined if `send()` calls take immutable refs to self
             if let Some(r) = resp {
                 let con = TcpCon::from_stream(stream);
                 let cid = self.add_tcp_con(con);
@@ -192,7 +190,6 @@ where
         con: &mut TcpStream,
         time: &Instant,
     ) -> io::Result<Option<C>> {
-        // TODO: make the timeout configurable.
         if time.elapsed() > TIMEOUT {
             return Err(Error::new(
                 ErrorKind::TimedOut,
@@ -521,8 +518,9 @@ where
         self.cid_addr.contains_key(&cid)
     }
 
+    /// Returns whether a message of type `tid` can be sent.
     pub fn valid_tid(&self, tid: TypeId) -> bool {
-        self.parts.tid_map.contains_key(&tid)
+        self.parts.valid_tid(tid)
     }
 
     /// The number of active connections.

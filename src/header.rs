@@ -1,6 +1,5 @@
 use crate::MId;
 
-// TODO: perhaps use a union here.
 /// A header to be sent before the actual contents of the packet.
 ///
 /// `len` and `mid` are sent as big endian u16s.
