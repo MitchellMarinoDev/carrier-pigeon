@@ -66,7 +66,9 @@ This contains a client and server command line programs.
 
 ### Planned Features
 
- - [ ] [Bevy](https://bevyengine.org/) integration.
+- [ ] More config options.
+- [ ] Benchmarks (On the way!)
+- [ ] [Bevy](https://bevyengine.org/) integration.
 
 ## Contributing
 
