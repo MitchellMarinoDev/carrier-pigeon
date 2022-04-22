@@ -40,7 +40,7 @@ where
 
     /// The pending connections (Connections that are established but have
     /// not sent a connection packet yet).
-    new_cons: Vec<(TcpStream, Instant)>,
+    new_cons: Vec<(TcpStream, CId, Instant)>,
     /// Disconnected connections.
     disconnected: Vec<(CId, Status<D>)>,
     /// The listener for new connections.
@@ -127,30 +127,30 @@ where
     }
 
     /// Handle the new connection attempts by calling the given hook.
-    pub fn handle_new_cons(&mut self, hook: &mut dyn FnMut(C) -> (bool, R)) -> u32 {
+    pub fn handle_new_cons(&mut self, hook: &mut dyn FnMut(CId, C) -> (bool, R)) -> u32 {
         // Start waiting on the connection packets for new connections.
         // TODO: add cap to connections that we are handling.
         while let Ok((new_con, _addr)) = self.listener.accept() {
             debug!("New connection attempt.");
             new_con.set_nonblocking(true).unwrap();
-            self.new_cons.push((new_con, Instant::now()));
+            let cid = self.new_cid();
+            self.new_cons.push((new_con, cid, Instant::now()));
         }
 
         let mut accept_count = 0;
         // Handle the new connections.
         let mut remove = vec![];
         let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
-        for (idx, (con, time)) in self.new_cons.iter_mut().enumerate() {
+        for (idx, (con, cid, time)) in self.new_cons.iter_mut().enumerate() {
             match Self::handle_new_con(&mut self.buff, deser_fn, con, time) {
-                Ok(Some(c)) => {
-                    let (acc, r) = hook(c);
+                Ok(c) => {
+                    let (acc, r) = hook(*cid, c);
                     if acc {
                         debug!("Accepted new connection at {}.", con.peer_addr().unwrap());
                         accept_count += 1;
                     }
                     remove.push((idx, Some(r)));
                 }
-                Ok(None) => {}
                 Err(e) if e.kind() == ErrorKind::WouldBlock => {}
                 Err(e) => {
                     error!("Error in handling a pending connection. {}", e);
@@ -189,7 +189,7 @@ where
         deser_fn: DeserFn,
         con: &mut TcpStream,
         time: &Instant,
-    ) -> io::Result<Option<C>> {
+    ) -> io::Result<C> {
         if time.elapsed() > TIMEOUT {
             return Err(Error::new(
                 ErrorKind::TimedOut,
@@ -199,7 +199,7 @@ where
 
         // Peak the first 4 bytes for the header.
         if con.peek(&mut buff[..4])? != 4 {
-            return Ok(None);
+            return Err(Error::new(ErrorKind::WouldBlock, "Not enough bytes for an entire message."));
         }
         let h = Header::from_be_bytes(&buff[..4]);
 
@@ -221,7 +221,7 @@ where
         })?;
 
         let con_msg = *con_msg.downcast::<C>().unwrap();
-        Ok(Some(con_msg))
+        Ok(con_msg)
     }
 
     /// Handles the disconnect events.
@@ -541,15 +541,24 @@ where
     }
 
     // Private:
+    fn new_cid(&mut self) -> CId {
+        self.current_cid += 1;
+        self.current_cid
+    }
+
     /// Adds a TCP connection.
     fn add_tcp_con(&mut self, con: TcpCon) -> CId {
-        self.current_cid += 1;
-        let cid = self.current_cid;
+        let cid = self.new_cid();
+        self.add_tcp_con_cid(cid, con);
+        cid
+    }
+
+    /// Adds a TCP connection with the [`CId`] `cid`. The cid needs to be unique, generate one with `new_cid()`.
+    fn add_tcp_con_cid(&mut self, cid: CId, con: TcpCon) {
         let peer_addr = con.peer_addr().unwrap();
         self.tcp.insert(cid, con);
         self.addr_cid.insert(peer_addr, cid);
         self.cid_addr.insert(cid, peer_addr);
-        self.current_cid
     }
 
     /// Removes a TCP connection.
