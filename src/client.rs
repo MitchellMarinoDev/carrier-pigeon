@@ -89,7 +89,7 @@ where
             udp.peer_addr().unwrap()
         );
 
-        let mut msg_buff = Vec::with_capacity(mid_count);
+        let mut msg_buff = Vec::with_capacity(parts.mid_count());
         for _ in 0..parts.mid_count() {
             msg_buff.push(vec![]);
         }

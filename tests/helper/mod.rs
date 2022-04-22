@@ -28,7 +28,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
     // Spin until the connection is handled.
     // Normally this would be done in the game loop
     // and there would be other things to do.
-    while 0 == server.handle_new_cons(&mut |_con_msg| (true, Response::Accepted)) {}
+    while 0 == server.handle_new_cons(&mut |_cid, _con_msg| (true, Response::Accepted)) {}
 
     // Finish the client connection.
     let (client, response_msg) = client.block().unwrap();

@@ -159,12 +159,12 @@ where
             }
         }
         for (idx, resp) in remove {
-            let (stream, _) = self.new_cons.remove(idx);
+            let (stream, cid, _) = self.new_cons.remove(idx);
             // If `resp` is Some, the connection was accepted and
             // we need to send the response packet.
             if let Some(r) = resp {
                 let con = TcpCon::from_stream(stream);
-                let cid = self.add_tcp_con(con);
+                self.add_tcp_con_cid(cid, con);
                 let _ = self.send_to(cid, &r);
             }
         }
@@ -544,13 +544,6 @@ where
     fn new_cid(&mut self) -> CId {
         self.current_cid += 1;
         self.current_cid
-    }
-
-    /// Adds a TCP connection.
-    fn add_tcp_con(&mut self, con: TcpCon) -> CId {
-        let cid = self.new_cid();
-        self.add_tcp_con_cid(cid, con);
-        cid
     }
 
     /// Adds a TCP connection with the [`CId`] `cid`. The cid needs to be unique, generate one with `new_cid()`.
