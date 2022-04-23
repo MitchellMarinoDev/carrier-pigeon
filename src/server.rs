@@ -1,5 +1,5 @@
 use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID};
-use crate::net::{CId, DeserFn, Header, NetError, Status, Transport, MAX_MESSAGE_SIZE};
+use crate::net::{CId, DeserFn, Header, NetError, Status, Transport, MAX_MESSAGE_SIZE, CIdSpec};
 use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
 use crate::MId;
@@ -362,19 +362,11 @@ where
         Ok(())
     }
 
-    /// Broadcasts a message to all connected clients.
-    pub fn broadcast<T: Any + Send + Sync>(&mut self, msg: &T) -> io::Result<()> {
-        for cid in self.cids().collect::<Vec<_>>() {
-            self.send_to(cid, msg)?;
-        }
-        Ok(())
-    }
-
-    /// Broadcasts a message to all connected clients except the [`CId`] `cid`.
-    pub fn broadcast_except<T: Any + Send + Sync>(&mut self, msg: &T, cid: CId) -> io::Result<()> {
+    /// Sends a message to all [`CId`]s that match `spec`.
+    pub fn send_spec<T: Any + Send + Sync>(&mut self, msg: &T, spec: CIdSpec) -> io::Result<()> {
         for cid in self
             .cids()
-            .filter(|o_cid| *o_cid != cid)
+            .filter(|cid| spec.matches(*cid))
             .collect::<Vec<_>>()
         {
             self.send_to(cid, msg)?;

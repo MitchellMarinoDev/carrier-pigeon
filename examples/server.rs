@@ -17,6 +17,7 @@ use log::LevelFilter;
 use simple_logger::SimpleLogger;
 use std::env;
 use std::time::Duration;
+use carrier_pigeon::net::CIdSpec;
 
 mod shared;
 
@@ -96,7 +97,7 @@ fn main() {
             }
 
             // Broadcast the message to all other clients.
-            server.broadcast_except(&msg, cid).unwrap();
+            server.send_spec(&msg, CIdSpec::Except(cid)).unwrap();
         }
         for cid in cids_to_disconnect {
             server

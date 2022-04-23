@@ -57,12 +57,6 @@ impl Display for NetError {
     }
 }
 
-/// Message ID
-pub type MId = usize;
-
-/// Connection ID
-pub type CId = u32;
-
 /// The function used to deserialize a message.
 pub type DeserFn = fn(&[u8]) -> Result<Box<dyn Any + Send + Sync>, io::Error>;
 /// The function used to serialize a message.
@@ -118,6 +112,90 @@ impl<D> Status<D> {
         match self {
             Status::Closed => true,
             _ => false,
+        }
+    }
+}
+
+/// Message ID.
+pub type MId = usize;
+
+/// Connection ID.
+pub type CId = u32;
+
+/// A way to specify the valid [`CId`]s for an operation.
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
+pub enum CIdSpec {
+    /// Matches all [`CId`]s
+    All,
+    /// Matches no [`CId`]s.
+    None,
+    /// Matches all except the inner [`CId`]
+    Except(CId),
+    /// Matches only the inner [`CId`]
+    Only(CId),
+}
+
+impl CIdSpec {
+    /// Weather the given cid matches the pattern.
+    pub fn matches(&self, cid: CId) -> bool {
+        match self {
+            CIdSpec::All => true,
+            CIdSpec::None => false,
+            CIdSpec::Except(o) => cid != *o,
+            CIdSpec::Only(o) => cid == *o,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::net::CIdSpec;
+
+    #[test]
+    fn cid_spec_all() {
+        let spec = CIdSpec::All;
+
+        let cid_vec = vec![0, 1, 2, 3, 10, 20, 1000, 102901];
+        let expected_vec = vec![true; cid_vec.len()-1];
+        for (cid, expected) in cid_vec.into_iter().zip(expected_vec) {
+            assert_eq!(spec.matches(cid), expected)
+        }
+    }
+
+    #[test]
+    fn cid_spec_none() {
+        let spec = CIdSpec::None;
+
+        let cid_vec = vec![0, 1, 2, 3, 10, 20, 1000, 102901];
+        let expected_vec = vec![false; cid_vec.len()-1];
+        for (cid, expected) in cid_vec.into_iter().zip(expected_vec) {
+            assert_eq!(spec.matches(cid), expected)
+        }
+    }
+
+    #[test]
+    fn cid_spec_only() {
+        let spec = CIdSpec::Only(12);
+
+        let cid_vec = vec![0, 1, 2, 3, 10, 12, 20, 1000, 102901];
+        let mut expected_vec = vec![false; cid_vec.len()-1];
+        expected_vec[5] = true;
+
+        for (cid, expected) in cid_vec.into_iter().zip(expected_vec) {
+            assert_eq!(spec.matches(cid), expected)
+        }
+    }
+
+    #[test]
+    fn cid_spec_except() {
+        let spec = CIdSpec::Except(12);
+
+        let cid_vec = vec![0, 1, 2, 3, 10, 12, 20, 1000, 102901];
+        let mut expected_vec = vec![true; cid_vec.len()-1];
+        expected_vec[5] = false;
+
+        for (cid, expected) in cid_vec.into_iter().zip(expected_vec) {
+            assert_eq!(spec.matches(cid), expected)
         }
     }
 }
