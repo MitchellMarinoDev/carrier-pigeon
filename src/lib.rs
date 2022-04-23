@@ -20,7 +20,7 @@ mod header;
 mod message_table;
 mod server;
 
-pub use client::Client;
+pub use client::{Client, PendingClient};
 pub use header::Header;
 pub use message_table::{MsgRegError, MsgTable, MsgTableParts, SortedMsgTable};
 pub use net::{CId, MId, NetError, Transport};
