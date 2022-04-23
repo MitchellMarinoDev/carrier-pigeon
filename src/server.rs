@@ -362,7 +362,15 @@ where
         Ok(())
     }
 
-    /// Sends a message to all [`CId`]s that match `spec`.
+    /// Broadcasts a message to all connected clients.
+    pub fn broadcast<T: Any + Send + Sync>(&mut self, msg: &T) -> io::Result<()> {
+        for cid in self.cids().collect::<Vec<_>>() {
+            self.send_to(cid, msg)?;
+        }
+        Ok(())
+    }
+
+        /// Sends a message to all [`CId`]s that match `spec`.
     pub fn send_spec<T: Any + Send + Sync>(&mut self, msg: &T, spec: CIdSpec) -> io::Result<()> {
         for cid in self
             .cids()
