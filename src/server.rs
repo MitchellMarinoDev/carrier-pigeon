@@ -374,7 +374,8 @@ where
         Ok(())
     }
 
-    /// Gets an iterator for the messages of type T.
+    /// Gets an iterator for the messages of type `T`.
+    ///
     /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
     ///
     /// Returns None if the type T was not registered.
@@ -385,6 +386,24 @@ where
         Some(
             self.msg_buff[mid]
                 .iter()
+                .map(|(cid, m)| (*cid, (*m).downcast_ref::<T>().unwrap())),
+        )
+    }
+
+    /// Gets an iterator for the messages of type `T` that have
+    /// been recieved from [`CId`]s that match `spec`.
+    ///
+    /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
+    ///
+    /// Returns None if the type T was not registered.
+    pub fn recv_spec<T: Any + Send + Sync>(&self, spec: CIdSpec) -> Option<impl Iterator<Item = (CId, &T)>> {
+        let tid = TypeId::of::<T>();
+        let mid = *self.parts.tid_map.get(&tid)?;
+
+        Some(
+            self.msg_buff[mid]
+                .iter()
+                .filter(move |(cid, _m)| spec.matches(*cid))
                 .map(|(cid, m)| (*cid, (*m).downcast_ref::<T>().unwrap())),
         )
     }
