@@ -382,11 +382,31 @@ where
     pub fn block(self) -> io::Result<(Client<C, R, D>, R)> {
         self.channel.recv().unwrap()
     }
+
+    /// Converts this into a [`OptionPendingClient`].
+    pub fn option(self) -> OptionPendingClient<C, R, D> {
+        OptionPendingClient {
+            channel: Some(self.channel),
+        }
+    }
 }
 
+impl<C, R, D> Into<OptionPendingClient<C, R, D>> for PendingClient<C, R, D>
+    where
+        C: Any + Send + Sync,
+        R: Any + Send + Sync,
+        D: Any + Send + Sync,
+{
+    fn into(self) -> OptionPendingClient<C, R, D> {
+        self.option()
+    }
+}
 
 #[derive(Debug)]
 /// An optional version of the [`PendingClient`].
+///
+/// Get a [`OptionPendingClient`] with the `option()` method of the [`PendingClient`],
+/// or with the [`Into`]/[`From`] traits.
 ///
 /// Represents a pending client that could have been received already.
 /// This type is useful when you can only get a mutable reference to this (not own it).
