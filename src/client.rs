@@ -328,6 +328,10 @@ where
 }
 
 #[derive(Debug)]
+/// A client that has started connecting, but might not have finished connecting.
+///
+/// When creating a client, a new thread is spawned for the client connection cycle.
+/// When the client is done being created, it will send it back through this pending client.
 pub struct PendingClient<C, R, D>
 where
     C: Any + Send + Sync,
@@ -364,9 +368,9 @@ where
         self.channel.is_ready()
     }
 
-    /// Gets the client. This will yield a value if [`done()`](Self::done)
-    /// returned `true`.
-    pub fn get(self) -> Result<io::Result<(Client<C, R, D>, R)>, Self> {
+    /// Takes the [`io::Result<Client>`] from the [`PendingClient`].
+    /// This **will** yield a value if [`done()`](Self::done) returned `true`.
+    pub fn take(self) -> Result<io::Result<(Client<C, R, D>, R)>, Self> {
         if self.done() {
             Ok(self.channel.recv().unwrap())
         } else {
@@ -379,3 +383,69 @@ where
         self.channel.recv().unwrap()
     }
 }
+
+
+#[derive(Debug)]
+/// An optional version of the [`PendingClient`].
+///
+/// Represents a pending client that could have been received already.
+/// This type is useful when you can only get a mutable reference to this (not own it).
+///
+/// The most notable difference is the `take` method only takes `&mut self`, instead of `self`,
+/// and the returns from most methods are wrapped in an option.
+pub struct OptionPendingClient<C, R, D>
+    where
+        C: Any + Send + Sync,
+        R: Any + Send + Sync,
+        D: Any + Send + Sync,
+{
+    channel: Option<Receiver<io::Result<(Client<C, R, D>, R)>>>,
+}
+
+// Impl display so that `get()` can be unwrapped.
+impl<C, R, D> Display for OptionPendingClient<C, R, D>
+    where
+        C: Any + Send + Sync,
+        R: Any + Send + Sync,
+        D: Any + Send + Sync,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Optional pending client connection ({}).",
+            match self.done() {
+                None => "Already taken",
+                Some(true) => "done",
+                Some(false) => "not done",
+            }
+        )
+    }
+}
+
+impl<C, R, D> OptionPendingClient<C, R, D>
+    where
+        C: Any + Send + Sync,
+        R: Any + Send + Sync,
+        D: Any + Send + Sync,
+{
+    /// Returns whether the client is finished connecting.
+    pub fn done(&self) -> Option<bool> {
+        Some(self.channel.as_ref()?.is_ready())
+    }
+
+    /// Takes the [`io::Result<Client>`] from the [`PendingClient`].
+    /// This **will** yield a value if [`done()`](Self::done) returned `true`.
+    pub fn take(&mut self) -> Option<Result<io::Result<(Client<C, R, D>, R)>, ()>> {
+        if self.done()? {
+            Some(Ok(self.channel.as_ref().unwrap().recv().unwrap()))
+        } else {
+            Some(Err(()))
+        }
+    }
+
+    /// Blocks until the client is ready.
+    pub fn block(self) -> Option<io::Result<(Client<C, R, D>, R)>> {
+        Some(self.channel?.recv().unwrap())
+    }
+}
+
