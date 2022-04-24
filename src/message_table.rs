@@ -68,6 +68,20 @@ impl MsgTable {
         MsgTable { table: vec![] }
     }
 
+    /// If type `T` has been registered or not.
+    pub fn is_registered<T>(&self) -> bool
+        where
+            T: Any + Send + Sync + DeserializeOwned + Serialize,
+    {
+        let tid = TypeId::of::<T>();
+        self.tid_registered(tid)
+    }
+
+    /// If the type with [`TypeId`] `tid` has been registered or not.
+    pub fn tid_registered(&self, tid: TypeId) -> bool {
+        self.table.iter().any(|(o_tid, _, _, _)| tid == *o_tid)
+    }
+
     /// Registers a message type so that it can be sent over the network.
     pub fn register<T>(&mut self, transport: Transport) -> Result<(), MsgRegError>
     where
@@ -85,6 +99,14 @@ impl MsgTable {
     where
         T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
+        // Get the type.
+        let tid = TypeId::of::<T>();
+
+        // Check if it has been registered already.
+        if self.tid_registered(tid) {
+            return Err(TypeAlreadyRegistered);
+        }
+
         // Get the serialize and deserialize functions
         let deser: DeserFn = |bytes: &[u8]| {
             bincode::deserialize::<T>(bytes)
@@ -99,13 +121,6 @@ impl MsgTable {
             })
         };
 
-        // Get the type.
-        let tid = TypeId::of::<T>();
-
-        // Check if it has been registered already.
-        if self.table.iter().any(|(t, _, _, _)| *t == tid) {
-            return Err(TypeAlreadyRegistered);
-        }
         Ok((tid, transport, ser, deser))
     }
 
@@ -165,6 +180,25 @@ impl SortedMsgTable {
         SortedMsgTable { table: vec![] }
     }
 
+    /// If type `T` has been registered or not.
+    pub fn is_registered<T>(&self) -> bool
+        where
+            T: Any + Send + Sync + DeserializeOwned + Serialize,
+    {
+        let tid = TypeId::of::<T>();
+        self.tid_registered(tid)
+    }
+
+    /// If the type with [`TypeId`] `tid` has been registered or not.
+    pub fn tid_registered(&self, tid: TypeId) -> bool {
+        self.table.iter().any(|(_, o_tid, _, _, _)| tid == *o_tid)
+    }
+
+    /// If the type with [`TypeId`] `tid` has been registered or not.
+    pub fn identifier_registered(&self, identifier: &str) -> bool {
+        self.table.iter().any(|(id, _, _, _, _)| identifier == &*id)
+    }
+
     /// Registers a message type so that it can be sent over the network.
     pub fn register<T>(&mut self, transport: Transport, identifier: &str) -> Result<(), MsgRegError>
     where
@@ -198,7 +232,7 @@ impl SortedMsgTable {
         };
 
         // Check if the identifier has been registered already.
-        if self.table.iter().any(|(id, _, _, _, _)| *id == identifier) {
+        if self.identifier_registered(&*identifier) {
             return Err(NonUniqueIdentifier);
         }
 
@@ -206,7 +240,7 @@ impl SortedMsgTable {
         let tid = TypeId::of::<T>();
 
         // Check if it has been registered already.
-        if self.table.iter().any(|(_, t, _, _, _)| *t == tid) {
+        if self.tid_registered(tid) {
             return Err(TypeAlreadyRegistered);
         }
 

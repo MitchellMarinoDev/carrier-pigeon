@@ -7,5 +7,5 @@
 - [x] Make send calls take an immutable reference by using a ReadWriteLock.
 - [ ] `bevy-pigeon`, and `carrier-pigeon` might have enough documentation warrant a book.
 - [ ] Bring back NetMsg and `impl<T: Any + Send + Sync + Serialize + DeserializeOwned> NetMsg for T;`
-- [ ] Remove the Register custom, as custom `Serialize`/`Deserialize` impls are allowed.
-- [ ] Remove the `<C, R, D>` generics as they end up everywhere.
+- [x] Remove the Register custom, as custom `Serialize`/`Deserialize` impls are allowed.
+- [x] Remove the `<C, R, D>` generics as they end up everywhere.
