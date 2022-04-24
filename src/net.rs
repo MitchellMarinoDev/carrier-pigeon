@@ -10,8 +10,8 @@ use std::io::Error;
 /// after taking off the possible overheads from the transport.
 ///
 /// Note that `carrier-pigeon` imposes a 4-byte overhead on every message so
-/// the data may be `MAX_SAFE_MESSAGE_SIZE - 4` or less to be guaranteed to be
-/// deliverable on udp.
+/// the data must be `MAX_SAFE_MESSAGE_SIZE - 4` or less to be guaranteed to
+/// be deliverable on udp.
 /// [source](https://newbedev.com/what-is-the-largest-safe-udp-packet-size-on-the-internet/)
 pub const MAX_SAFE_MESSAGE_SIZE: usize = 508;
 
@@ -25,7 +25,7 @@ pub const MAX_MESSAGE_SIZE: usize = 2048;
 /// An enum representing the 2 possible transports.
 ///
 /// - TCP is reliable but slower.
-/// - UDP is un-reliable but quicker.
+/// - UDP is unreliable but quicker.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Transport {
     TCP,
@@ -122,59 +122,6 @@ impl CIdSpec {
             CIdSpec::None => false,
             CIdSpec::Except(o) => cid != *o,
             CIdSpec::Only(o) => cid == *o,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::net::CIdSpec;
-
-    #[test]
-    fn cid_spec_all() {
-        let spec = CIdSpec::All;
-
-        let cid_vec = vec![0, 1, 2, 3, 10, 20, 1000, 102901];
-        let expected_vec = vec![true; cid_vec.len()-1];
-        for (cid, expected) in cid_vec.into_iter().zip(expected_vec) {
-            assert_eq!(spec.matches(cid), expected)
-        }
-    }
-
-    #[test]
-    fn cid_spec_none() {
-        let spec = CIdSpec::None;
-
-        let cid_vec = vec![0, 1, 2, 3, 10, 20, 1000, 102901];
-        let expected_vec = vec![false; cid_vec.len()-1];
-        for (cid, expected) in cid_vec.into_iter().zip(expected_vec) {
-            assert_eq!(spec.matches(cid), expected)
-        }
-    }
-
-    #[test]
-    fn cid_spec_only() {
-        let spec = CIdSpec::Only(12);
-
-        let cid_vec = vec![0, 1, 2, 3, 10, 12, 20, 1000, 102901];
-        let mut expected_vec = vec![false; cid_vec.len()-1];
-        expected_vec[5] = true;
-
-        for (cid, expected) in cid_vec.into_iter().zip(expected_vec) {
-            assert_eq!(spec.matches(cid), expected)
-        }
-    }
-
-    #[test]
-    fn cid_spec_except() {
-        let spec = CIdSpec::Except(12);
-
-        let cid_vec = vec![0, 1, 2, 3, 10, 12, 20, 1000, 102901];
-        let mut expected_vec = vec![true; cid_vec.len()-1];
-        expected_vec[5] = false;
-
-        for (cid, expected) in cid_vec.into_iter().zip(expected_vec) {
-            assert_eq!(spec.matches(cid), expected)
         }
     }
 }
