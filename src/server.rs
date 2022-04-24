@@ -1,5 +1,5 @@
 use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID};
-use crate::net::{CId, DeserFn, Header, NetError, Status, Transport, MAX_MESSAGE_SIZE, CIdSpec};
+use crate::net::{CId, DeserFn, Header, Status, Transport, MAX_MESSAGE_SIZE, CIdSpec};
 use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
 use crate::MId;
@@ -7,7 +7,7 @@ use hashbrown::HashMap;
 use log::{debug, error};
 use std::any::{Any, TypeId};
 use std::io;
-use std::io::ErrorKind::WouldBlock;
+use std::io::ErrorKind::{InvalidData, WouldBlock};
 use std::io::{Error, ErrorKind, Read};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::{Duration, Instant};
@@ -558,8 +558,8 @@ impl Server {
     }
 
     /// Removes a TCP connection.
-    fn rm_tcp_con(&mut self, cid: CId) -> Result<(), NetError> {
-        self.tcp.remove(&cid).ok_or(NetError::InvalidCId)?;
+    fn rm_tcp_con(&mut self, cid: CId) -> io::Result<()> {
+        self.tcp.remove(&cid).ok_or(Error::new(InvalidData, "Invalid CId."))?;
         let addr = self.cid_addr.remove(&cid).unwrap();
         self.addr_cid.remove(&addr);
         Ok(())

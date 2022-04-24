@@ -32,31 +32,6 @@ pub enum Transport {
     UDP,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum NetError {
-    /// The type was not registered in the [`MsgTable`].
-    TypeNotRegistered,
-    /// An error occurred in deserialization.
-    Deser,
-    /// An error occurred in serialization.
-    Ser,
-    /// The connection was closed.
-    Closed,
-    /// Tried to preform a Client specific action on a Server type connection.
-    NotClient,
-    /// Tried to preform a Server specific action on a Client type connection.
-    NotServer,
-    /// The given CId is not valid for any reason such as: the given CId is not
-    /// an active connection
-    InvalidCId,
-}
-
-impl Display for NetError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(self, f)
-    }
-}
-
 /// The function used to deserialize a message.
 pub type DeserFn = fn(&[u8]) -> Result<Box<dyn Any + Send + Sync>, io::Error>;
 /// The function used to serialize a message.
