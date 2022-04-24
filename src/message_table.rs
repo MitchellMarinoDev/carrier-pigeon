@@ -68,6 +68,25 @@ impl MsgTable {
         MsgTable { table: vec![] }
     }
 
+    /// Adds all registrations from `other` into this table.
+    ///
+    /// All errors are thrown before mutating self. If no errors
+    /// are thrown, all entries are added; if an error is thrown,
+    /// no entries are added.
+    pub fn join(&mut self, other: &MsgTable) -> Result<(), MsgRegError> {
+        // Validate
+        if other.table.iter()
+            .any(|(tid, _, _, _)| self.tid_registered(*tid)) {
+            return Err(TypeAlreadyRegistered);
+        }
+
+        // Join
+        for entry in other.table.iter() {
+            self.table.push(entry.clone());
+        }
+        Ok(())
+    }
+
     /// If type `T` has been registered or not.
     pub fn is_registered<T>(&self) -> bool
         where
@@ -178,6 +197,30 @@ impl SortedMsgTable {
     /// Creates a new [`SortedMsgTable`].
     pub fn new() -> Self {
         SortedMsgTable { table: vec![] }
+    }
+
+    /// Adds all registrations from `other` into this table.
+    ///
+    /// All errors are thrown before mutating self. If no errors
+    /// are thrown, all entries are added; if an error is thrown,
+    /// no entries are added.
+    pub fn join(&mut self, other: &SortedMsgTable) -> Result<(), MsgRegError> {
+        // Validate
+        if other.table.iter()
+            .any(|(_, tid, _, _, _)| self.tid_registered(*tid)) {
+            return Err(TypeAlreadyRegistered);
+        }
+
+        if other.table.iter()
+            .any(|(id, _, _, _, _)| self.identifier_registered(&*id)) {
+            return Err(NonUniqueIdentifier);
+        }
+
+        // Join
+        for entry in other.table.iter() {
+            self.table.push(entry.clone());
+        }
+        Ok(())
     }
 
     /// If type `T` has been registered or not.
