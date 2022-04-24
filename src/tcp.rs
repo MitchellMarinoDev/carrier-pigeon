@@ -5,13 +5,14 @@ use log::{error, trace};
 use std::io;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream};
+use std::sync::RwLock;
 
 /// A type wrapping a [`TcpStream`].
 ///
 /// Provides read/write abstractions for sending `carrier-pigeon` messages.
 pub struct TcpCon {
     buff: [u8; MAX_MESSAGE_SIZE],
-    tcp: TcpStream,
+    tcp: RwLock<TcpStream>,
 }
 
 impl TcpCon {
@@ -19,15 +20,16 @@ impl TcpCon {
     pub fn from_stream(tcp: TcpStream) -> Self {
         TcpCon {
             buff: [0; MAX_MESSAGE_SIZE],
-            tcp,
+            tcp: tcp.into(),
         }
     }
 
     /// Sends the payload `payload` to the peer.
     ///
     /// This constructs a header, and builds the message, and sends it.
-    pub fn send(&mut self, mid: MId, payload: &[u8]) -> io::Result<()> {
+    pub fn send(&self, mid: MId, payload: &[u8]) -> io::Result<()> {
         let total_len = payload.len() + 4;
+        let mut buff = vec![0; total_len];
         // Check if the packet is valid, and should be sent.
         if total_len > MAX_MESSAGE_SIZE {
             let e_msg = format!(
@@ -45,21 +47,23 @@ impl TcpCon {
         // write the header and packet to the buffer to combine them.
 
         for (i, b) in h_bytes.into_iter().enumerate() {
-            self.buff[i] = b;
+            buff[i] = b;
         }
         for (i, b) in payload.iter().enumerate() {
-            self.buff[i+4] = *b;
+            buff[i+4] = *b;
         }
 
         // Send
         trace!("TCP: Sending packet with MId: {}, len: {}", mid, total_len);
-        self.tcp.write_all(&self.buff[..total_len])?;
+        let mut tcp = self.tcp.write().unwrap();
+        tcp.write_all(&buff[..total_len])?;
         Ok(())
     }
 
     pub fn recv(&mut self) -> io::Result<(MId, &[u8])> {
         // Peak the first 4 bytes for the header.
-        match self.tcp.peek(&mut self.buff[..4])? {
+        let mut tcp = self.tcp.write().unwrap();
+        match tcp.peek(&mut self.buff[..4])? {
             4 => {} // Success
             0 => {
                 return Err(Error::new(
@@ -87,12 +91,12 @@ impl TcpCon {
                 header.len, MAX_MESSAGE_SIZE
             );
             error!("{}", e_msg);
-            self.tcp.shutdown(Shutdown::Both)?;
+            tcp.shutdown(Shutdown::Both)?;
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
 
         // Read data. The header will be read again as it was peaked earlier.
-        self.tcp.read_exact(&mut self.buff[..header.len + 4])?;
+        tcp.read_exact(&mut self.buff[..header.len + 4])?;
         trace!(
             "TCP: Received msg of MId {}, len {}",
             header.mid,
@@ -104,22 +108,23 @@ impl TcpCon {
 
     /// Moves the internal [`TcpStream`] into or out of nonblocking mode.
     pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
-        self.tcp.set_nonblocking(nonblocking)
+        self.tcp.read().unwrap().set_nonblocking(nonblocking)
     }
 
     /// Closes the connection by flushing then shutting down the [`TcpStream`].
     pub fn close(&mut self) -> io::Result<()> {
-        self.tcp.flush()?;
-        self.tcp.shutdown(Shutdown::Both)
+        let mut tcp = self.tcp.write().unwrap();
+        tcp.flush()?;
+        tcp.shutdown(Shutdown::Both)
     }
 
     /// Returns the socket address of the remote peer of this TCP connection.
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
-        self.tcp.peer_addr()
+        self.tcp.read().unwrap().peer_addr()
     }
 
     /// Returns the socket address of the local half of this TCP connection.
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.tcp.local_addr()
+        self.tcp.read().unwrap().local_addr()
     }
 }

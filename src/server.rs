@@ -247,8 +247,8 @@ where
     }
 
     /// A function that encapsulates the sending logic for the TCP transport.
-    fn send_tcp(&mut self, cid: CId, mid: MId, payload: &[u8]) -> io::Result<()> {
-        let tcp = match self.tcp.get_mut(&cid) {
+    fn send_tcp(&self, cid: CId, mid: MId, payload: &[u8]) -> io::Result<()> {
+        let tcp = match self.tcp.get(&cid) {
             Some(tcp) => tcp,
             None => return Err(Error::new(ErrorKind::InvalidData, "Invalid CId.")),
         };
@@ -257,7 +257,7 @@ where
     }
 
     /// A function that encapsulates the sending logic for the UDP transport.
-    fn send_udp(&mut self, cid: CId, mid: MId, payload: &[u8]) -> io::Result<()> {
+    fn send_udp(&self, cid: CId, mid: MId, payload: &[u8]) -> io::Result<()> {
         let addr = match self.cid_addr.get(&cid) {
             Some(addr) => *addr,
             None => return Err(Error::new(ErrorKind::InvalidData, "Invalid CId.")),
@@ -334,7 +334,7 @@ where
     /// If the message type isn't registered, this will return
     /// [`Error::TypeNotRegistered`]. If the msg fails to be
     /// serialized this will return [`Error::SerdeError`].
-    pub fn send_to<T: Any + Send + Sync>(&mut self, cid: CId, msg: &T) -> io::Result<()> {
+    pub fn send_to<T: Any + Send + Sync>(&self, cid: CId, msg: &T) -> io::Result<()> {
         let tid = TypeId::of::<T>();
         if !self.valid_tid(tid) {
             return Err(io::Error::new(
@@ -363,19 +363,18 @@ where
     }
 
     /// Broadcasts a message to all connected clients.
-    pub fn broadcast<T: Any + Send + Sync>(&mut self, msg: &T) -> io::Result<()> {
-        for cid in self.cids().collect::<Vec<_>>() {
+    pub fn broadcast<T: Any + Send + Sync>(&self, msg: &T) -> io::Result<()> {
+        for cid in self.cids() {
             self.send_to(cid, msg)?;
         }
         Ok(())
     }
 
         /// Sends a message to all [`CId`]s that match `spec`.
-    pub fn send_spec<T: Any + Send + Sync>(&mut self, msg: &T, spec: CIdSpec) -> io::Result<()> {
+    pub fn send_spec<T: Any + Send + Sync>(&self, msg: &T, spec: CIdSpec) -> io::Result<()> {
         for cid in self
             .cids()
             .filter(|cid| spec.matches(*cid))
-            .collect::<Vec<_>>()
         {
             self.send_to(cid, msg)?;
         }
@@ -399,7 +398,7 @@ where
     }
 
     /// Gets an iterator for the messages of type `T` that have
-    /// been recieved from [`CId`]s that match `spec`.
+    /// been received from [`CId`]s that match `spec`.
     ///
     /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
     ///
@@ -425,7 +424,6 @@ where
         let mut i = 0;
 
         // TCP
-        // TODO: dont collect after interior mutability send impl.
         for cid in self.cids().collect::<Vec<_>>() {
             loop {
                 let msg = self.recv_tcp(cid);

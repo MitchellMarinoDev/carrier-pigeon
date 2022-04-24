@@ -82,8 +82,7 @@ fn main() {
         let msgs = server
             .recv::<Msg>()
             .unwrap()
-            .map(|(cid, msg)| (cid, msg.clone()))
-            .collect::<Vec<_>>();
+            .map(|(cid, msg)| (cid, msg));
         for (cid, msg) in msgs {
             println!(
                 "Client {} sent message: {}: \"{}\"",
@@ -97,7 +96,7 @@ fn main() {
             }
 
             // Broadcast the message to all other clients.
-            server.send_spec(&msg, CIdSpec::Except(cid)).unwrap();
+            server.send_spec(msg, CIdSpec::Except(cid)).unwrap();
         }
         for cid in cids_to_disconnect {
             server

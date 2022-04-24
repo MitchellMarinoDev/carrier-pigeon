@@ -1,8 +1,11 @@
 # TODO:
-- TcpConnection buffering (Buffer all tcp messages sent, then write them all at the end of the frame).
-- MessageTableJoining (Join the registrations of 2 message tables).
-- Send client connect/disconnect messages to other clients.
-- Config options (instead of constants)
-- Add quick start example
-- Add Cargo.toml dependency copy-pasta in docs.rs and GitHub.
-- Perhaps bring back NetMsg and `impl<T: Any + Send + Sync> NetMsg for T;`
+- [ ] TcpConnection buffering (Buffer all tcp messages sent, then write them all at the end of the frame).
+- [ ] MessageTableJoining (Join the registrations of 2 message tables).
+- [ ] Config options (instead of constants)
+- [ ] Add quick start example
+- [ ] Add Cargo.toml dependency copy-pasta in docs.rs and GitHub.
+- [x] Make send calls take an immutable reference by using a ReadWriteLock.
+- [ ] `bevy-pigeon`, and `carrier-pigeon` might have enough documentation warrant a book.
+- [ ] Bring back NetMsg and `impl<T: Any + Send + Sync + Serialize + DeserializeOwned> NetMsg for T;`
+- [ ] Remove the Register custom, as custom `Serialize`/`Deserialize` impls are allowed.
+- [ ] Remove the `<C, R, D>` generics as they end up everywhere.

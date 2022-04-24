@@ -9,6 +9,7 @@ use std::net::{SocketAddr, UdpSocket};
 ///
 /// Provides read/write abstractions for sending `carrier-pigeon` messages.
 pub struct UdpCon {
+    /// Used for receiving only. This way send calls can take immutable refs.
     buff: [u8; MAX_MESSAGE_SIZE],
     udp: UdpSocket,
 }
@@ -28,48 +29,51 @@ impl UdpCon {
         })
     }
 
-    pub fn send_to(&mut self, addr: SocketAddr, mid: MId, payload: &[u8]) -> io::Result<()> {
-        let total_len = self.send_shared(mid, payload)?;
+    pub fn send_to(&self, addr: SocketAddr, mid: MId, payload: &[u8]) -> io::Result<()> {
+        let buff = self.send_shared(mid, payload)?;
+        let len = buff.len();
 
         trace!(
             "UDP: Sending packet with MId: {}, len: {} to {}.",
-            mid,
-            total_len,
-            addr
+            mid, len, addr
         );
-        let n = self.udp.send_to(&self.buff[..total_len], addr)?;
+        let n = self.udp.send_to(&buff[..len], addr)?;
 
         // Make sure it sent correctly.
-        if n != total_len {
+        if n != len {
             error!(
                 "UDP: Couldn't send all the bytes of a packet (mid: {}). \
-				Wanted to send {} but could only send {}",
-                mid, total_len, n
+				Wanted to send {} but could only send {}. This will likely \
+				cause issues on the other side.",
+                mid, len, n
             );
         }
         Ok(())
     }
 
-    pub fn send(&mut self, mid: MId, payload: &[u8]) -> io::Result<()> {
-        let total_len = self.send_shared(mid, payload)?;
+    pub fn send(&self, mid: MId, payload: &[u8]) -> io::Result<()> {
+        let buff = self.send_shared(mid, payload)?;
+        let len = buff.len();
 
-        trace!("UDP: Sending packet with MId: {}, len: {}.", mid, total_len);
-        let n = self.udp.send(&self.buff[..total_len])?;
+        trace!("UDP: Sending packet with MId: {}, len: {}.", mid, len);
+        let n = self.udp.send(&buff[..len])?;
 
         // Make sure it sent correctly.
-        if n != total_len {
+        if n != len {
             error!(
                 "UDP: Couldn't send all the bytes of a packet (mid: {}). \
 				Wanted to send {} but could only send {}.",
-                mid, total_len, n
+                mid, len, n
             );
         }
         Ok(())
     }
 
     /// The shared code for sending a message.
-    fn send_shared(&mut self, mid: MId, payload: &[u8]) -> io::Result<usize> {
+    /// Produces a buffer given the payload
+    fn send_shared(&self, mid: MId, payload: &[u8]) -> io::Result<Vec<u8>> {
         let total_len = payload.len() + 4;
+        let mut buff = vec![0; total_len];
         // Check if the packet is valid, and should be sent.
         if total_len > MAX_MESSAGE_SIZE {
             let e_msg = format!(
@@ -94,12 +98,12 @@ impl UdpCon {
         let h_bytes = header.to_be_bytes();
         // put the header in the front of the packet
         for (i, b) in h_bytes.into_iter().enumerate() {
-            self.buff[i] = b;
+            buff[i] = b;
         }
         for (i, b) in payload.iter().enumerate() {
-            self.buff[i+4] = *b;
+            buff[i+4] = *b;
         }
-        Ok(total_len)
+        Ok(buff)
     }
 
     pub fn recv(&mut self) -> io::Result<(MId, &[u8])> {
