@@ -1,4 +1,5 @@
 //! Tests the [`CidSpec`].
+use carrier_pigeon::CId;
 use carrier_pigeon::net::CIdSpec;
 
 /// Tests [`CIdSpec::All`].
@@ -50,5 +51,50 @@ fn except() {
 
     for (cid, expected) in cid_vec.into_iter().zip(expected_vec) {
         assert_eq!(spec.matches(cid), expected)
+    }
+}
+
+/// Tests [`CIdSpec::overlaps`].
+#[test]
+fn overlaps() {
+    use CIdSpec::*;
+
+    // (first, second, expected_result).
+    let cases = vec![
+        // None tests
+        (None, None, false),
+        (None, All, false),
+        (All, None, false),
+        (None, Only(1), false),
+        (Only(1), None, false),
+        (None, Except(1), false),
+        (Except(1), None, false),
+
+        // All tests
+        (All, All, true),
+        (All, Only(1), true),
+        (Only(1), All, true),
+        (All, Except(2), true),
+        (Except(2), All, true),
+
+        // Only tests
+        (Only(1), Only(1), true),
+        (Only(1), Only(2), false),
+
+        // Except tests
+        (Except(1), Except(1), true),
+        (Except(1), Except(2), true),
+
+        // Only & Except tests
+        (Except(1), Only(1), false),
+        (Only(1), Except(1), false),
+
+        (Except(1), Only(2), true),
+        (Only(1), Except(2), true),
+    ];
+
+    for (first, second, expected) in cases {
+        assert_eq!(first.overlaps(second), expected);
+        assert_eq!(second.overlaps(first), expected);
     }
 }

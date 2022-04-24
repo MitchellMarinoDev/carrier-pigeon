@@ -135,4 +135,22 @@ impl CIdSpec {
             CIdSpec::Only(o) => cid == *o,
         }
     }
+
+    /// Checks if the `other` [`CIdSpec`] overlaps (shares at least on common [`CId`]).
+    pub fn overlaps(&self, other: CIdSpec) -> bool {
+        use CIdSpec::*;
+
+        match (*self, other) {
+            (None, _) => false,
+            (_, None) => false,
+            (All, _) => true,
+            (_, All) => true,
+
+            (Except(_), Except(_)) => true,
+            (Only(o1), Only(o2)) => o1 == o2,
+
+            (Only(only), Except(except)) => only != except,
+            (Except(except), Only(only)) => only != except,
+        }
+    }
 }
