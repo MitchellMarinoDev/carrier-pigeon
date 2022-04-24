@@ -10,7 +10,7 @@ use std::any::{Any, TypeId};
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::{Error, ErrorKind};
-use std::marker::PhantomData;
+use std::io::ErrorKind::InvalidData;
 use std::net::{SocketAddr, TcpStream};
 use std::time::Duration;
 
@@ -19,14 +19,9 @@ use std::time::Duration;
 /// This can only connect to 1 server.
 ///
 /// Contains a TCP and UDP connection to the server.
-pub struct Client<C, R, D>
-where
-    C: Any + Send + Sync,
-    R: Any + Send + Sync,
-    D: Any + Send + Sync,
-{
+pub struct Client {
     /// The status of the client
-    status: Status<D>,
+    status: Status,
     /// The received message buffer.
     ///
     /// Each [`MId`] has its own vector.
@@ -38,26 +33,20 @@ where
     udp: UdpCon,
 
     /// The [`MsgTableParts`] to use for sending messages.
-    parts: MsgTableParts<C, R, D>,
-    _pd: PhantomData<(C, R, D)>,
+    parts: MsgTableParts,
 }
 
-impl<C, R, D> Client<C, R, D>
-where
-    C: Any + Send + Sync,
-    R: Any + Send + Sync,
-    D: Any + Send + Sync,
-{
+impl Client {
     /// Creates a new [`Client`].
     ///
     /// Creates a new [`Client`] on another thread, passing back a [`PendingClient`].
     /// This [`PendingClient`] allows you to wait for the client to send the connection
     /// packet, and the server to send back the response packet.
-    pub fn new(
+    pub fn new<C: Any + Send + Sync>(
         peer: SocketAddr,
-        parts: MsgTableParts<C, R, D>,
+        parts: MsgTableParts,
         con_msg: C,
-    ) -> PendingClient<C, R, D> {
+    ) -> PendingClient {
         let (client_tx, client_rx) = crossbeam_channel::bounded(1);
 
         std::thread::spawn(move || client_tx.send(Self::new_blocking(peer, parts, con_msg)));
@@ -66,11 +55,11 @@ where
     }
 
     /// Creates a new [`Client`] blocking.
-    fn new_blocking(
+    fn new_blocking<C: Any + Send + Sync>(
         peer: SocketAddr,
-        parts: MsgTableParts<C, R, D>,
+        parts: MsgTableParts,
         con_msg: C,
-    ) -> io::Result<(Self, R)> {
+    ) -> io::Result<(Self, Box<dyn Any + Send + Sync>)> {
         debug!("Attempting to create a client connection to {}", peer);
         // TCP & UDP Connections.
         let tcp = TcpStream::connect(peer)?;
@@ -100,7 +89,6 @@ where
             tcp,
             udp,
             parts,
-            _pd: PhantomData,
         };
 
         // Send connection packet
@@ -119,7 +107,6 @@ where
             error!("{}", msg);
             return Err(Error::new(ErrorKind::InvalidData, msg));
         }
-        let response = *response.downcast::<R>().map_err(|_| "").unwrap();
 
         debug!(
             "New Client created at {}, to {}.",
@@ -192,7 +179,11 @@ where
     /// method before dropping the client to let the server know that
     /// you intentionally disconnected. The `discon_msg` allows you to
     /// give a reason for the disconnect.
-    pub fn disconnect(&mut self, discon_msg: &D) -> io::Result<()> {
+    pub fn disconnect<D: Any + Send + Sync>(&mut self, discon_msg: &D) -> io::Result<()> {
+        let tid = TypeId::of::<D>();
+        if self.parts.tid_map[&tid] != DISCONNECT_TYPE_MID {
+            return Err(Error::new(InvalidData, "The generic parameter `D` must be the disconnection message type (the same `D` that you passed into `MsgTable::build`)."))
+        }
         debug!("Disconnecting client.");
         self.send(discon_msg)?;
         self.tcp.close()?;
@@ -202,7 +193,7 @@ where
     }
 
     /// Gets the status of the connection.
-    pub fn status(&self) -> &Status<D> {
+    pub fn status(&self) -> &Status {
         &self.status
     }
 
@@ -279,7 +270,7 @@ where
                 Ok((mid, msg)) => {
                     i += 1;
                     if mid == DISCONNECT_TYPE_MID {
-                        self.status = Status::Disconnected(*msg.downcast().unwrap());
+                        self.status = Status::Disconnected(msg);
                     } else {
                         self.msg_buff[mid].push(msg);
                     }
@@ -312,12 +303,7 @@ where
     }
 }
 
-impl<C, R, D> Debug for Client<C, R, D>
-where
-    C: Any + Send + Sync,
-    R: Any + Send + Sync,
-    D: Any + Send + Sync + Debug,
-{
+impl Debug for Client {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Client")
             .field("status", self.status())
@@ -332,22 +318,12 @@ where
 ///
 /// When creating a client, a new thread is spawned for the client connection cycle.
 /// When the client is done being created, it will send it back through this pending client.
-pub struct PendingClient<C, R, D>
-where
-    C: Any + Send + Sync,
-    R: Any + Send + Sync,
-    D: Any + Send + Sync,
-{
-    channel: Receiver<io::Result<(Client<C, R, D>, R)>>,
+pub struct PendingClient {
+    channel: Receiver<io::Result<(Client, Box<dyn Any + Send + Sync>)>>,
 }
 
 // Impl display so that `get()` can be unwrapped.
-impl<C, R, D> Display for PendingClient<C, R, D>
-where
-    C: Any + Send + Sync,
-    R: Any + Send + Sync,
-    D: Any + Send + Sync,
-{
+impl Display for PendingClient {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -357,12 +333,7 @@ where
     }
 }
 
-impl<C, R, D> PendingClient<C, R, D>
-where
-    C: Any + Send + Sync,
-    R: Any + Send + Sync,
-    D: Any + Send + Sync,
-{
+impl PendingClient {
     /// Returns whether the client is finished connecting.
     pub fn done(&self) -> bool {
         self.channel.is_ready()
@@ -370,34 +341,35 @@ where
 
     /// Takes the [`io::Result<Client>`] from the [`PendingClient`].
     /// This **will** yield a value if [`done()`](Self::done) returned `true`.
-    pub fn take(self) -> Result<io::Result<(Client<C, R, D>, R)>, Self> {
+    ///
+    /// ### Panics
+    /// Panics if the generic parameter `R` isn't the response message type (the same `R` that you passed into `MsgTable::build`).
+    pub fn take<R: Any + Send + Sync>(self) -> Result<io::Result<(Client, R)>, Self> {
         if self.done() {
-            Ok(self.channel.recv().unwrap())
+            Ok(self.channel.recv().unwrap().map(|(client, m)| (client, *m.downcast::<R>().expect("The generic parameter `R` must be the response message type (the same `R` that you passed into `MsgTable::build`)."))))
         } else {
             Err(self)
         }
     }
 
     /// Blocks until the client is ready.
-    pub fn block(self) -> io::Result<(Client<C, R, D>, R)> {
-        self.channel.recv().unwrap()
+    ///
+    /// ### Panics
+    /// Panics if the generic parameter `R` isn't the response message type (the same `R` that you passed into `MsgTable::build`).
+    pub fn block<R: Any + Send + Sync>(self) -> io::Result<(Client, R)> {
+        self.channel.recv().unwrap().map(|(client, m)| (client, *m.downcast::<R>().expect("The generic parameter `R` must be the response message type (the same `R` that you passed into `MsgTable::build`).")))
     }
 
     /// Converts this into a [`OptionPendingClient`].
-    pub fn option(self) -> OptionPendingClient<C, R, D> {
+    pub fn option(self) -> OptionPendingClient {
         OptionPendingClient {
             channel: Some(self.channel),
         }
     }
 }
 
-impl<C, R, D> Into<OptionPendingClient<C, R, D>> for PendingClient<C, R, D>
-    where
-        C: Any + Send + Sync,
-        R: Any + Send + Sync,
-        D: Any + Send + Sync,
-{
-    fn into(self) -> OptionPendingClient<C, R, D> {
+impl Into<OptionPendingClient> for PendingClient {
+    fn into(self) -> OptionPendingClient {
         self.option()
     }
 }
@@ -413,22 +385,12 @@ impl<C, R, D> Into<OptionPendingClient<C, R, D>> for PendingClient<C, R, D>
 ///
 /// The most notable difference is the `take` method only takes `&mut self`, instead of `self`,
 /// and the returns from most methods are wrapped in an option.
-pub struct OptionPendingClient<C, R, D>
-    where
-        C: Any + Send + Sync,
-        R: Any + Send + Sync,
-        D: Any + Send + Sync,
-{
-    channel: Option<Receiver<io::Result<(Client<C, R, D>, R)>>>,
+pub struct OptionPendingClient {
+    channel: Option<Receiver<io::Result<(Client, Box<dyn Any + Send + Sync>)>>>,
 }
 
 // Impl display so that `get()` can be unwrapped.
-impl<C, R, D> Display for OptionPendingClient<C, R, D>
-    where
-        C: Any + Send + Sync,
-        R: Any + Send + Sync,
-        D: Any + Send + Sync,
-{
+impl Display for OptionPendingClient {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -442,12 +404,7 @@ impl<C, R, D> Display for OptionPendingClient<C, R, D>
     }
 }
 
-impl<C, R, D> OptionPendingClient<C, R, D>
-    where
-        C: Any + Send + Sync,
-        R: Any + Send + Sync,
-        D: Any + Send + Sync,
-{
+impl OptionPendingClient {
     /// Returns whether the client is finished connecting.
     pub fn done(&self) -> Option<bool> {
         Some(self.channel.as_ref()?.is_ready())
@@ -455,17 +412,23 @@ impl<C, R, D> OptionPendingClient<C, R, D>
 
     /// Takes the [`io::Result<Client>`] from the [`PendingClient`].
     /// This **will** yield a value if [`done()`](Self::done) returned `true`.
-    pub fn take(&mut self) -> Option<Result<io::Result<(Client<C, R, D>, R)>, ()>> {
+    ///
+    /// ### Panics
+    /// Panics if `R` is not the response message type.
+    pub fn take<R: Any + Send + Sync>(&mut self) -> Option<io::Result<(Client, R)>> {
         if self.done()? {
-            Some(Ok(self.channel.as_ref().unwrap().recv().unwrap()))
+            Some(self.channel.as_ref().unwrap().recv().unwrap().map(|(client, m)| (client, *m.downcast::<R>().expect("The generic parameter `R` must be the response message type (the same `R` that you passed into `MsgTable::build`)."))))
         } else {
-            Some(Err(()))
+            None
         }
     }
 
     /// Blocks until the client is ready.
-    pub fn block(self) -> Option<io::Result<(Client<C, R, D>, R)>> {
-        Some(self.channel?.recv().unwrap())
+    ///
+    /// ### Panics
+    /// Panics if the generic parameter `R` isn't the response message type (the same `R` that you passed into `MsgTable::build`).
+    pub fn block<R: Any + Send + Sync>(self) -> Option<io::Result<(Client, R)>> {
+        Some(self.channel?.recv().unwrap().map(|(client, m)| (client, *m.downcast::<R>().expect("The generic parameter `R` must be the response message type (the same `R` that you passed into `MsgTable::build`)."))))
     }
 }
 

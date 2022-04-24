@@ -52,7 +52,7 @@ fn graceful_disconnect() {
         let count = client.recv_msgs();
         assert_eq!(count, 1);
         assert_eq!(
-            client.status().disconnected().unwrap(),
+            client.status().disconnected::<Disconnect>().unwrap(),
             &Disconnect::new("Testing Disconnect Server.")
         );
     }

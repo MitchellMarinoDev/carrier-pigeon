@@ -64,29 +64,29 @@ pub type SerFn = fn(&(dyn Any + Send + Sync)) -> Result<Vec<u8>, io::Error>;
 
 #[derive(Debug)]
 /// An enum for the possible states of a connection
-pub enum Status<D> {
+pub enum Status {
     /// The connection is still live.
     Connected,
     /// The connection is closed because the peer disconnected by sending a disconnection packet.
-    Disconnected(D),
+    Disconnected(Box<dyn Any + Send + Sync>),
     /// The connection is closed because we chose to close the connection.
     Closed,
     /// The connection was dropped without sending a disconnection packet.
     Dropped(Error),
 }
 
-impl<D: Display> Display for Status<D> {
+impl Display for Status {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Connected => write!(f, "Connected"),
-            Self::Disconnected(d) => write!(f, "Disconnected with packet {}", d),
+            Self::Disconnected(_) => write!(f, "Disconnected gracefully"),
             Self::Closed => write!(f, "Closed"),
             Self::Dropped(e) => write!(f, "Dropped with error {}", e),
         }
     }
 }
 
-impl<D> Status<D> {
+impl Status {
     pub fn connected(&self) -> bool {
         match self {
             Status::Connected => true,
@@ -94,9 +94,13 @@ impl<D> Status<D> {
         }
     }
 
-    pub fn disconnected(&self) -> Option<&D> {
+    /// Turns this into an option with the disconnect packet.
+    ///
+    /// ### Panics
+    /// Panics if the generic parameter `D` isn't the disconnect message type (the same `D` that you passed into `MsgTable::build`).
+    pub fn disconnected<D: Any + Send + Sync>(&self) -> Option<&D> {
         match self {
-            Status::Disconnected(d) => Some(d),
+            Status::Disconnected(d) => Some(d.downcast_ref().expect("The generic parameter `D` must be the disconnection message type (the same `D` that you passed into `MsgTable::build`).")),
             _ => None,
         }
     }

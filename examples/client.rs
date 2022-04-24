@@ -14,7 +14,6 @@
 //! `disconnect-me`.
 
 use crate::shared::{Connection, Disconnect, Msg, Response};
-use carrier_pigeon::net::Status;
 use carrier_pigeon::{Client, MsgTable, Transport};
 use log::LevelFilter;
 use simple_logger::SimpleLogger;
@@ -98,7 +97,7 @@ fn main() {
             }
         }
 
-        if let Status::Disconnected(msg) = client.status() {
+        if let Some(msg) = client.status().disconnected::<Disconnect>() {
             // Client was disconnected.
             println!("Disconnected for reason {}", msg.reason);
             break;

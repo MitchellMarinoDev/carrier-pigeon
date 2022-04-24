@@ -66,9 +66,9 @@ impl Response {
 }
 
 /// Builds a table with all these test packets and returns it's parts.
-pub fn get_table_parts() -> MsgTableParts<Connection, Response, Disconnect> {
+pub fn get_table_parts() -> MsgTableParts {
     let mut table = MsgTable::new();
     table.register::<TcpPacket>(Transport::TCP).unwrap();
     table.register::<UdpPacket>(Transport::UDP).unwrap();
-    table.build().unwrap()
+    table.build::<Connection, Response, Disconnect>().unwrap()
 }

@@ -9,7 +9,6 @@ use std::any::{Any, TypeId};
 use std::io;
 use std::io::ErrorKind::WouldBlock;
 use std::io::{Error, ErrorKind, Read};
-use std::marker::PhantomData;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::{Duration, Instant};
 
@@ -23,12 +22,7 @@ const TIMEOUT: Duration = Duration::from_millis(10_000);
 ///
 /// This will manage multiple connections to clients. Each connection
 /// will have a TCP and UDP connection on the same address and port.
-pub struct Server<C, R, D>
-where
-    C: Any + Send + Sync,
-    R: Any + Send + Sync,
-    D: Any + Send + Sync,
-{
+pub struct Server {
     /// The current cid. incremented then assigned to new connections.
     current_cid: CId,
     /// The buffer used for sending and receiving packets
@@ -42,7 +36,7 @@ where
     /// not sent a connection packet yet).
     new_cons: Vec<(TcpStream, CId, Instant)>,
     /// Disconnected connections.
-    disconnected: Vec<(CId, Status<D>)>,
+    disconnected: Vec<(CId, Status)>,
     /// The listener for new connections.
     listener: TcpListener,
     /// The TCP connection for this client.
@@ -66,20 +60,14 @@ where
     addr_cid: HashMap<SocketAddr, CId>,
 
     /// The [`MsgTableParts`] to use for sending messages.
-    parts: MsgTableParts<C, R, D>,
-    _pd: PhantomData<(C, R, D)>,
+    parts: MsgTableParts,
 }
 
-impl<C, R, D> Server<C, R, D>
-where
-    C: Any + Send + Sync,
-    R: Any + Send + Sync,
-    D: Any + Send + Sync,
-{
+impl Server {
     /// Creates a new [`Server`].
     ///
     /// Creates a new [`Server`] listening on the address `listen_addr`.
-    pub fn new(mut listen_addr: SocketAddr, parts: MsgTableParts<C, R, D>) -> io::Result<Self> {
+    pub fn new(mut listen_addr: SocketAddr, parts: MsgTableParts) -> io::Result<Self> {
         let listener = TcpListener::bind(listen_addr)?;
         listen_addr = listener.local_addr().unwrap();
         listener.set_nonblocking(true)?;
@@ -105,7 +93,6 @@ where
             cid_addr: Default::default(),
             addr_cid: Default::default(),
             parts,
-            _pd: PhantomData,
         })
     }
 
@@ -127,7 +114,7 @@ where
     }
 
     /// Handle the new connection attempts by calling the given hook.
-    pub fn handle_new_cons(&mut self, hook: &mut dyn FnMut(CId, C) -> (bool, R)) -> u32 {
+    pub fn handle_new_cons<C: Any + Send + Sync, R: Any + Send + Sync>(&mut self, hook: &mut dyn FnMut(CId, C) -> (bool, R)) -> u32 {
         // Start waiting on the connection packets for new connections.
         // TODO: add cap to connections that we are handling.
         while let Ok((new_con, _addr)) = self.listener.accept() {
@@ -142,7 +129,7 @@ where
         let mut remove = vec![];
         let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
         for (idx, (con, cid, time)) in self.new_cons.iter_mut().enumerate() {
-            match Self::handle_new_con(&mut self.buff, deser_fn, con, time) {
+            match Self::handle_new_con::<C>(&mut self.buff, deser_fn, con, time) {
                 Ok(c) => {
                     let (acc, r) = hook(*cid, c);
                     if acc {
@@ -184,7 +171,7 @@ where
     /// Ok(Some(c)) it should also be removed, as it has finished connecting
     /// successfully. It should not be removed from this list if it returns
     /// Ok(None), as that means the connection is still pending.
-    fn handle_new_con(
+    fn handle_new_con<C: Any + Send + Sync>(
         buff: &mut [u8],
         deser_fn: DeserFn,
         con: &mut TcpStream,
@@ -225,7 +212,7 @@ where
     }
 
     /// Handles the disconnect events.
-    pub fn handle_disconnects(&mut self, hook: &mut dyn FnMut(CId, Status<D>)) -> u32 {
+    pub fn handle_disconnects(&mut self, hook: &mut dyn FnMut(CId, Status)) -> u32 {
         let mut cids_to_rm = vec![];
 
         // disconnect counts.
@@ -473,8 +460,7 @@ where
                 *count += 1;
                 if mid == DISCONNECT_TYPE_MID {
                     debug!("Disconnecting peer {}", cid);
-                    let discon = msg.downcast::<D>().unwrap();
-                    self.disconnected.push((cid, Status::Disconnected(*discon)));
+                    self.disconnected.push((cid, Status::Disconnected(msg)));
                     return true;
                 }
 
