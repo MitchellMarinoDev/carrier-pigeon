@@ -62,6 +62,7 @@ impl Display for Status {
 }
 
 impl Status {
+    /// Returns whether the status is [`Status::Connected`].
     pub fn connected(&self) -> bool {
         match self {
             Status::Connected => true,
@@ -80,6 +81,15 @@ impl Status {
         }
     }
 
+    /// Turns this into an option with the disconnect packet.
+    pub fn disconnected_dyn(&self) -> Option<&Box<dyn Any + Send + Sync>> {
+        match self {
+            Status::Disconnected(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Turns this into an option with the drop error.
     pub fn dropped(&self) -> Option<&Error> {
         match self {
             Status::Dropped(e) => Some(e),
@@ -87,6 +97,7 @@ impl Status {
         }
     }
 
+    /// Returns whether the status is [`Status::Closed`].
     pub fn closed(&self) -> bool {
         match self {
             Status::Closed => true,
