@@ -134,12 +134,12 @@ where
     }
 
     /// A function that encapsulates the sending logic for the TCP transport.
-    fn send_tcp(&mut self, mid: MId, payload: &[u8]) -> io::Result<()> {
+    fn send_tcp(&self, mid: MId, payload: &[u8]) -> io::Result<()> {
         self.tcp.send(mid, payload)
     }
 
     /// A function that encapsulates the sending logic for the UDP transport.
-    fn send_udp(&mut self, mid: MId, payload: &[u8]) -> io::Result<()> {
+    fn send_udp(&self, mid: MId, payload: &[u8]) -> io::Result<()> {
         self.udp.send(mid, payload)
     }
 
@@ -218,7 +218,7 @@ where
     /// If the message type isn't registered, this will return
     /// [`NetError::TypeNotRegistered`]. If the msg fails to be
     /// serialized this will return [`NetError::SerdeError`].
-    pub fn send<T: Any + Send + Sync>(&mut self, msg: &T) -> io::Result<()> {
+    pub fn send<T: Any + Send + Sync>(&self, msg: &T) -> io::Result<()> {
         let tid = TypeId::of::<T>();
         if !self.parts.valid_tid(tid) {
             return Err(io::Error::new(
