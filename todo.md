@@ -1,6 +1,6 @@
 # TODO:
 - [ ] TcpConnection buffering (Buffer all tcp messages sent, then write them all at the end of the frame).
-- [ ] MessageTableJoining (Join the registrations of 2 message tables).
+- [x] MessageTableJoining (Join the registrations of 2 message tables).
 - [ ] Config options (instead of constants)
 - [ ] Add quick start example
 - [ ] Add Cargo.toml dependency copy-pasta in docs.rs and GitHub.
