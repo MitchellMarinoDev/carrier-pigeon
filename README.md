@@ -1,4 +1,5 @@
 # carrier-pigeon
+
 A rusty networking library for games.
 
 Carrier pigeon builds on the standard library's `TcpStream` and `UdpSocket` types and handles all the serialization, 
@@ -6,6 +7,7 @@ sending, receiving, and deserialization. This way you can worry about what to se
 to send it. This also allows you to send and receive different types of messages independently.
 
 ### Messages
+
 Messages are simple rust types that implement the `Any + Send + Sync` traits, and serde's `Serialize` and `DeserializeOwned` 
 traits. This means making new message types is simple and almost boilerplate free. 
 Each message type is independent of the others. This means adding another message type won't mess with any of the other 
@@ -63,12 +65,13 @@ This contains a client and server command line programs.
  - [x] Client and Server types.
  - [x] Built in serialization/deserialization.
  - [x] Custom serialization support.
+- [x] [Bevy](https://bevyengine.org/) integration ([bevy-pigeon](https://github.com/MitchellMarinoDev/bevy-pigeon)).
 
 ### Planned Features
 
 - [ ] More config options.
 - [ ] Benchmarks (On the way!)
-- [ ] [Bevy](https://bevyengine.org/) integration.
+- [ ] RPCs
 
 ## Contributing
 
