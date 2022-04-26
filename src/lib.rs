@@ -5,11 +5,6 @@
 //! and deserialization. This way you can worry about what to send, and pigeon will worry
 //! about how to send it.
 //!
-//! ### Add carrier-pigeon to your `Cargo.toml`:
-//! ```
-//! carrier-pigeon = "0.3.0"
-//! ```
-//!
 //! ## Examples
 //!
 //! Complete examples are provided in the
