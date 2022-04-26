@@ -11,6 +11,7 @@ use std::io::ErrorKind::{InvalidData, WouldBlock};
 use std::io::{Error, ErrorKind, Read};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::{Duration, Instant};
+use crate::header::HEADER_LEN;
 
 const TIMEOUT: Duration = Duration::from_millis(10_000);
 
@@ -184,20 +185,20 @@ impl Server {
             ));
         }
 
-        // Peak the first 4 bytes for the header.
-        if con.peek(&mut buff[..4])? != 4 {
+        // Peak the header.
+        if con.peek(&mut buff[..HEADER_LEN])? != HEADER_LEN {
             return Err(Error::new(ErrorKind::WouldBlock, "Not enough bytes for an entire message."));
         }
-        let h = Header::from_be_bytes(&buff[..4]);
+        let h = Header::from_be_bytes(&buff[..HEADER_LEN]);
 
         if h.mid != CONNECTION_TYPE_MID {
             let msg = format!("Expected MId {}, got MId {}.", CONNECTION_TYPE_MID, h.mid);
             return Err(Error::new(ErrorKind::InvalidData, msg));
         }
 
-        con.read_exact(&mut buff[..h.len + 4])?;
+        con.read_exact(&mut buff[..h.len + HEADER_LEN])?;
 
-        let con_msg = deser_fn(&buff[4..h.len + 4]).map_err(|o| {
+        let con_msg = deser_fn(&buff[HEADER_LEN..h.len + HEADER_LEN]).map_err(|o| {
             Error::new(
                 ErrorKind::InvalidData,
                 format!(

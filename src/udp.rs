@@ -4,6 +4,7 @@ use log::{error, trace, warn};
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, UdpSocket};
+use crate::header::HEADER_LEN;
 
 /// A type wrapping a [`UdpSocket`].
 ///
@@ -72,7 +73,7 @@ impl UdpCon {
     /// The shared code for sending a message.
     /// Produces a buffer given the payload
     fn send_shared(&self, mid: MId, payload: &[u8]) -> io::Result<Vec<u8>> {
-        let total_len = payload.len() + 4;
+        let total_len = payload.len() + HEADER_LEN;
         let mut buff = vec![0; total_len];
         // Check if the packet is valid, and should be sent.
         if total_len > MAX_MESSAGE_SIZE {
@@ -101,7 +102,7 @@ impl UdpCon {
             buff[i] = b;
         }
         for (i, b) in payload.iter().enumerate() {
-            buff[i+4] = *b;
+            buff[i+HEADER_LEN] = *b;
         }
         Ok(buff)
     }
@@ -133,8 +134,8 @@ impl UdpCon {
             return Err(Error::new(ErrorKind::NotConnected, e_msg));
         }
 
-        let header = Header::from_be_bytes(&self.buff[..4]);
-        let total_expected_len = header.len + 4;
+        let header = Header::from_be_bytes(&self.buff[..HEADER_LEN]);
+        let total_expected_len = header.len + HEADER_LEN;
 
         if total_expected_len > MAX_MESSAGE_SIZE {
             let e_msg = format!(
@@ -159,7 +160,7 @@ impl UdpCon {
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
 
-        Ok((header.mid, &self.buff[4..header.len + 4]))
+        Ok((header.mid, &self.buff[HEADER_LEN..header.len + HEADER_LEN]))
     }
 
     /// Moves the internal [`TcpStream`] into or out of nonblocking mode.

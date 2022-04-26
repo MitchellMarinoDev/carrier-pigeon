@@ -6,6 +6,7 @@ use std::io;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::sync::RwLock;
+use crate::header::HEADER_LEN;
 
 /// A type wrapping a [`TcpStream`].
 ///
@@ -28,7 +29,7 @@ impl TcpCon {
     ///
     /// This constructs a header, and builds the message, and sends it.
     pub fn send(&self, mid: MId, payload: &[u8]) -> io::Result<()> {
-        let total_len = payload.len() + 4;
+        let total_len = payload.len() + HEADER_LEN;
         let mut buff = vec![0; total_len];
         // Check if the packet is valid, and should be sent.
         if total_len > MAX_MESSAGE_SIZE {
@@ -50,7 +51,7 @@ impl TcpCon {
             buff[i] = b;
         }
         for (i, b) in payload.iter().enumerate() {
-            buff[i+4] = *b;
+            buff[i+HEADER_LEN] = *b;
         }
 
         // Send
@@ -61,10 +62,10 @@ impl TcpCon {
     }
 
     pub fn recv(&mut self) -> io::Result<(MId, &[u8])> {
-        // Peak the first 4 bytes for the header.
+        // Peak the header.
         let mut tcp = self.tcp.write().unwrap();
-        match tcp.peek(&mut self.buff[..4])? {
-            4 => {} // Success
+        match tcp.peek(&mut self.buff[..HEADER_LEN])? {
+            HEADER_LEN => {} // Success
             0 => {
                 return Err(Error::new(
                     ErrorKind::ConnectionAborted,
@@ -78,10 +79,10 @@ impl TcpCon {
                 ))
             }
         }
-        let header = Header::from_be_bytes(&self.buff[..4]);
-        let total_expected_len = header.len + 4;
+        let header = Header::from_be_bytes(&self.buff[..HEADER_LEN]);
+        let total_expected_len = header.len + HEADER_LEN;
 
-        if header.len > MAX_MESSAGE_SIZE - 4 {
+        if header.len > MAX_MESSAGE_SIZE - HEADER_LEN {
             let e_msg = format!(
                 "TCP: The header of a received message indicates a size of {},\
 	                but the max allowed message size is {}.\
@@ -96,14 +97,14 @@ impl TcpCon {
         }
 
         // Read data. The header will be read again as it was peaked earlier.
-        tcp.read_exact(&mut self.buff[..header.len + 4])?;
+        tcp.read_exact(&mut self.buff[..header.len + HEADER_LEN])?;
         trace!(
             "TCP: Received msg of MId {}, len {}",
             header.mid,
             total_expected_len,
         );
 
-        Ok((header.mid, &self.buff[4..header.len + 4]))
+        Ok((header.mid, &self.buff[HEADER_LEN..header.len + HEADER_LEN]))
     }
 
     /// Moves the internal [`TcpStream`] into or out of nonblocking mode.

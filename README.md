@@ -6,8 +6,10 @@ Carrier pigeon builds on the standard library's `TcpStream` and `UdpSocket` type
 sending, receiving, and deserialization. This way you can worry about what to send, and pigeon will worry about how 
 to send it. This also allows you to send and receive different types of messages independently.
 
-#### Add `carrier-pigeon` to your `Cargo.toml`:
-`carrier-pigeon = "0.3.0"`
+### Add carrier-pigeon to your `Cargo.toml`:
+```
+carrier-pigeon = "0.3.0"
+```
 
 ## Documentation
 

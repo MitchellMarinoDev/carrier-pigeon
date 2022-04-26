@@ -1,5 +1,8 @@
 use crate::MId;
 
+/// The number of bytes the header takes up.
+pub const HEADER_LEN: usize = 4;
+
 /// A header to be sent before the actual contents of the packet.
 ///
 /// `len` and `mid` are sent as big endian u16s.
@@ -21,7 +24,7 @@ impl Header {
 
     /// Converts the [`Header`] to big endian bytes to be sent over
     /// the internet.
-    pub fn to_be_bytes(&self) -> [u8; 4] {
+    pub fn to_be_bytes(&self) -> [u8; HEADER_LEN] {
         let mid_b = (self.mid as u16).to_be_bytes();
         let len_b = (self.len as u16).to_be_bytes();
 
@@ -30,7 +33,7 @@ impl Header {
 
     /// Converts the big endian bytes back into a [`Header`].
     pub fn from_be_bytes(bytes: &[u8]) -> Self {
-        assert_eq!(bytes.len(), 4);
+        assert_eq!(bytes.len(), HEADER_LEN);
 
         let mid = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
         let len = u16::from_be_bytes(bytes[2..].try_into().unwrap()) as usize;
