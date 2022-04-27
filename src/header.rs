@@ -3,7 +3,7 @@ use crate::MId;
 /// The number of bytes the header takes up.
 pub const HEADER_LEN: usize = 4;
 
-/// A header to be sent before the actual contents of the packet.
+/// A header to be sent before the payload.
 ///
 /// `len` and `mid` are sent as big endian u16s.
 /// This means they have a max value of **`65535`**.
@@ -12,7 +12,7 @@ pub const HEADER_LEN: usize = 4;
 pub struct Header {
     /// The message id.
     pub mid: MId,
-    /// Then length of the packet ***without the header***.
+    /// Then length of the payload ***without the header***.
     pub len: usize,
 }
 

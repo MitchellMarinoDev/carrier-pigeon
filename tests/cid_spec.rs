@@ -1,5 +1,4 @@
 //! Tests the [`CidSpec`].
-use carrier_pigeon::CId;
 use carrier_pigeon::net::CIdSpec;
 
 /// Tests [`CIdSpec::All`].

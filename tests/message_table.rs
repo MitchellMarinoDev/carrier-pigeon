@@ -1,5 +1,5 @@
 //! Tests for testing the functionality of the [`MsgTable`] and [`SortedMsgTable`].
-use crate::helper::test_packets::{Connection, Disconnect, Response, TcpPacket, UdpPacket};
+use crate::helper::test_messages::{Connection, Disconnect, Response, TcpMsg, UdpMsg};
 use carrier_pigeon::Transport::{TCP, UDP};
 use carrier_pigeon::{MsgRegError, MsgTable, SortedMsgTable};
 use hashbrown::HashMap;
@@ -13,23 +13,23 @@ mod helper;
 #[test]
 fn errors() {
     let mut table = MsgTable::new();
-    table.register::<TcpPacket>(TCP).unwrap();
+    table.register::<TcpMsg>(TCP).unwrap();
     assert_eq!(
-        table.register::<TcpPacket>(TCP),
+        table.register::<TcpMsg>(TCP),
         Err(MsgRegError::TypeAlreadyRegistered)
     );
 
     let mut table = SortedMsgTable::new();
-    table.register::<TcpPacket>(TCP, "test::TcpPacket").unwrap();
+    table.register::<TcpMsg>(TCP, "test::TcpMsg").unwrap();
     assert_eq!(
-        table.register::<TcpPacket>(TCP, "test::TcpPacket2"),
+        table.register::<TcpMsg>(TCP, "test::TcpMsg2"),
         Err(MsgRegError::TypeAlreadyRegistered)
     );
 
     let mut table = SortedMsgTable::new();
-    table.register::<TcpPacket>(TCP, "test::TcpPacket").unwrap();
+    table.register::<TcpMsg>(TCP, "test::TcpMsg").unwrap();
     assert_eq!(
-        table.register::<UdpPacket>(TCP, "test::TcpPacket"),
+        table.register::<UdpMsg>(TCP, "test::TcpMsg"),
         Err(MsgRegError::NonUniqueIdentifier)
     );
 }
@@ -38,16 +38,16 @@ fn errors() {
 #[test]
 fn parts_gen() {
     let mut table = MsgTable::new();
-    table.register::<TcpPacket>(TCP).unwrap();
-    table.register::<UdpPacket>(UDP).unwrap();
+    table.register::<TcpMsg>(TCP).unwrap();
+    table.register::<UdpMsg>(UDP).unwrap();
 
     // Expected result:
     let mut tid_map = HashMap::new();
     tid_map.insert(TypeId::of::<Connection>(), 0);
     tid_map.insert(TypeId::of::<Response>(), 1);
     tid_map.insert(TypeId::of::<Disconnect>(), 2);
-    tid_map.insert(TypeId::of::<TcpPacket>(), 3);
-    tid_map.insert(TypeId::of::<UdpPacket>(), 4);
+    tid_map.insert(TypeId::of::<TcpMsg>(), 3);
+    tid_map.insert(TypeId::of::<UdpMsg>(), 4);
 
     let transports = vec![TCP, TCP, TCP, TCP, UDP];
 
@@ -65,21 +65,21 @@ fn parts_gen() {
 #[test]
 fn parts_gen_sorted() {
     let mut table1 = SortedMsgTable::new();
-    table1.register::<TcpPacket>(TCP, "tests::TcpPacket").unwrap();
-    table1.register::<UdpPacket>(UDP, "tests::UdpPacket").unwrap();
+    table1.register::<TcpMsg>(TCP, "tests::TcpMsg").unwrap();
+    table1.register::<UdpMsg>(UDP, "tests::UdpMsg").unwrap();
 
     // Different order.
     let mut table2 = SortedMsgTable::new();
-    table2.register::<UdpPacket>(UDP, "tests::UdpPacket").unwrap();
-    table2.register::<TcpPacket>(TCP, "tests::TcpPacket").unwrap();
+    table2.register::<UdpMsg>(UDP, "tests::UdpMsg").unwrap();
+    table2.register::<TcpMsg>(TCP, "tests::TcpMsg").unwrap();
 
     // Expected result:
     let mut tid_map = HashMap::new();
     tid_map.insert(TypeId::of::<Connection>(), 0);
     tid_map.insert(TypeId::of::<Response>(), 1);
     tid_map.insert(TypeId::of::<Disconnect>(), 2);
-    tid_map.insert(TypeId::of::<TcpPacket>(), 3);
-    tid_map.insert(TypeId::of::<UdpPacket>(), 4);
+    tid_map.insert(TypeId::of::<TcpMsg>(), 3);
+    tid_map.insert(TypeId::of::<UdpMsg>(), 4);
 
     let transports = vec![TCP, TCP, TCP, TCP, UDP];
 
@@ -104,9 +104,9 @@ fn parts_gen_sorted() {
 fn join() {
     // MsgTable
     let mut table1 = MsgTable::new();
-    table1.register::<TcpPacket>(TCP).unwrap();
+    table1.register::<TcpMsg>(TCP).unwrap();
     let mut table2 = MsgTable::new();
-    table2.register::<UdpPacket>(UDP).unwrap();
+    table2.register::<UdpMsg>(UDP).unwrap();
 
     table1.join(&table2).unwrap();
 
@@ -115,8 +115,8 @@ fn join() {
     tid_map.insert(TypeId::of::<Connection>(), 0);
     tid_map.insert(TypeId::of::<Response>(), 1);
     tid_map.insert(TypeId::of::<Disconnect>(), 2);
-    tid_map.insert(TypeId::of::<TcpPacket>(), 3);
-    tid_map.insert(TypeId::of::<UdpPacket>(), 4);
+    tid_map.insert(TypeId::of::<TcpMsg>(), 3);
+    tid_map.insert(TypeId::of::<UdpMsg>(), 4);
 
     let transports = vec![TCP, TCP, TCP, TCP, UDP];
 
@@ -135,9 +135,9 @@ fn join() {
 fn join_sorted() {
     // MsgTable
     let mut table1 = SortedMsgTable::new();
-    table1.register::<TcpPacket>(TCP, "tests::TcpPacket").unwrap();
+    table1.register::<TcpMsg>(TCP, "tests::TcpMsg").unwrap();
     let mut table2 = SortedMsgTable::new();
-    table2.register::<UdpPacket>(UDP, "tests::UdpPacket").unwrap();
+    table2.register::<UdpMsg>(UDP, "tests::UdpMsg").unwrap();
 
     table1.join(&table2).unwrap();
 
@@ -146,8 +146,8 @@ fn join_sorted() {
     tid_map.insert(TypeId::of::<Connection>(), 0);
     tid_map.insert(TypeId::of::<Response>(), 1);
     tid_map.insert(TypeId::of::<Disconnect>(), 2);
-    tid_map.insert(TypeId::of::<TcpPacket>(), 3);
-    tid_map.insert(TypeId::of::<UdpPacket>(), 4);
+    tid_map.insert(TypeId::of::<TcpMsg>(), 3);
+    tid_map.insert(TypeId::of::<UdpMsg>(), 4);
 
     let transports = vec![TCP, TCP, TCP, TCP, UDP];
 
@@ -166,25 +166,25 @@ fn join_sorted() {
 fn join_error() {
     // MsgTable
     let mut table1 = MsgTable::new();
-    table1.register::<TcpPacket>(TCP).unwrap();
+    table1.register::<TcpMsg>(TCP).unwrap();
     let mut table2 = MsgTable::new();
-    table2.register::<TcpPacket>(UDP).unwrap();
+    table2.register::<TcpMsg>(UDP).unwrap();
 
     assert_eq!(table1.join(&table2).unwrap_err(), TypeAlreadyRegistered);
 
     // SortedMsgTable
     let mut table1 = SortedMsgTable::new();
-    table1.register::<TcpPacket>(TCP, "tests::TcpPacket").unwrap();
+    table1.register::<TcpMsg>(TCP, "tests::TcpMsg").unwrap();
     let mut table2 = SortedMsgTable::new();
-    table2.register::<TcpPacket>(UDP, "tests::OtherTcpPacket").unwrap();
+    table2.register::<TcpMsg>(UDP, "tests::OtherTcpMsg").unwrap();
 
     assert_eq!(table1.join(&table2).unwrap_err(), TypeAlreadyRegistered);
 
     // SortedMsgTable
     let mut table1 = SortedMsgTable::new();
-    table1.register::<TcpPacket>(TCP, "tests::TcpPacket").unwrap();
+    table1.register::<TcpMsg>(TCP, "tests::TcpMsg").unwrap();
     let mut table2 = SortedMsgTable::new();
-    table2.register::<UdpPacket>(UDP, "tests::TcpPacket").unwrap();
+    table2.register::<UdpMsg>(UDP, "tests::TcpMsg").unwrap();
 
     assert_eq!(table1.join(&table2).unwrap_err(), NonUniqueIdentifier);
 }

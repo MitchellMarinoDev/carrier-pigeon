@@ -1,33 +1,33 @@
 #![allow(unused)]
-//! Test packets for use in tests.
+//! Test messages for use in tests.
 
 use carrier_pigeon::{MsgTable, MsgTableParts, Transport};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
-/// A test packet for TCP.
-pub struct TcpPacket {
+/// A test message for TCP.
+pub struct TcpMsg {
     pub msg: String,
 }
-impl TcpPacket {
+impl TcpMsg {
     pub fn new<A: Into<String>>(msg: A) -> Self {
-        TcpPacket { msg: msg.into() }
+        TcpMsg { msg: msg.into() }
     }
 }
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
-/// A test packet for UDP.
-pub struct UdpPacket {
+/// A test message for UDP.
+pub struct UdpMsg {
     pub msg: String,
 }
-impl UdpPacket {
+impl UdpMsg {
     pub fn new<A: Into<String>>(msg: A) -> Self {
-        UdpPacket { msg: msg.into() }
+        UdpMsg { msg: msg.into() }
     }
 }
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
-/// A test connection packet.
+/// A test connection message.
 pub struct Connection {
     pub usr: String,
 }
@@ -38,7 +38,7 @@ impl Connection {
 }
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
-/// A test disconnection packet.
+/// A test disconnection message.
 pub struct Disconnect {
     pub reason: String,
 }
@@ -51,7 +51,7 @@ impl Disconnect {
 }
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
-/// A test response packet.
+/// A test response message.
 pub enum Response {
     Accepted,
     Rejected(String),
@@ -65,10 +65,10 @@ impl Response {
     }
 }
 
-/// Builds a table with all these test packets and returns it's parts.
+/// Builds a table with all these test messages and returns it's parts.
 pub fn get_table_parts() -> MsgTableParts<Connection, Response, Disconnect> {
     let mut table = MsgTable::new();
-    table.register::<TcpPacket>(Transport::TCP).unwrap();
-    table.register::<UdpPacket>(Transport::UDP).unwrap();
+    table.register::<TcpMsg>(Transport::TCP).unwrap();
+    table.register::<UdpMsg>(Transport::UDP).unwrap();
     table.build().unwrap()
 }

@@ -2,10 +2,10 @@
 //! Helper functions and types to make setting up the tests easier.
 
 use std::net::{TcpListener, TcpStream, UdpSocket};
-use crate::helper::test_packets::{get_table_parts, Connection, Disconnect, Response};
+use crate::helper::test_messages::{get_table_parts, Connection, Disconnect, Response};
 use log::debug;
 
-pub mod test_packets;
+pub mod test_messages;
 
 const ADDR_LOCAL: &str = "127.0.0.1:0";
 

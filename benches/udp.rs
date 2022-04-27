@@ -2,7 +2,7 @@
 extern crate test;
 use test::Bencher;
 
-use crate::helper::test_packets::UdpPacket;
+use crate::helper::test_messages::UdpMsg;
 
 mod helper;
 
@@ -11,14 +11,14 @@ fn single_udp_big(b: &mut Bencher) {
     let (mut client, mut server) = helper::create_client_server_pair();
 
     let string: String = vec!['A'; 504].into_iter().collect();
-    let msg = UdpPacket::new(string);
+    let s_msg = UdpMsg::new(string);
 
     b.iter(|| {
         server.clear_msgs();
-        client.send(&msg).unwrap();
+        client.send(&s_msg).unwrap();
         while server.recv_msgs() == 0 {}
-        let packet: &UdpPacket = server.recv().unwrap().next().unwrap().1;
-        assert_eq!(packet, &msg);
+        let msg: &UdpMsg = server.recv().unwrap().next().unwrap().1;
+        assert_eq!(msg, &s_msg);
     })
 }
 
@@ -27,14 +27,14 @@ fn single_udp_small(b: &mut Bencher) {
     let (mut client, mut server) = helper::create_client_server_pair();
 
     let string: String = vec!['A'; 10].into_iter().collect();
-    let msg = UdpPacket::new(string);
+    let s_msg = UdpMsg::new(string);
 
     b.iter(|| {
         server.clear_msgs();
-        client.send(&msg).unwrap();
+        client.send(&s_msg).unwrap();
         while server.recv_msgs() == 0 {}
-        let packet: &UdpPacket = server.recv().unwrap().next().unwrap().1;
-        assert_eq!(packet, &msg);
+        let msg: &UdpMsg = server.recv().unwrap().next().unwrap().1;
+        assert_eq!(msg, &s_msg);
     })
 }
 
@@ -43,7 +43,7 @@ fn many_udp_big(b: &mut Bencher) {
     let (mut client, mut server) = helper::create_client_server_pair();
 
     let string: String = vec!['A'; 504].into_iter().collect();
-    let msg = UdpPacket::new(string);
+    let msg = UdpMsg::new(string);
 
     b.iter(|| {
         server.clear_msgs();
@@ -54,7 +54,7 @@ fn many_udp_big(b: &mut Bencher) {
         while n < 100 {
             n += server.recv_msgs();
         }
-        assert_eq!(server.recv::<UdpPacket>().unwrap().count(), 100);
+        assert_eq!(server.recv::<UdpMsg>().unwrap().count(), 100);
     })
 }
 
@@ -63,7 +63,7 @@ fn many_udp_small(b: &mut Bencher) {
     let (mut client, mut server) = helper::create_client_server_pair();
 
     let string: String = vec!['A'; 10].into_iter().collect();
-    let msg = UdpPacket::new(string);
+    let msg = UdpMsg::new(string);
 
     b.iter(|| {
         server.clear_msgs();
@@ -74,6 +74,6 @@ fn many_udp_small(b: &mut Bencher) {
         while n < 100 {
             n += server.recv_msgs();
         }
-        assert_eq!(server.recv::<UdpPacket>().unwrap().count(), 100);
+        assert_eq!(server.recv::<UdpMsg>().unwrap().count(), 100);
     })
 }

@@ -26,7 +26,7 @@ const TIMEOUT: Duration = Duration::from_millis(10_000);
 pub struct Server {
     /// The current cid. incremented then assigned to new connections.
     current_cid: CId,
-    /// The buffer used for sending and receiving packets
+    /// The buffer used for sending and receiving messages
     buff: [u8; MAX_MESSAGE_SIZE],
     /// The received message buffer.
     ///
@@ -34,7 +34,7 @@ pub struct Server {
     msg_buff: Vec<Vec<(CId, Box<dyn Any + Send + Sync>)>>,
 
     /// The pending connections (Connections that are established but have
-    /// not sent a connection packet yet).
+    /// not sent a connection message yet).
     new_cons: Vec<(TcpStream, CId, Instant)>,
     /// Disconnected connections.
     disconnected: Vec<(CId, Status)>,
@@ -116,7 +116,7 @@ impl Server {
 
     /// Handle the new connection attempts by calling the given hook.
     pub fn handle_new_cons<C: Any + Send + Sync, R: Any + Send + Sync>(&mut self, hook: &mut dyn FnMut(CId, C) -> (bool, R)) -> u32 {
-        // Start waiting on the connection packets for new connections.
+        // Start waiting on the connection messages for new connections.
         // TODO: add cap to connections that we are handling.
         while let Ok((new_con, _addr)) = self.listener.accept() {
             debug!("New connection attempt.");
@@ -149,7 +149,7 @@ impl Server {
         for (idx, resp) in remove {
             let (stream, cid, _) = self.new_cons.remove(idx);
             // If `resp` is Some, the connection was accepted and
-            // we need to send the response packet.
+            // we need to send the response message.
             if let Some(r) = resp {
                 let con = TcpCon::from_stream(stream);
                 self.add_tcp_con_cid(cid, con);
@@ -160,7 +160,7 @@ impl Server {
         accept_count
     }
 
-    /// Handles a new connection by trying to read the connection packet.
+    /// Handles a new connection by trying to read the connection message.
     ///
     /// If there is an error in connection (including timeout) this will
     /// return `Err(e)`. If the connection is not finished it will return
@@ -181,7 +181,7 @@ impl Server {
         if time.elapsed() > TIMEOUT {
             return Err(Error::new(
                 ErrorKind::TimedOut,
-                "The new connection did not send a connection packet in time.",
+                "The new connection did not send a connection message in time.",
             ));
         }
 
@@ -257,7 +257,7 @@ impl Server {
     /// A function that encapsulates the receiving logic for the TCP transport.
     ///
     /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
-    /// no more packets can be yielded without blocking.
+    /// no more messages can be yielded without blocking.
     fn recv_tcp(&mut self, cid: CId) -> io::Result<(CId, MId, Box<dyn Any + Send + Sync>)> {
         let tcp = match self.tcp.get_mut(&cid) {
             Some(tcp) => tcp,
@@ -268,7 +268,7 @@ impl Server {
 
         if !self.parts.valid_mid(mid) {
             let e_msg = format!(
-                "TCP: Got a packet specifying MId {}, but the maximum MId is {}.",
+                "TCP: Got a message specifying MId {}, but the maximum MId is {}.",
                 mid,
                 self.parts.mid_count()
             );
@@ -284,14 +284,14 @@ impl Server {
     /// A function that encapsulates the receiving logic for the UDP transport.
     ///
     /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
-    /// no more packets can be yielded without blocking. [`InvalidData`] likely means
+    /// no more messages can be yielded without blocking. [`InvalidData`] likely means
     /// carrier-pigeon detected bad data.
     pub fn recv_udp(&mut self) -> io::Result<(CId, MId, Box<dyn Any + Send + Sync>)> {
         let (from, mid, bytes) = self.udp.recv_from()?;
 
         if !self.parts.valid_mid(mid) {
             let e_msg = format!(
-                "TCP: Got a packet specifying MId {}, but the maximum MId is {}.",
+                "TCP: Got a message specifying MId {}, but the maximum MId is {}.",
                 mid,
                 self.parts.mid_count()
             );
@@ -435,10 +435,10 @@ impl Server {
 
     /// Logic for handling a new TCP message.
     ///
-    /// Increments `count` when it successfully got a packet including a disconnect packet.
+    /// Increments `count` when it successfully got a message including a disconnect message.
     ///
     /// When getting an error, this will disconnect the peer.
-    /// When getting a disconnection packet, this will add it to the disconnection que.
+    /// When getting a disconnection message, this will add it to the disconnection que.
     /// Otherwise it adds it to the msg buffer.
     ///
     /// returns weather the tcp connection is done yielding messages.
@@ -473,7 +473,7 @@ impl Server {
 
     /// Logic for handling a new UDP message.
     ///
-    /// Increments `count` when it successfully got a packet
+    /// Increments `count` when it successfully got a message
     ///
     /// When getting an error, this will log and ignore it.
     /// Otherwise it adds it to the msg buffer.

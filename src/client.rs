@@ -41,7 +41,7 @@ impl Client {
     ///
     /// Creates a new [`Client`] on another thread, passing back a [`PendingClient`].
     /// This [`PendingClient`] allows you to wait for the client to send the connection
-    /// packet, and the server to send back the response packet.
+    /// message, and the server to send back the response message.
     pub fn new<C: Any + Send + Sync>(
         peer: SocketAddr,
         parts: MsgTableParts,
@@ -91,17 +91,17 @@ impl Client {
             parts,
         };
 
-        // Send connection packet
+        // Send connection message
         client.send(&con_msg)?;
         trace!("Client connection message sent. Awaiting response...");
 
-        // Get response packet.
+        // Get response message.
         let (r_mid, response) = client.recv_tcp()?;
-        trace!("Got response packet from the server.");
+        trace!("Got response message from the server.");
 
         if r_mid != RESPONSE_TYPE_MID {
             let msg = format!(
-                "Client: First received packet was MId: {} not MId: {} (Response packet)",
+                "Client: First received message was MId: {} not MId: {} (Response message)",
                 r_mid, RESPONSE_TYPE_MID
             );
             error!("{}", msg);
@@ -133,13 +133,13 @@ impl Client {
     /// A function that encapsulates the receiving logic for the TCP transport.
     ///
     /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
-    /// no more packets can be yielded without blocking.
+    /// no more messages can be yielded without blocking.
     fn recv_tcp(&mut self) -> io::Result<(MId, Box<dyn Any + Send + Sync>)> {
         let (mid, bytes) = self.tcp.recv()?;
 
         if !self.parts.valid_mid(mid) {
             let e_msg = format!(
-                "TCP: Got a packet specifying MId {}, but the maximum MId is {}.",
+                "TCP: Got a message specifying MId {}, but the maximum MId is {}.",
                 mid,
                 self.parts.mid_count()
             );
@@ -155,14 +155,14 @@ impl Client {
     /// A function that encapsulates the receiving logic for the UDP transport.
     ///
     /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
-    /// no more packets can be yielded without blocking. [`InvalidData`] likely means
+    /// no more messages can be yielded without blocking. [`InvalidData`] likely means
     /// carrier-pigeon detected bad data.
     pub fn recv_udp(&mut self) -> io::Result<(MId, Box<dyn Any + Send + Sync>)> {
         let (mid, bytes) = self.udp.recv()?;
 
         if !self.parts.valid_mid(mid) {
             let e_msg = format!(
-                "TCP: Got a packet specifying MId {}, but the maximum MId is {}.",
+                "TCP: Got a message specifying MId {}, but the maximum MId is {}.",
                 mid,
                 self.parts.mid_count()
             );

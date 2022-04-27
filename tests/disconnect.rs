@@ -1,6 +1,6 @@
 //! Disconnect and Drop tests.
 use crate::helper::create_client_server_pair;
-use crate::helper::test_packets::Disconnect;
+use crate::helper::test_messages::Disconnect;
 use log::debug;
 use simple_logger::SimpleLogger;
 use std::time::Duration;
@@ -23,7 +23,7 @@ fn graceful_disconnect() {
             .disconnect(&Disconnect::new("Testing Disconnect Client."))
             .unwrap();
 
-        // Give the client enough time to send the disconnect packet.
+        // Give the client enough time to send the disconnect message.
         std::thread::sleep(Duration::from_millis(100));
 
         let recv_count = server.recv_msgs();
@@ -46,7 +46,7 @@ fn graceful_disconnect() {
             .disconnect(&Disconnect::new("Testing Disconnect Server."), 1)
             .unwrap();
 
-        // Give the server enough time to send the disconnect packet.
+        // Give the server enough time to send the disconnect message.
         std::thread::sleep(Duration::from_millis(100));
 
         let count = client.recv_msgs();

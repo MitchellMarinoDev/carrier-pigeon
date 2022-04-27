@@ -31,21 +31,21 @@ impl TcpCon {
     pub fn send(&self, mid: MId, payload: &[u8]) -> io::Result<()> {
         let total_len = payload.len() + HEADER_LEN;
         let mut buff = vec![0; total_len];
-        // Check if the packet is valid, and should be sent.
+        // Check if the message is valid, and should be sent.
         if total_len > MAX_MESSAGE_SIZE {
             let e_msg = format!(
-                "TCP: Outgoing packet size is greater than the maximum packet size ({}). \
-				MId: {}, size: {}. Discarding packet.",
+                "TCP: Outgoing message size is greater than the maximum message size ({}). \
+				MId: {}, size: {}. Discarding message.",
                 MAX_MESSAGE_SIZE, mid, total_len
             );
             error!("{}", e_msg);
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
-        // Packet can be sent!
+        // Message can be sent!
 
         let header = Header::new(mid, payload.len());
         let h_bytes = header.to_be_bytes();
-        // write the header and packet to the buffer to combine them.
+        // write the header and message to the buffer to combine them.
 
         for (i, b) in h_bytes.into_iter().enumerate() {
             buff[i] = b;
@@ -55,7 +55,7 @@ impl TcpCon {
         }
 
         // Send
-        trace!("TCP: Sending packet with MId: {}, len: {}", mid, total_len);
+        trace!("TCP: Sending message with MId: {}, len: {}", mid, total_len);
         let mut tcp = self.tcp.write().unwrap();
         tcp.write_all(&buff[..total_len])?;
         Ok(())

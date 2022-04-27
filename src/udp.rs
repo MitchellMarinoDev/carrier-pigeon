@@ -35,7 +35,7 @@ impl UdpCon {
         let len = buff.len();
 
         trace!(
-            "UDP: Sending packet with MId: {}, len: {} to {}.",
+            "UDP: Sending message with MId: {}, len: {} to {}.",
             mid, len, addr
         );
         let n = self.udp.send_to(&buff[..len], addr)?;
@@ -43,7 +43,7 @@ impl UdpCon {
         // Make sure it sent correctly.
         if n != len {
             error!(
-                "UDP: Couldn't send all the bytes of a packet (mid: {}). \
+                "UDP: Couldn't send all the bytes of a message (mid: {}). \
 				Wanted to send {} but could only send {}. This will likely \
 				cause issues on the other side.",
                 mid, len, n
@@ -56,13 +56,13 @@ impl UdpCon {
         let buff = self.send_shared(mid, payload)?;
         let len = buff.len();
 
-        trace!("UDP: Sending packet with MId: {}, len: {}.", mid, len);
+        trace!("UDP: Sending message with MId: {}, len: {}.", mid, len);
         let n = self.udp.send(&buff[..len])?;
 
         // Make sure it sent correctly.
         if n != len {
             error!(
-                "UDP: Couldn't send all the bytes of a packet (mid: {}). \
+                "UDP: Couldn't send all the bytes of a message (mid: {}). \
 				Wanted to send {} but could only send {}.",
                 mid, len, n
             );
@@ -75,11 +75,11 @@ impl UdpCon {
     fn send_shared(&self, mid: MId, payload: &[u8]) -> io::Result<Vec<u8>> {
         let total_len = payload.len() + HEADER_LEN;
         let mut buff = vec![0; total_len];
-        // Check if the packet is valid, and should be sent.
+        // Check if the message is valid, and should be sent.
         if total_len > MAX_MESSAGE_SIZE {
             let e_msg = format!(
-                "UDP: Outgoing packet size is greater than the maximum packet size ({}). \
-                MId: {}, size: {}. Discarding packet.",
+                "UDP: Outgoing message size is greater than the maximum message size ({}). \
+                MId: {}, size: {}. Discarding message.",
                 MAX_MESSAGE_SIZE, mid, total_len
             );
             error!("{}", e_msg);
@@ -88,16 +88,16 @@ impl UdpCon {
 
         if total_len > MAX_SAFE_MESSAGE_SIZE {
             warn!(
-                "UDP: Outgoing packet size is greater than the maximum SAFE packet size.\
-                MId: {}, size: {}. Sending packet anyway.",
+                "UDP: Outgoing message size is greater than the maximum SAFE message size.\
+                MId: {}, size: {}. Sending message anyway.",
                 mid, total_len
             );
         }
-        // Packet can be sent!
+        // Message can be sent!
 
         let header = Header::new(mid, payload.len());
         let h_bytes = header.to_be_bytes();
-        // put the header in the front of the packet
+        // put the header in the front of the message
         for (i, b) in h_bytes.into_iter().enumerate() {
             buff[i] = b;
         }

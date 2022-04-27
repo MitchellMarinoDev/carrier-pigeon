@@ -1,6 +1,6 @@
 use std::io::ErrorKind;
 use carrier_pigeon::Client;
-use crate::helper::test_packets::{Connection, get_table_parts, Response};
+use crate::helper::test_messages::{Connection, get_table_parts, Response};
 
 mod helper;
 

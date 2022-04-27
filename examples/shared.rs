@@ -5,26 +5,26 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
-/// A packet for a message from a user
+/// A message from a user
 pub struct Msg {
     pub from: String,
     pub text: String,
 }
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
-/// The connection packet.
+/// The connection message.
 pub struct Connection {
     pub user: String,
 }
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
-/// The disconnection packet.
+/// The disconnection message.
 pub struct Disconnect {
     pub reason: String,
 }
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
-/// The response packet.
+/// The response message.
 pub enum Response {
     Accepted,
     Rejected(String),

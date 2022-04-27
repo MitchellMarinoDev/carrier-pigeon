@@ -15,7 +15,7 @@ use std::io::Error;
 /// [source](https://newbedev.com/what-is-the-largest-safe-udp-packet-size-on-the-internet/)
 pub const MAX_SAFE_MESSAGE_SIZE: usize = 508;
 
-/// The absolute maximum packet size that can be received. This is used for
+/// The absolute maximum payload size that can be received. This is used for
 /// sizing the buffer.
 ///
 /// Note that `carrier-pigeon` imposes a 4-byte overhead on every message so
@@ -42,11 +42,11 @@ pub type SerFn = fn(&(dyn Any + Send + Sync)) -> Result<Vec<u8>, io::Error>;
 pub enum Status {
     /// The connection is still live.
     Connected,
-    /// The connection is closed because the peer disconnected by sending a disconnection packet.
+    /// The connection is closed because the peer disconnected by sending a disconnection message.
     Disconnected(Box<dyn Any + Send + Sync>),
     /// The connection is closed because we chose to close the connection.
     Closed,
-    /// The connection was dropped without sending a disconnection packet.
+    /// The connection was dropped without sending a disconnection message.
     Dropped(Error),
 }
 
@@ -70,7 +70,7 @@ impl Status {
         }
     }
 
-    /// Turns this into an option with the disconnect packet.
+    /// Turns this into an option with the disconnect message.
     ///
     /// ### Panics
     /// Panics if the generic parameter `D` isn't the disconnect message type (the same `D` that you passed into `MsgTable::build`).
@@ -81,7 +81,7 @@ impl Status {
         }
     }
 
-    /// Turns this into an option with the disconnect packet.
+    /// Turns this into an option with the disconnect message.
     pub fn disconnected_dyn(&self) -> Option<&Box<dyn Any + Send + Sync>> {
         match self {
             Status::Disconnected(d) => Some(d),

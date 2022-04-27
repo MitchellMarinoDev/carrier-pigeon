@@ -148,9 +148,9 @@ impl MsgTable {
     /// Consumes the Message table, and turns it into a [`MsgTableParts`].
     ///
     /// This should be called with the generic parameters:
-    ///  - C is the connection packet type.
-    ///  - R is the response packet type.
-    ///  - D is the disconnect packet type.
+    ///  - C is the connection message type.
+    ///  - R is the response message type.
+    ///  - D is the disconnect message type.
     ///
     /// The generic parameters should **not** be registered before hand.
     pub fn build<C, R, D>(self) -> Result<MsgTableParts, MsgRegError>
@@ -295,9 +295,9 @@ impl SortedMsgTable {
     /// Consumes the Message table, and turns it into a [`MsgTableParts`].
     ///
     /// This should be called with the generic parameters:
-    ///  - C is the connection packet type.
-    ///  - R is the response packet type.
-    ///  - D is the disconnect packet type.
+    ///  - C is the connection message type.
+    ///  - R is the response message type.
+    ///  - D is the disconnect message type.
     ///
     /// The generic parameters should **not** be registered before hand.
     pub fn build<C, R, D>(mut self) -> Result<MsgTableParts, MsgRegError>

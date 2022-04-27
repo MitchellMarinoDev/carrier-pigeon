@@ -57,7 +57,7 @@ fn main() {
         server.recv_msgs();
 
         // This should be called every once in a while to clean up so that the
-        // server doesn't send packets to disconnected clients.
+        // server doesn't send messages to disconnected clients.
         server.handle_disconnects(&mut |cid, status| {
             println!("CId {} disconnected with status: {:?}", cid, status);
         });
