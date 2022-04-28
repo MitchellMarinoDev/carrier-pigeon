@@ -1,5 +1,5 @@
 use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID};
-use crate::net::{CId, DeserFn, TcpHeader, Status, Transport, MAX_MESSAGE_SIZE, CIdSpec};
+use crate::net::{CId, DeserFn, Status, Transport, CIdSpec};
 use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
 use crate::MId;
@@ -8,10 +8,9 @@ use log::{debug, error};
 use std::any::{Any, TypeId};
 use std::io;
 use std::io::ErrorKind::{InvalidData, WouldBlock};
-use std::io::{Error, ErrorKind, Read};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::io::{Error, ErrorKind};
+use std::net::{SocketAddr, TcpListener};
 use std::time::{Duration, Instant};
-use crate::header::TCP_HEADER_LEN;
 
 const TIMEOUT: Duration = Duration::from_millis(10_000);
 
@@ -26,8 +25,6 @@ const TIMEOUT: Duration = Duration::from_millis(10_000);
 pub struct Server {
     /// The current cid. incremented then assigned to new connections.
     current_cid: CId,
-    /// The buffer used for sending and receiving messages
-    buff: [u8; MAX_MESSAGE_SIZE],
     /// The received message buffer.
     ///
     /// Each [`MId`] has its own vector.
@@ -35,7 +32,7 @@ pub struct Server {
 
     /// The pending connections (Connections that are established but have
     /// not sent a connection message yet).
-    new_cons: Vec<(TcpStream, CId, Instant)>,
+    new_cons: Vec<(TcpCon, CId, Instant)>,
     /// Disconnected connections.
     disconnected: Vec<(CId, Status)>,
     /// The listener for new connections.
@@ -84,7 +81,6 @@ impl Server {
 
         Ok(Server {
             current_cid: 0,
-            buff: [0; MAX_MESSAGE_SIZE],
             msg_buff,
             new_cons: vec![],
             disconnected: vec![],
@@ -118,11 +114,12 @@ impl Server {
     pub fn handle_new_cons<C: Any + Send + Sync, R: Any + Send + Sync>(&mut self, hook: &mut dyn FnMut(CId, C) -> (bool, R)) -> u32 {
         // Start waiting on the connection messages for new connections.
         // TODO: add cap to connections that we are handling.
-        while let Ok((new_con, _addr)) = self.listener.accept() {
+        while let Ok((stream, _addr)) = self.listener.accept() {
             debug!("New connection attempt.");
-            new_con.set_nonblocking(true).unwrap();
+            stream.set_nonblocking(true).unwrap();
+            let tcp_con = TcpCon::from_stream(stream);
             let cid = self.new_cid();
-            self.new_cons.push((new_con, cid, Instant::now()));
+            self.new_cons.push((tcp_con, cid, Instant::now()));
         }
 
         let mut accept_count = 0;
@@ -130,7 +127,7 @@ impl Server {
         let mut remove = vec![];
         let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
         for (idx, (con, cid, time)) in self.new_cons.iter_mut().enumerate() {
-            match Self::handle_new_con::<C>(&mut self.buff, deser_fn, con, time) {
+            match Self::handle_new_con::<C>(deser_fn, con, time) {
                 Ok(c) => {
                     let (acc, r) = hook(*cid, c);
                     if acc {
@@ -147,11 +144,10 @@ impl Server {
             }
         }
         for (idx, resp) in remove {
-            let (stream, cid, _) = self.new_cons.remove(idx);
+            let (con, cid, _) = self.new_cons.remove(idx);
             // If `resp` is Some, the connection was accepted and
             // we need to send the response message.
             if let Some(r) = resp {
-                let con = TcpCon::from_stream(stream);
                 self.add_tcp_con_cid(cid, con);
                 let _ = self.send_to(cid, &r);
             }
@@ -173,9 +169,8 @@ impl Server {
     /// successfully. It should not be removed from this list if it returns
     /// Ok(None), as that means the connection is still pending.
     fn handle_new_con<C: Any + Send + Sync>(
-        buff: &mut [u8],
         deser_fn: DeserFn,
-        con: &mut TcpStream,
+        con: &mut TcpCon,
         time: &Instant,
     ) -> io::Result<C> {
         if time.elapsed() > TIMEOUT {
@@ -185,27 +180,16 @@ impl Server {
             ));
         }
 
-        // Peak the header.
-        if con.peek(&mut buff[..TCP_HEADER_LEN])? != TCP_HEADER_LEN {
-            return Err(Error::new(ErrorKind::WouldBlock, "Not enough bytes for an entire message."));
-        }
-        let h = TcpHeader::from_be_bytes(&buff[..TCP_HEADER_LEN]);
+        let (mid, msg) = con.recv()?;
 
-        if h.mid != CONNECTION_TYPE_MID {
-            let msg = format!("Expected MId {}, got MId {}.", CONNECTION_TYPE_MID, h.mid);
-            return Err(Error::new(ErrorKind::InvalidData, msg));
+        if mid != CONNECTION_TYPE_MID {
+            let e_msg = format!("Expected MId {}, got MId {}.", CONNECTION_TYPE_MID, mid);
+            return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
 
-        con.read_exact(&mut buff[..h.len + TCP_HEADER_LEN])?;
-
-        let con_msg = deser_fn(&buff[TCP_HEADER_LEN..h.len + TCP_HEADER_LEN]).map_err(|o| {
-            Error::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "Encountered a deserialization error when handling a new connection. {}",
-                    o
-                ),
-            )
+        let con_msg = deser_fn(msg).map_err(|o| {
+            let e_msg = format!("Encountered a deserialization error when handling a new connection. {o}");
+            Error::new(ErrorKind::InvalidData, e_msg)
         })?;
 
         let con_msg = *con_msg.downcast::<C>().unwrap();
