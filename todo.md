@@ -3,9 +3,9 @@
 - [ ] Config options (instead of constants)
 - [x] Add Cargo.toml dependency copy-pasta in docs.rs and GitHub.
 - [x] Make send calls take an immutable reference by using a ReadWriteLock.
-- [ ] `bevy-pigeon`, and `carrier-pigeon` might have enough documentation warrant a book.
 - [x] Remove the Register custom, as custom `Serialize`/`Deserialize` impls are allowed.
 - [x] Remove the `<C, R, D>` generics as they end up everywhere.
+- [ ] Standardize logging.
 
 ## For v0.4.0:
 - [ ] Query support.

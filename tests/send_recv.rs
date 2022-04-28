@@ -40,7 +40,7 @@ fn send_recv() {
 
     for (i, p) in tcp_msgs.into_iter().enumerate() {
         // TCP is reliable ordered. Assert that all messages arrive in the correct order.
-        assert_eq!(p.1.msg, format!("Test TCP message {}", i));
+        assert_eq!(p.1.msg, format!("Test TCP Msg {}", i));
     }
 
     // Despite UDP being unreliable, we are sending the messages through localhost
@@ -50,7 +50,7 @@ fn send_recv() {
 
     // Udp is unreliable unordered. Assert that all messages arrive.
     for i in 0..10 {
-        let msg = format!("Test UDP message {}", i);
+        let msg = format!("Test UDP Msg {}", i);
         assert!(udp_msgs.contains(&&UdpMsg::new(msg)));
     }
 

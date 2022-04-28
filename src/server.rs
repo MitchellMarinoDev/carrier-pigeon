@@ -1,5 +1,5 @@
 use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID};
-use crate::net::{CId, DeserFn, Header, Status, Transport, MAX_MESSAGE_SIZE, CIdSpec};
+use crate::net::{CId, DeserFn, TcpHeader, Status, Transport, MAX_MESSAGE_SIZE, CIdSpec};
 use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
 use crate::MId;
@@ -11,7 +11,7 @@ use std::io::ErrorKind::{InvalidData, WouldBlock};
 use std::io::{Error, ErrorKind, Read};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::{Duration, Instant};
-use crate::header::HEADER_LEN;
+use crate::header::TCP_HEADER_LEN;
 
 const TIMEOUT: Duration = Duration::from_millis(10_000);
 
@@ -186,19 +186,19 @@ impl Server {
         }
 
         // Peak the header.
-        if con.peek(&mut buff[..HEADER_LEN])? != HEADER_LEN {
+        if con.peek(&mut buff[..TCP_HEADER_LEN])? != TCP_HEADER_LEN {
             return Err(Error::new(ErrorKind::WouldBlock, "Not enough bytes for an entire message."));
         }
-        let h = Header::from_be_bytes(&buff[..HEADER_LEN]);
+        let h = TcpHeader::from_be_bytes(&buff[..TCP_HEADER_LEN]);
 
         if h.mid != CONNECTION_TYPE_MID {
             let msg = format!("Expected MId {}, got MId {}.", CONNECTION_TYPE_MID, h.mid);
             return Err(Error::new(ErrorKind::InvalidData, msg));
         }
 
-        con.read_exact(&mut buff[..h.len + HEADER_LEN])?;
+        con.read_exact(&mut buff[..h.len + TCP_HEADER_LEN])?;
 
-        let con_msg = deser_fn(&buff[HEADER_LEN..h.len + HEADER_LEN]).map_err(|o| {
+        let con_msg = deser_fn(&buff[TCP_HEADER_LEN..h.len + TCP_HEADER_LEN]).map_err(|o| {
             Error::new(
                 ErrorKind::InvalidData,
                 format!(

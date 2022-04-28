@@ -1,10 +1,10 @@
 use crate::net::{MAX_MESSAGE_SIZE, MAX_SAFE_MESSAGE_SIZE};
-use crate::{Header, MId};
+use crate::{TcpHeader, MId};
 use log::{error, trace, warn};
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, UdpSocket};
-use crate::header::HEADER_LEN;
+use crate::header::TCP_HEADER_LEN;
 
 /// A type wrapping a [`UdpSocket`].
 ///
@@ -73,7 +73,7 @@ impl UdpCon {
     /// The shared code for sending a message.
     /// Produces a buffer given the payload
     fn send_shared(&self, mid: MId, payload: &[u8]) -> io::Result<Vec<u8>> {
-        let total_len = payload.len() + HEADER_LEN;
+        let total_len = payload.len() + TCP_HEADER_LEN;
         let mut buff = vec![0; total_len];
         // Check if the message is valid, and should be sent.
         if total_len > MAX_MESSAGE_SIZE {
@@ -95,14 +95,14 @@ impl UdpCon {
         }
         // Message can be sent!
 
-        let header = Header::new(mid, payload.len());
+        let header = TcpHeader::new(mid, payload.len());
         let h_bytes = header.to_be_bytes();
         // put the header in the front of the message
         for (i, b) in h_bytes.into_iter().enumerate() {
             buff[i] = b;
         }
         for (i, b) in payload.iter().enumerate() {
-            buff[i+HEADER_LEN] = *b;
+            buff[i+TCP_HEADER_LEN] = *b;
         }
         Ok(buff)
     }
@@ -134,8 +134,8 @@ impl UdpCon {
             return Err(Error::new(ErrorKind::NotConnected, e_msg));
         }
 
-        let header = Header::from_be_bytes(&self.buff[..HEADER_LEN]);
-        let total_expected_len = header.len + HEADER_LEN;
+        let header = TcpHeader::from_be_bytes(&self.buff[..TCP_HEADER_LEN]);
+        let total_expected_len = header.len + TCP_HEADER_LEN;
 
         if total_expected_len > MAX_MESSAGE_SIZE {
             let e_msg = format!(
@@ -160,7 +160,7 @@ impl UdpCon {
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
 
-        Ok((header.mid, &self.buff[HEADER_LEN..header.len + HEADER_LEN]))
+        Ok((header.mid, &self.buff[TCP_HEADER_LEN..header.len + TCP_HEADER_LEN]))
     }
 
     /// Moves the internal [`TcpStream`] into or out of nonblocking mode.

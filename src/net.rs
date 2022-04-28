@@ -1,6 +1,6 @@
 //! Networking things that are not specific to either transport.
 
-pub use crate::header::Header;
+pub use crate::header::TcpHeader;
 use std::any::Any;
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
