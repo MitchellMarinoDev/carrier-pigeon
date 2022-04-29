@@ -378,7 +378,6 @@ impl Server {
             self.msg_buff[mid]
                 .iter()
                 .map(|m| m.to_typed::<T>().unwrap())
-                .map(|_| todo!())
         )
     }
 
