@@ -4,7 +4,7 @@ use log::{error, trace, warn};
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, UdpSocket};
-use crate::header::UDP_HEADER_LEN;
+use crate::header::{UDP_HEADER_LEN, UdpHeader};
 
 /// A type wrapping a [`UdpSocket`].
 ///
@@ -107,26 +107,26 @@ impl UdpCon {
         Ok(buff)
     }
 
-    pub fn recv(&mut self) -> io::Result<(MId, &[u8])> {
+    pub fn recv(&mut self) -> io::Result<(MId, u32, &[u8])> {
         let n = self.udp.recv(&mut self.buff)?;
-        let (mid, bytes) = self.recv_shared(n)?;
+        let (mid, time, bytes) = self.recv_shared(n)?;
         trace!("UDP: Received msg of MId {}, len {}", mid, bytes.len());
-        Ok((mid, bytes))
+        Ok((mid, time, bytes))
     }
 
-    pub fn recv_from(&mut self) -> io::Result<(SocketAddr, MId, &[u8])> {
+    pub fn recv_from(&mut self) -> io::Result<(SocketAddr, MId, u32, &[u8])> {
         let (n, from) = self.udp.recv_from(&mut self.buff)?;
-        let (mid, bytes) = self.recv_shared(n)?;
+        let (mid, time, bytes) = self.recv_shared(n)?;
         trace!(
             "UDP: Received msg of MId {}, len {}, from {}",
             mid,
             bytes.len(),
             from
         );
-        Ok((from, mid, bytes))
+        Ok((from, mid, time, bytes))
     }
 
-    fn recv_shared(&mut self, n: usize) -> io::Result<(MId, &[u8])> {
+    fn recv_shared(&mut self, n: usize) -> io::Result<(MId, u32, &[u8])> {
         // Data should already be received.
         if n == 0 {
             let e_msg = format!("UDP: The connection was dropped.");
@@ -134,33 +134,9 @@ impl UdpCon {
             return Err(Error::new(ErrorKind::NotConnected, e_msg));
         }
 
-        let header = TcpHeader::from_be_bytes(&self.buff[..UDP_HEADER_LEN]);
-        let total_expected_len = header.len + UDP_HEADER_LEN;
+        let header = UdpHeader::from_be_bytes(&self.buff[..UDP_HEADER_LEN]);
 
-        if total_expected_len > MAX_MESSAGE_SIZE {
-            let e_msg = format!(
-                "UDP: The header of a received message indicates a size of {}, \
-                but the max allowed message size is {}.\
-                carrier-pigeon never sends a message greater than this. \
-                This message was likely not sent by carrier-pigeon. \
-                Discarding this message.",
-                total_expected_len, MAX_MESSAGE_SIZE
-            );
-            error!("{}", e_msg);
-            return Err(Error::new(ErrorKind::InvalidData, e_msg));
-        }
-
-        if n != total_expected_len {
-            let e_msg = format!(
-                "UDP: The header specified that the message size was {} bytes.\
-                However, {} bytes were read. Discarding invalid message.",
-                total_expected_len, n
-            );
-            error!("{}", e_msg);
-            return Err(Error::new(ErrorKind::InvalidData, e_msg));
-        }
-
-        Ok((header.mid, &self.buff[UDP_HEADER_LEN..header.len + UDP_HEADER_LEN]))
+        Ok((header.mid, header.time, &self.buff[UDP_HEADER_LEN..n]))
     }
 
     /// Moves the internal [`TcpStream`] into or out of nonblocking mode.

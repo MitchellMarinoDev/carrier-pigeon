@@ -41,10 +41,7 @@ fn main() {
     let parts = table.build::<Connection, Response, Disconnect>().unwrap();
 
     // Start the server.
-    let server = Server::new(addr, parts);
-
-    // Block until the server is finished being created.
-    let mut server = server.expect("Failed to create server.");
+    let mut server = Server::new(addr, parts).expect("Failed to create server.");
 
     let blacklisted_users = vec!["John", "Jane"];
 
