@@ -157,6 +157,7 @@ impl CIdSpec {
 }
 
 /// An untyped network message containing the message content, along with the metadata associated.
+#[derive(Debug)]
 pub(crate) struct ErasedNetMsg {
     /// The [`CId`] that the message was sent from.
     pub(crate) cid: CId,
@@ -181,6 +182,7 @@ impl ErasedNetMsg {
 }
 
 /// A network message containing the message content, along with the metadata associated.
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub struct NetMsg<'n, T: Any + Send + Sync> {
     /// The [`CId`] that the message was sent from.
     pub cid: CId,
