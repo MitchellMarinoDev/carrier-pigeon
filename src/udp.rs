@@ -1,5 +1,5 @@
 use crate::net::{MAX_MESSAGE_SIZE, MAX_SAFE_MESSAGE_SIZE};
-use crate::{TcpHeader, MId};
+use crate::MId;
 use log::{error, trace, warn};
 use std::io;
 use std::io::{Error, ErrorKind};
@@ -95,7 +95,7 @@ impl UdpCon {
         }
         // Message can be sent!
 
-        let header = TcpHeader::new(mid, payload.len());
+        let header = UdpHeader::new(mid);
         let h_bytes = header.to_be_bytes();
         // put the header in the front of the message
         for (i, b) in h_bytes.into_iter().enumerate() {
@@ -139,17 +139,17 @@ impl UdpCon {
         Ok((header.mid, header.time, &self.buff[UDP_HEADER_LEN..n]))
     }
 
-    /// Moves the internal [`TcpStream`] into or out of nonblocking mode.
+    /// Moves the internal [`UdpSocket`] into or out of nonblocking mode.
     pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
         self.udp.set_nonblocking(nonblocking)
     }
 
-    /// Returns the socket address of the remote peer of this TCP connection.
+    /// Returns the socket address of the remote peer of this UDP connection.
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.udp.peer_addr()
     }
 
-    /// Returns the socket address of the local half of this TCP connection.
+    /// Returns the socket address of the local half of this UDP connection.
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.udp.local_addr()
     }

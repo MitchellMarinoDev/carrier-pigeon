@@ -15,11 +15,6 @@ pub(crate) fn unix_millis() -> u32 {
     (millis & 0xFFFF_FFFF) as u32
 }
 
-/// Gets the current unix millis as a u16.
-pub(crate) fn get_millis() -> u16 {
-    (unix_millis() & 0xFFFF) as u16
-}
-
 /// Uses the 16 least significant bits of the unix millis time stamp, and reconstructs
 /// rest.
 pub(crate) fn reconstruct_millis(lsb: u16) -> u32 {
@@ -39,7 +34,7 @@ fn reconstruct_millis_inner(now: u32, lsb: u16) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use crate::time::{get_millis, reconstruct_millis_inner};
+    use crate::time::reconstruct_millis_inner;
 
     #[test]
     fn test_reconstruction() {

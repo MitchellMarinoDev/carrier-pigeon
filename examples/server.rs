@@ -76,25 +76,23 @@ fn main() {
 
         let mut cids_to_disconnect = vec![];
 
-        let msgs = server
-            .recv::<Msg>()
-            .unwrap()
-            .map(|(cid, msg)| (cid, msg));
-        for (cid, msg) in msgs {
+
+        for msg in server.recv::<Msg>().unwrap() {
             println!(
                 "Client {} sent message: {}: \"{}\"",
-                cid, msg.from, msg.text
+                msg.cid, msg.from, msg.text
             );
 
             // If the client sent the message of "disconnect-me", disconnect them.
             if msg.text == "disconnect-me" {
-                cids_to_disconnect.push(cid);
+                cids_to_disconnect.push(msg.cid);
                 continue;
             }
 
             // Broadcast the message to all other clients.
-            server.send_spec(msg, CIdSpec::Except(cid)).unwrap();
+            server.send_spec(msg.m, CIdSpec::Except(msg.cid)).unwrap();
         }
+
         for cid in cids_to_disconnect {
             server
                 .disconnect(

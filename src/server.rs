@@ -1,5 +1,5 @@
 use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID};
-use crate::net::{CId, DeserFn, Status, Transport, CIdSpec};
+use crate::net::{CId, DeserFn, Status, Transport, CIdSpec, ErasedNetMsg, NetMsg};
 use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
 use crate::MId;
@@ -28,7 +28,7 @@ pub struct Server {
     /// The received message buffer.
     ///
     /// Each [`MId`] has its own vector.
-    msg_buff: Vec<Vec<(CId, Box<dyn Any + Send + Sync>)>>,
+    msg_buff: Vec<Vec<ErasedNetMsg>>,
 
     /// The pending connections (Connections that are established but have
     /// not sent a connection message yet).
@@ -242,7 +242,7 @@ impl Server {
     ///
     /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
     /// no more messages can be yielded without blocking.
-    fn recv_tcp(&mut self, cid: CId) -> io::Result<(CId, MId, Box<dyn Any + Send + Sync>)> {
+    fn recv_tcp(&mut self, cid: CId) -> io::Result<(MId, ErasedNetMsg)> {
         let tcp = match self.tcp.get_mut(&cid) {
             Some(tcp) => tcp,
             None => return Err(Error::new(ErrorKind::InvalidData, "Invalid CId.")),
@@ -262,7 +262,13 @@ impl Server {
         let deser_fn = self.parts.deser[mid];
         let msg = deser_fn(bytes)?;
 
-        Ok((cid, mid, msg))
+        let net_msg = ErasedNetMsg {
+            cid,
+            time: None,
+            msg
+        };
+
+        Ok((mid, net_msg))
     }
 
     /// A function that encapsulates the receiving logic for the UDP transport.
@@ -270,8 +276,8 @@ impl Server {
     /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
     /// no more messages can be yielded without blocking. [`InvalidData`] likely means
     /// carrier-pigeon detected bad data.
-    pub fn recv_udp(&mut self) -> io::Result<(CId, MId, Box<dyn Any + Send + Sync>)> {
-        let (from, mid, bytes) = self.udp.recv_from()?;
+    fn recv_udp(&mut self) -> io::Result<(MId, ErasedNetMsg)> {
+        let (from, mid, time, bytes) = self.udp.recv_from()?;
 
         if !self.parts.valid_mid(mid) {
             let e_msg = format!(
@@ -295,7 +301,13 @@ impl Server {
             }
         };
 
-        Ok((cid, mid, msg))
+        let net_msg = ErasedNetMsg {
+            cid,
+            time: Some(time),
+            msg
+        };
+
+        Ok((mid, net_msg))
     }
 
     /// Sends a message to the [`CId`] `cid`.
@@ -358,14 +370,15 @@ impl Server {
     /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
     ///
     /// Returns None if the type T was not registered.
-    pub fn recv<T: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = (CId, &T)>> {
+    pub fn recv<'s, T: Any + Send + Sync>(&'s self) -> Option<impl Iterator<Item=NetMsg<T>> + 's> {
         let tid = TypeId::of::<T>();
         let mid = *self.parts.tid_map.get(&tid)?;
 
         Some(
             self.msg_buff[mid]
                 .iter()
-                .map(|(cid, m)| (*cid, (*m).downcast_ref::<T>().unwrap())),
+                .map(|m| m.to_typed::<T>().unwrap())
+                .map(|_| todo!())
         )
     }
 
@@ -375,15 +388,15 @@ impl Server {
     /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
     ///
     /// Returns None if the type T was not registered.
-    pub fn recv_spec<T: Any + Send + Sync>(&self, spec: CIdSpec) -> Option<impl Iterator<Item = (CId, &T)>> {
+    pub fn recv_spec<T: Any + Send + Sync>(&self, spec: CIdSpec) ->  Option<impl Iterator<Item=NetMsg<T>> + '_> {
         let tid = TypeId::of::<T>();
         let mid = *self.parts.tid_map.get(&tid)?;
 
         Some(
             self.msg_buff[mid]
                 .iter()
-                .filter(move |(cid, _m)| spec.matches(*cid))
-                .map(|(cid, m)| (*cid, (*m).downcast_ref::<T>().unwrap())),
+                .filter(move |net_msg| spec.matches(net_msg.cid))
+                .map(|net_msg| net_msg.to_typed().unwrap())
         )
     }
 
@@ -430,7 +443,7 @@ impl Server {
         &mut self,
         count: &mut u32,
         cid: CId,
-        msg: io::Result<(CId, MId, Box<dyn Any + Send + Sync>)>,
+        msg: io::Result<(MId, ErasedNetMsg)>,
     ) -> bool {
         match msg {
             Err(e) if e.kind() == WouldBlock => true,
@@ -441,15 +454,15 @@ impl Server {
                 true
             }
             // Got a message.
-            Ok((cid, mid, msg)) => {
+            Ok((mid, net_msg)) => {
                 *count += 1;
                 if mid == DISCONNECT_TYPE_MID {
                     debug!("Disconnecting peer {}", cid);
-                    self.disconnected.push((cid, Status::Disconnected(msg)));
+                    self.disconnected.push((cid, Status::Disconnected(net_msg.msg)));
                     return true;
                 }
 
-                self.msg_buff[mid].push((cid, msg));
+                self.msg_buff[mid].push(net_msg);
                 false
             }
         }
@@ -466,7 +479,7 @@ impl Server {
     fn handle_udp(
         &mut self,
         count: &mut u32,
-        msg: io::Result<(CId, MId, Box<dyn Any + Send + Sync>)>,
+        msg: io::Result<(MId, ErasedNetMsg)>,
     ) -> bool {
         match msg {
             Err(e) if e.kind() == WouldBlock => true,
@@ -476,9 +489,9 @@ impl Server {
                 true
             }
             // Got a message.
-            Ok((cid, mid, msg)) => {
+            Ok((mid, net_msg)) => {
                 *count += 1;
-                self.msg_buff[mid].push((cid, msg));
+                self.msg_buff[mid].push(net_msg);
                 false
             }
         }
