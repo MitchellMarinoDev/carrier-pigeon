@@ -106,7 +106,7 @@ impl Server {
             return Err(io::Error::new(ErrorKind::InvalidData, "Invalid CId."));
         }
         debug!("Disconnecting CId {}", cid);
-        self.send_to(cid, discon_msg)?;
+        self.send_to(discon_msg, cid)?;
         // Close the TcpCon
         self.tcp.get_mut(&cid).unwrap().close()?;
         // No shutdown method on udp.
@@ -153,7 +153,7 @@ impl Server {
             if let Some(r) = resp {
                 let con = TcpCon::from_stream(stream);
                 self.add_tcp_con_cid(cid, con);
-                let _ = self.send_to(cid, &r);
+                let _ = self.send_to(&r, cid);
             }
         }
 
@@ -322,7 +322,7 @@ impl Server {
     /// If the message type isn't registered, this will return
     /// [`Error::TypeNotRegistered`]. If the msg fails to be
     /// serialized this will return [`Error::SerdeError`].
-    pub fn send_to<T: Any + Send + Sync>(&self, cid: CId, msg: &T) -> io::Result<()> {
+    pub fn send_to<T: Any + Send + Sync>(&self, msg: &T, cid: CId) -> io::Result<()> {
         let tid = TypeId::of::<T>();
         if !self.valid_tid(tid) {
             return Err(io::Error::new(
@@ -353,7 +353,7 @@ impl Server {
     /// Broadcasts a message to all connected clients.
     pub fn broadcast<T: Any + Send + Sync>(&self, msg: &T) -> io::Result<()> {
         for cid in self.cids() {
-            self.send_to(cid, msg)?;
+            self.send_to(msg, cid)?;
         }
         Ok(())
     }
@@ -364,7 +364,7 @@ impl Server {
             .cids()
             .filter(|cid| spec.matches(*cid))
         {
-            self.send_to(cid, msg)?;
+            self.send_to(msg, cid)?;
         }
         Ok(())
     }
