@@ -1,5 +1,5 @@
 use crate::message_table::{MsgTableParts, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID};
-use crate::net::{Status, Transport};
+use crate::net::{ErasedNetMsg, NetMsg, Status, Transport};
 use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
 use crate::MId;
@@ -25,7 +25,7 @@ pub struct Client {
     /// The received message buffer.
     ///
     /// Each [`MId`] has its own vector.
-    msg_buff: Vec<Vec<Box<dyn Any + Send + Sync>>>,
+    msg_buff: Vec<Vec<ErasedNetMsg>>,
 
     /// The TCP connection for this client.
     tcp: TcpCon,
@@ -96,13 +96,13 @@ impl Client {
         trace!("Client connection message sent. Awaiting response...");
 
         // Get response message.
-        let (r_mid, response) = client.recv_tcp()?;
+        let (mid, net_msg) = client.recv_tcp()?;
         trace!("Got response message from the server.");
 
-        if r_mid != RESPONSE_TYPE_MID {
+        if mid != RESPONSE_TYPE_MID {
             let msg = format!(
                 "Client: First received message was MId: {} not MId: {} (Response message)",
-                r_mid, RESPONSE_TYPE_MID
+                mid, RESPONSE_TYPE_MID
             );
             error!("{}", msg);
             return Err(Error::new(ErrorKind::InvalidData, msg));
@@ -117,7 +117,7 @@ impl Client {
         client.tcp.set_nonblocking(true)?;
         client.udp.set_nonblocking(true)?;
 
-        Ok((client, response))
+        Ok((client, net_msg.msg))
     }
 
     /// A function that encapsulates the sending logic for the TCP transport.
@@ -134,7 +134,7 @@ impl Client {
     ///
     /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
     /// no more messages can be yielded without blocking.
-    fn recv_tcp(&mut self) -> io::Result<(MId, Box<dyn Any + Send + Sync>)> {
+    fn recv_tcp(&mut self) -> io::Result<(MId, ErasedNetMsg)> {
         let (mid, bytes) = self.tcp.recv()?;
 
         if !self.parts.valid_mid(mid) {
@@ -149,7 +149,13 @@ impl Client {
         let deser_fn = self.parts.deser[mid];
         let msg = deser_fn(bytes)?;
 
-        Ok((mid, msg))
+        let net_msg = ErasedNetMsg {
+            cid: 0,
+            time: None,
+            msg,
+        };
+
+        Ok((mid, net_msg))
     }
 
     /// A function that encapsulates the receiving logic for the UDP transport.
@@ -157,8 +163,8 @@ impl Client {
     /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
     /// no more messages can be yielded without blocking. [`InvalidData`] likely means
     /// carrier-pigeon detected bad data.
-    pub fn recv_udp(&mut self) -> io::Result<(MId, Box<dyn Any + Send + Sync>)> {
-        let (mid, bytes) = self.udp.recv()?;
+    fn recv_udp(&mut self) -> io::Result<(MId, ErasedNetMsg)> {
+        let (mid, time, bytes) = self.udp.recv()?;
 
         if !self.parts.valid_mid(mid) {
             let e_msg = format!(
@@ -172,7 +178,13 @@ impl Client {
         let deser_fn = self.parts.deser[mid];
         let msg = deser_fn(bytes)?;
 
-        Ok((mid, msg))
+        let net_msg = ErasedNetMsg {
+            cid: 0,
+            time: Some(time),
+            msg,
+        };
+
+        Ok((mid, net_msg))
     }
 
     /// Disconnects from the server. You should ***always*** call this
@@ -232,14 +244,14 @@ impl Client {
     /// Gets an iterator for the messages of type T.
     ///
     /// Returns None if the type T was not registered.
-    pub fn recv<T: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = &T>> {
+    pub fn recv<T: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = NetMsg<T>> + '_> {
         let tid = TypeId::of::<T>();
         let mid = *self.parts.tid_map.get(&tid)?;
 
         Some(
             self.msg_buff[mid]
                 .iter()
-                .map(|m| (*m).downcast_ref::<T>().unwrap()),
+                .map(|m| m.to_typed().unwrap()),
         )
     }
 
@@ -267,20 +279,20 @@ impl Client {
                     self.status = Status::Dropped(e);
                 }
                 // Successfully got a message.
-                Ok((mid, msg)) => {
+                Ok((mid, net_msg)) => {
                     i += 1;
                     if mid == DISCONNECT_TYPE_MID {
-                        self.status = Status::Disconnected(msg);
+                        self.status = Status::Disconnected(net_msg.msg);
                     } else {
-                        self.msg_buff[mid].push(msg);
+                        self.msg_buff[mid].push(net_msg);
                     }
                 }
             }
         }
 
-        while let Ok((mid, msg)) = self.recv_udp() {
+        while let Ok((mid, net_msg)) = self.recv_udp() {
             i += 1;
-            self.msg_buff[mid].push(msg);
+            self.msg_buff[mid].push(net_msg);
         }
         i
     }

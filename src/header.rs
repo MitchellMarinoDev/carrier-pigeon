@@ -1,59 +1,105 @@
+use crate::time::{reconstruct_millis, unix_millis};
 use crate::MId;
 
-/// The number of bytes the header takes up.
-pub const HEADER_LEN: usize = 4;
+/// The number of bytes the tcp header takes up.
+pub const TCP_HEADER_LEN: usize = 4;
 
-/// A header to be sent before the payload.
+/// The number of bytes the tcp header takes up.
+pub const UDP_HEADER_LEN: usize = 4;
+
+/// A header to be sent before the payload on TCP.
 ///
 /// `len` and `mid` are sent as big endian u16s.
 /// This means they have a max value of **`65535`**.
 /// This shouldn't pose any real issues.
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
-pub struct Header {
+pub struct TcpHeader {
     /// The message id.
     pub mid: MId,
     /// Then length of the payload ***without the header***.
     pub len: usize,
 }
 
-impl Header {
-    /// Creates a [`Header`] with the given [`MId`] and `length`.
+impl TcpHeader {
+    /// Creates a [`TcpHeader`] with the given [`MId`] and `length`.
     pub fn new(mid: MId, len: usize) -> Self {
-        Header { mid, len }
+        TcpHeader { mid, len }
     }
 
-    /// Converts the [`Header`] to big endian bytes to be sent over
+    /// Converts the [`TcpHeader`] to big endian bytes to be sent over
     /// the internet.
-    pub fn to_be_bytes(&self) -> [u8; HEADER_LEN] {
+    pub fn to_be_bytes(&self) -> [u8; TCP_HEADER_LEN] {
         let mid_b = (self.mid as u16).to_be_bytes();
         let len_b = (self.len as u16).to_be_bytes();
 
         [mid_b[0], mid_b[1], len_b[0], len_b[1]]
     }
 
-    /// Converts the big endian bytes back into a [`Header`].
+    /// Converts the big endian bytes back into a [`TcpHeader`].
     pub fn from_be_bytes(bytes: &[u8]) -> Self {
-        assert_eq!(bytes.len(), HEADER_LEN);
+        assert_eq!(bytes.len(), TCP_HEADER_LEN);
 
         let mid = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
         let len = u16::from_be_bytes(bytes[2..].try_into().unwrap()) as usize;
 
-        Header { mid, len }
+        TcpHeader { mid, len }
+    }
+}
+
+/// A header to be sent before the payload on UDP.
+///
+/// `len` and `time` are sent as big endian u16s.
+/// This means they have a max value of **`65535`**.
+/// This shouldn't pose any real issues for the MId.
+/// The rest of the unix millis is reconstructed on the
+/// other end.
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
+pub struct UdpHeader {
+    /// The message id.
+    pub mid: MId,
+    /// The time in unix millis of the packet sending.
+    pub time: u32,
+}
+
+impl UdpHeader {
+    /// Creates a [`TcpHeader`] with the given [`MId`] and `length`.
+    pub fn new(mid: MId) -> Self {
+        UdpHeader { mid, time: unix_millis() }
+    }
+
+    /// Converts the [`TcpHeader`] to big endian bytes to be sent over
+    /// the internet.
+    pub fn to_be_bytes(&self) -> [u8; UDP_HEADER_LEN] {
+        let mid_b = (self.mid as u16).to_be_bytes();
+        let time_b = (self.time as u16).to_be_bytes();
+
+        [mid_b[0], mid_b[1], time_b[0], time_b[1]]
+    }
+
+    /// Converts the big endian bytes back into a [`TcpHeader`].
+    pub fn from_be_bytes(bytes: &[u8]) -> Self {
+        assert_eq!(bytes.len(), UDP_HEADER_LEN);
+
+        let mid = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
+        let time_lsb = u16::from_be_bytes(bytes[2..].try_into().unwrap());
+        let time = reconstruct_millis(time_lsb);
+
+        UdpHeader { mid, time }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::header::Header;
+    use crate::header::TcpHeader;
 
     #[test]
-    fn to_from_bytes() {
+    fn tcp_to_from_bytes() {
         let points = vec![(0, 0), (2, 2), (100, 34), (65530, 982)];
 
         for point in points {
-            let header = Header::new(point.0, point.1);
+            let header = TcpHeader::new(point.0, point.1);
             let ser = header.to_be_bytes();
-            let de = Header::from_be_bytes(&ser);
+            let de = TcpHeader::from_be_bytes(&ser);
             assert_eq!(header, de);
         }
     }

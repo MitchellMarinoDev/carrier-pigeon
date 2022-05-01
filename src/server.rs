@@ -1,5 +1,5 @@
 use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID};
-use crate::net::{CId, DeserFn, Header, Status, Transport, MAX_MESSAGE_SIZE, CIdSpec};
+use crate::net::{CId, DeserFn, Status, Transport, CIdSpec, ErasedNetMsg, NetMsg};
 use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
 use crate::MId;
@@ -8,10 +8,9 @@ use log::{debug, error};
 use std::any::{Any, TypeId};
 use std::io;
 use std::io::ErrorKind::{InvalidData, WouldBlock};
-use std::io::{Error, ErrorKind, Read};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::io::{Error, ErrorKind};
+use std::net::{SocketAddr, TcpListener};
 use std::time::{Duration, Instant};
-use crate::header::HEADER_LEN;
 
 const TIMEOUT: Duration = Duration::from_millis(10_000);
 
@@ -26,16 +25,14 @@ const TIMEOUT: Duration = Duration::from_millis(10_000);
 pub struct Server {
     /// The current cid. incremented then assigned to new connections.
     current_cid: CId,
-    /// The buffer used for sending and receiving messages
-    buff: [u8; MAX_MESSAGE_SIZE],
     /// The received message buffer.
     ///
     /// Each [`MId`] has its own vector.
-    msg_buff: Vec<Vec<(CId, Box<dyn Any + Send + Sync>)>>,
+    msg_buff: Vec<Vec<ErasedNetMsg>>,
 
     /// The pending connections (Connections that are established but have
     /// not sent a connection message yet).
-    new_cons: Vec<(TcpStream, CId, Instant)>,
+    new_cons: Vec<(TcpCon, CId, Instant)>,
     /// Disconnected connections.
     disconnected: Vec<(CId, Status)>,
     /// The listener for new connections.
@@ -84,7 +81,6 @@ impl Server {
 
         Ok(Server {
             current_cid: 0,
-            buff: [0; MAX_MESSAGE_SIZE],
             msg_buff,
             new_cons: vec![],
             disconnected: vec![],
@@ -118,11 +114,12 @@ impl Server {
     pub fn handle_new_cons<C: Any + Send + Sync, R: Any + Send + Sync>(&mut self, hook: &mut dyn FnMut(CId, C) -> (bool, R)) -> u32 {
         // Start waiting on the connection messages for new connections.
         // TODO: add cap to connections that we are handling.
-        while let Ok((new_con, _addr)) = self.listener.accept() {
+        while let Ok((stream, _addr)) = self.listener.accept() {
             debug!("New connection attempt.");
-            new_con.set_nonblocking(true).unwrap();
+            stream.set_nonblocking(true).unwrap();
+            let tcp_con = TcpCon::from_stream(stream);
             let cid = self.new_cid();
-            self.new_cons.push((new_con, cid, Instant::now()));
+            self.new_cons.push((tcp_con, cid, Instant::now()));
         }
 
         let mut accept_count = 0;
@@ -130,7 +127,7 @@ impl Server {
         let mut remove = vec![];
         let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
         for (idx, (con, cid, time)) in self.new_cons.iter_mut().enumerate() {
-            match Self::handle_new_con::<C>(&mut self.buff, deser_fn, con, time) {
+            match Self::handle_new_con::<C>(deser_fn, con, time) {
                 Ok(c) => {
                     let (acc, r) = hook(*cid, c);
                     if acc {
@@ -147,11 +144,10 @@ impl Server {
             }
         }
         for (idx, resp) in remove {
-            let (stream, cid, _) = self.new_cons.remove(idx);
+            let (con, cid, _) = self.new_cons.remove(idx);
             // If `resp` is Some, the connection was accepted and
             // we need to send the response message.
             if let Some(r) = resp {
-                let con = TcpCon::from_stream(stream);
                 self.add_tcp_con_cid(cid, con);
                 let _ = self.send_to(&r, cid);
             }
@@ -173,9 +169,8 @@ impl Server {
     /// successfully. It should not be removed from this list if it returns
     /// Ok(None), as that means the connection is still pending.
     fn handle_new_con<C: Any + Send + Sync>(
-        buff: &mut [u8],
         deser_fn: DeserFn,
-        con: &mut TcpStream,
+        con: &mut TcpCon,
         time: &Instant,
     ) -> io::Result<C> {
         if time.elapsed() > TIMEOUT {
@@ -185,27 +180,16 @@ impl Server {
             ));
         }
 
-        // Peak the header.
-        if con.peek(&mut buff[..HEADER_LEN])? != HEADER_LEN {
-            return Err(Error::new(ErrorKind::WouldBlock, "Not enough bytes for an entire message."));
-        }
-        let h = Header::from_be_bytes(&buff[..HEADER_LEN]);
+        let (mid, msg) = con.recv()?;
 
-        if h.mid != CONNECTION_TYPE_MID {
-            let msg = format!("Expected MId {}, got MId {}.", CONNECTION_TYPE_MID, h.mid);
-            return Err(Error::new(ErrorKind::InvalidData, msg));
+        if mid != CONNECTION_TYPE_MID {
+            let e_msg = format!("Expected MId {}, got MId {}.", CONNECTION_TYPE_MID, mid);
+            return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
 
-        con.read_exact(&mut buff[..h.len + HEADER_LEN])?;
-
-        let con_msg = deser_fn(&buff[HEADER_LEN..h.len + HEADER_LEN]).map_err(|o| {
-            Error::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "Encountered a deserialization error when handling a new connection. {}",
-                    o
-                ),
-            )
+        let con_msg = deser_fn(msg).map_err(|o| {
+            let e_msg = format!("Encountered a deserialization error when handling a new connection. {o}");
+            Error::new(ErrorKind::InvalidData, e_msg)
         })?;
 
         let con_msg = *con_msg.downcast::<C>().unwrap();
@@ -258,7 +242,7 @@ impl Server {
     ///
     /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
     /// no more messages can be yielded without blocking.
-    fn recv_tcp(&mut self, cid: CId) -> io::Result<(CId, MId, Box<dyn Any + Send + Sync>)> {
+    fn recv_tcp(&mut self, cid: CId) -> io::Result<(MId, ErasedNetMsg)> {
         let tcp = match self.tcp.get_mut(&cid) {
             Some(tcp) => tcp,
             None => return Err(Error::new(ErrorKind::InvalidData, "Invalid CId.")),
@@ -278,7 +262,13 @@ impl Server {
         let deser_fn = self.parts.deser[mid];
         let msg = deser_fn(bytes)?;
 
-        Ok((cid, mid, msg))
+        let net_msg = ErasedNetMsg {
+            cid,
+            time: None,
+            msg
+        };
+
+        Ok((mid, net_msg))
     }
 
     /// A function that encapsulates the receiving logic for the UDP transport.
@@ -286,8 +276,8 @@ impl Server {
     /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
     /// no more messages can be yielded without blocking. [`InvalidData`] likely means
     /// carrier-pigeon detected bad data.
-    pub fn recv_udp(&mut self) -> io::Result<(CId, MId, Box<dyn Any + Send + Sync>)> {
-        let (from, mid, bytes) = self.udp.recv_from()?;
+    fn recv_udp(&mut self) -> io::Result<(MId, ErasedNetMsg)> {
+        let (from, mid, time, bytes) = self.udp.recv_from()?;
 
         if !self.parts.valid_mid(mid) {
             let e_msg = format!(
@@ -311,7 +301,13 @@ impl Server {
             }
         };
 
-        Ok((cid, mid, msg))
+        let net_msg = ErasedNetMsg {
+            cid,
+            time: Some(time),
+            msg
+        };
+
+        Ok((mid, net_msg))
     }
 
     /// Sends a message to the [`CId`] `cid`.
@@ -374,14 +370,14 @@ impl Server {
     /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
     ///
     /// Returns None if the type T was not registered.
-    pub fn recv<T: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = (CId, &T)>> {
+    pub fn recv<'s, T: Any + Send + Sync>(&'s self) -> Option<impl Iterator<Item=NetMsg<T>> + 's> {
         let tid = TypeId::of::<T>();
         let mid = *self.parts.tid_map.get(&tid)?;
 
         Some(
             self.msg_buff[mid]
                 .iter()
-                .map(|(cid, m)| (*cid, (*m).downcast_ref::<T>().unwrap())),
+                .map(|m| m.to_typed::<T>().unwrap())
         )
     }
 
@@ -391,15 +387,15 @@ impl Server {
     /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
     ///
     /// Returns None if the type T was not registered.
-    pub fn recv_spec<T: Any + Send + Sync>(&self, spec: CIdSpec) -> Option<impl Iterator<Item = (CId, &T)>> {
+    pub fn recv_spec<T: Any + Send + Sync>(&self, spec: CIdSpec) ->  Option<impl Iterator<Item=NetMsg<T>> + '_> {
         let tid = TypeId::of::<T>();
         let mid = *self.parts.tid_map.get(&tid)?;
 
         Some(
             self.msg_buff[mid]
                 .iter()
-                .filter(move |(cid, _m)| spec.matches(*cid))
-                .map(|(cid, m)| (*cid, (*m).downcast_ref::<T>().unwrap())),
+                .filter(move |net_msg| spec.matches(net_msg.cid))
+                .map(|net_msg| net_msg.to_typed().unwrap())
         )
     }
 
@@ -446,7 +442,7 @@ impl Server {
         &mut self,
         count: &mut u32,
         cid: CId,
-        msg: io::Result<(CId, MId, Box<dyn Any + Send + Sync>)>,
+        msg: io::Result<(MId, ErasedNetMsg)>,
     ) -> bool {
         match msg {
             Err(e) if e.kind() == WouldBlock => true,
@@ -457,15 +453,15 @@ impl Server {
                 true
             }
             // Got a message.
-            Ok((cid, mid, msg)) => {
+            Ok((mid, net_msg)) => {
                 *count += 1;
                 if mid == DISCONNECT_TYPE_MID {
                     debug!("Disconnecting peer {}", cid);
-                    self.disconnected.push((cid, Status::Disconnected(msg)));
+                    self.disconnected.push((cid, Status::Disconnected(net_msg.msg)));
                     return true;
                 }
 
-                self.msg_buff[mid].push((cid, msg));
+                self.msg_buff[mid].push(net_msg);
                 false
             }
         }
@@ -482,7 +478,7 @@ impl Server {
     fn handle_udp(
         &mut self,
         count: &mut u32,
-        msg: io::Result<(CId, MId, Box<dyn Any + Send + Sync>)>,
+        msg: io::Result<(MId, ErasedNetMsg)>,
     ) -> bool {
         match msg {
             Err(e) if e.kind() == WouldBlock => true,
@@ -492,9 +488,9 @@ impl Server {
                 true
             }
             // Got a message.
-            Ok((cid, mid, msg)) => {
+            Ok((mid, net_msg)) => {
                 *count += 1;
-                self.msg_buff[mid].push((cid, msg));
+                self.msg_buff[mid].push(net_msg);
                 false
             }
         }

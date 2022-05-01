@@ -1,10 +1,11 @@
 //! Networking things that are not specific to either transport.
 
-pub use crate::header::Header;
+pub use crate::header::TcpHeader;
 use std::any::Any;
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::Error;
+use std::ops::Deref;
 
 /// The maximum safe message size that can be sent on udp,
 /// after taking off the possible overheads from the transport.
@@ -152,5 +153,54 @@ impl CIdSpec {
             (Only(only), Except(except)) => only != except,
             (Except(except), Only(only)) => only != except,
         }
+    }
+}
+
+/// An untyped network message containing the message content, along with the metadata associated.
+#[derive(Debug)]
+pub(crate) struct ErasedNetMsg {
+    /// The [`CId`] that the message was sent from.
+    pub(crate) cid: CId,
+    /// The timestamp that the message was sent in unix millis.
+    ///
+    /// This is only `Some` if the message was sent with UDP.
+    pub(crate) time: Option<u32>,
+    /// The actual message.
+    pub(crate) msg: Box<dyn Any + Send + Sync>,
+}
+
+impl ErasedNetMsg {
+    /// Converts this to NetMsg, borrowed from this.
+    pub(crate) fn to_typed<T: Any + Send + Sync>(&self) -> Option<NetMsg<T>> {
+        let msg = self.msg.downcast_ref()?;
+        Some(NetMsg {
+            cid: self.cid,
+            time: self.time,
+            m: msg,
+        })
+    }
+}
+
+/// A network message containing the message content, along with the metadata associated.
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+pub struct NetMsg<'n, T: Any + Send + Sync> {
+    /// The [`CId`] that the message was sent from.
+    pub cid: CId,
+    /// The timestamp that the message was sent in unix millis.
+    ///
+    /// This is always `Some` if the message was sent with UDP,
+    /// and always `None` if sent with TCP.
+    pub time: Option<u32>,
+    /// The actual message.
+    ///
+    /// Borrowed from the client or server.
+    pub m: &'n T,
+}
+
+impl<'n, T: Any + Send + Sync> Deref for NetMsg<'n, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.m
     }
 }

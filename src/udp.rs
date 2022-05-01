@@ -1,10 +1,10 @@
 use crate::net::{MAX_MESSAGE_SIZE, MAX_SAFE_MESSAGE_SIZE};
-use crate::{Header, MId};
+use crate::MId;
 use log::{error, trace, warn};
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, UdpSocket};
-use crate::header::HEADER_LEN;
+use crate::header::{UDP_HEADER_LEN, UdpHeader};
 
 /// A type wrapping a [`UdpSocket`].
 ///
@@ -73,7 +73,7 @@ impl UdpCon {
     /// The shared code for sending a message.
     /// Produces a buffer given the payload
     fn send_shared(&self, mid: MId, payload: &[u8]) -> io::Result<Vec<u8>> {
-        let total_len = payload.len() + HEADER_LEN;
+        let total_len = payload.len() + UDP_HEADER_LEN;
         let mut buff = vec![0; total_len];
         // Check if the message is valid, and should be sent.
         if total_len > MAX_MESSAGE_SIZE {
@@ -95,38 +95,38 @@ impl UdpCon {
         }
         // Message can be sent!
 
-        let header = Header::new(mid, payload.len());
+        let header = UdpHeader::new(mid);
         let h_bytes = header.to_be_bytes();
         // put the header in the front of the message
         for (i, b) in h_bytes.into_iter().enumerate() {
             buff[i] = b;
         }
         for (i, b) in payload.iter().enumerate() {
-            buff[i+HEADER_LEN] = *b;
+            buff[i+UDP_HEADER_LEN] = *b;
         }
         Ok(buff)
     }
 
-    pub fn recv(&mut self) -> io::Result<(MId, &[u8])> {
+    pub fn recv(&mut self) -> io::Result<(MId, u32, &[u8])> {
         let n = self.udp.recv(&mut self.buff)?;
-        let (mid, bytes) = self.recv_shared(n)?;
+        let (mid, time, bytes) = self.recv_shared(n)?;
         trace!("UDP: Received msg of MId {}, len {}", mid, bytes.len());
-        Ok((mid, bytes))
+        Ok((mid, time, bytes))
     }
 
-    pub fn recv_from(&mut self) -> io::Result<(SocketAddr, MId, &[u8])> {
+    pub fn recv_from(&mut self) -> io::Result<(SocketAddr, MId, u32, &[u8])> {
         let (n, from) = self.udp.recv_from(&mut self.buff)?;
-        let (mid, bytes) = self.recv_shared(n)?;
+        let (mid, time, bytes) = self.recv_shared(n)?;
         trace!(
             "UDP: Received msg of MId {}, len {}, from {}",
             mid,
             bytes.len(),
             from
         );
-        Ok((from, mid, bytes))
+        Ok((from, mid, time, bytes))
     }
 
-    fn recv_shared(&mut self, n: usize) -> io::Result<(MId, &[u8])> {
+    fn recv_shared(&mut self, n: usize) -> io::Result<(MId, u32, &[u8])> {
         // Data should already be received.
         if n == 0 {
             let e_msg = format!("UDP: The connection was dropped.");
@@ -134,46 +134,22 @@ impl UdpCon {
             return Err(Error::new(ErrorKind::NotConnected, e_msg));
         }
 
-        let header = Header::from_be_bytes(&self.buff[..HEADER_LEN]);
-        let total_expected_len = header.len + HEADER_LEN;
+        let header = UdpHeader::from_be_bytes(&self.buff[..UDP_HEADER_LEN]);
 
-        if total_expected_len > MAX_MESSAGE_SIZE {
-            let e_msg = format!(
-                "UDP: The header of a received message indicates a size of {}, \
-                but the max allowed message size is {}.\
-                carrier-pigeon never sends a message greater than this. \
-                This message was likely not sent by carrier-pigeon. \
-                Discarding this message.",
-                total_expected_len, MAX_MESSAGE_SIZE
-            );
-            error!("{}", e_msg);
-            return Err(Error::new(ErrorKind::InvalidData, e_msg));
-        }
-
-        if n != total_expected_len {
-            let e_msg = format!(
-                "UDP: The header specified that the message size was {} bytes.\
-                However, {} bytes were read. Discarding invalid message.",
-                total_expected_len, n
-            );
-            error!("{}", e_msg);
-            return Err(Error::new(ErrorKind::InvalidData, e_msg));
-        }
-
-        Ok((header.mid, &self.buff[HEADER_LEN..header.len + HEADER_LEN]))
+        Ok((header.mid, header.time, &self.buff[UDP_HEADER_LEN..n]))
     }
 
-    /// Moves the internal [`TcpStream`] into or out of nonblocking mode.
+    /// Moves the internal [`UdpSocket`] into or out of nonblocking mode.
     pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
         self.udp.set_nonblocking(nonblocking)
     }
 
-    /// Returns the socket address of the remote peer of this TCP connection.
+    /// Returns the socket address of the remote peer of this UDP connection.
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.udp.peer_addr()
     }
 
-    /// Returns the socket address of the local half of this TCP connection.
+    /// Returns the socket address of the local half of this UDP connection.
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.udp.local_addr()
     }
