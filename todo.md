@@ -9,6 +9,6 @@
 - [ ] Make sure that you can't receive a tcp message on udp and vice versa.
 
 ## For v0.4.0:
-- [ ] Query support.
+- [ ] Query support. (Optionally listen on another port and respond to query requests).
 - [ ] TcpConnection buffering (Buffer all tcp messages sent, then write them all when a `send_tcp` method is called).
 - [ ] Ticks and multi tick message buffering.

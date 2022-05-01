@@ -10,10 +10,7 @@ Each message type is independent of the others. This means adding another messag
 messages/logic. This not only makes it scalable for your code, but makes it easy for modders to add their own message types
 without interfacing with yours.
 
-Custom (de)serialization logic is also supported. In this case messages do not need to implement serde's
-`Serialize` and `DeserializeOwned` traits. Instead, you will provide a serialization function and deserialization function.
-If you choose not to use a custom serialization function, carrier-pigeon will use [bincode](https://docs.rs/bincode/latest/bincode/)
-for speed and serialized size.
+For (de)serialization, carrier-pigeon uses [bincode](https://docs.rs/bincode/latest/bincode/) for speed and serialized size.
 
 Messages need to be registered in a `MsgTable` for them to be used. The Message tables on all clients and the server
 **need** to have the same exact types registered in the same exact order.
