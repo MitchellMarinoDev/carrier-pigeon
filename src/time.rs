@@ -7,7 +7,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Gets the current unix millis as a u32.
-pub(crate) fn unix_millis() -> u32 {
+pub fn unix_millis() -> u32 {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Current system time is earlier than the UNIX_EPOCH")
