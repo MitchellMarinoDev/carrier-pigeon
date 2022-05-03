@@ -6,7 +6,7 @@ use crate::MId;
 use crossbeam_channel::internal::SelectHandle;
 use crossbeam_channel::Receiver;
 use log::{debug, error, trace};
-use std::any::{Any, TypeId};
+use std::any::{Any, type_name, TypeId};
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::{Error, ErrorKind};
@@ -241,10 +241,27 @@ impl Client {
         }
     }
 
-    /// Gets an iterator for the messages of type T.
+    /// Gets an iterator for the messages of type `T`.
     ///
-    /// Returns None if the type T was not registered.
-    pub fn recv<T: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = NetMsg<T>> + '_> {
+    /// ### Panics
+    /// Panics if the type `T` was not registered.
+    /// For a non-panicking version, see [try_recv()](Self::try_recv).
+    pub fn recv<T: Any + Send + Sync>(&self) -> impl Iterator<Item = NetMsg<T>> + '_ {
+        let tid = TypeId::of::<T>();
+        if !self.parts.valid_tid(tid) {
+            panic!("Type ({}) not registered.", type_name::<T>());
+        }
+        let mid = self.parts.tid_map[&tid];
+
+        self.msg_buff[mid]
+            .iter()
+            .map(|m| m.to_typed().unwrap())
+}
+
+    /// Gets an iterator for the messages of type `T`.
+    ///
+    /// Returns `None` if the type `T` was not registered.
+    pub fn try_recv<T: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = NetMsg<T>> + '_> {
         let tid = TypeId::of::<T>();
         let mid = *self.parts.tid_map.get(&tid)?;
 

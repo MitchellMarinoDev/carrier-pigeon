@@ -5,7 +5,7 @@ use crate::udp::UdpCon;
 use crate::MId;
 use hashbrown::HashMap;
 use log::{debug, error};
-use std::any::{Any, TypeId};
+use std::any::{Any, type_name, TypeId};
 use std::io;
 use std::io::ErrorKind::{InvalidData, WouldBlock};
 use std::io::{Error, ErrorKind};
@@ -367,10 +367,29 @@ impl Server {
 
     /// Gets an iterator for the messages of type `T`.
     ///
-    /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
+    /// Make sure to call [`recv_msgs()`](Self::recv_msgs) before calling this.
     ///
-    /// Returns None if the type T was not registered.
-    pub fn recv<'s, T: Any + Send + Sync>(&'s self) -> Option<impl Iterator<Item=NetMsg<T>> + 's> {
+    /// ### Panics
+    /// Panics if the type `T` was not registered.
+    /// For a non-panicking version, see [try_recv()](Self::try_recv).
+    pub fn recv<'s, T: Any + Send + Sync>(&'s self) -> impl Iterator<Item=NetMsg<T>> + 's {
+        let tid = TypeId::of::<T>();
+        if !self.parts.valid_tid(tid) {
+            panic!("Type ({}) not registered.", type_name::<T>());
+        }
+        let mid = self.parts.tid_map[&tid];
+
+        self.msg_buff[mid]
+            .iter()
+            .map(|m| m.to_typed::<T>().unwrap())
+    }
+
+    /// Gets an iterator for the messages of type `T`.
+    ///
+    /// Make sure to call [`recv_msgs()`](Self::recv_msgs) before calling this.
+    ///
+    /// Returns `None` if the type `T` was not registered.
+    pub fn try_recv<'s, T: Any + Send + Sync>(&'s self) -> Option<impl Iterator<Item=NetMsg<T>> + 's> {
         let tid = TypeId::of::<T>();
         let mid = *self.parts.tid_map.get(&tid)?;
 
@@ -386,8 +405,29 @@ impl Server {
     ///
     /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
     ///
-    /// Returns None if the type T was not registered.
-    pub fn recv_spec<T: Any + Send + Sync>(&self, spec: CIdSpec) ->  Option<impl Iterator<Item=NetMsg<T>> + '_> {
+    /// ### Panics
+    /// Panics if the type `T` was not registered.
+    /// For a non-panicking version, see [try_recv_spec()](Self::try_recv_spec).
+    pub fn recv_spec<T: Any + Send + Sync>(&self, spec: CIdSpec) ->  impl Iterator<Item=NetMsg<T>> + '_ {
+        let tid = TypeId::of::<T>();
+        if !self.parts.valid_tid(tid) {
+            panic!("Type ({}) not registered.", type_name::<T>());
+        }
+        let mid = self.parts.tid_map[&tid];
+
+        self.msg_buff[mid]
+            .iter()
+            .filter(move |net_msg| spec.matches(net_msg.cid))
+            .map(|net_msg| net_msg.to_typed().unwrap())
+    }
+
+    /// Gets an iterator for the messages of type `T` that have
+    /// been received from [`CId`]s that match `spec`.
+    ///
+    /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
+    ///
+    /// Returns `None` if the type `T` was not registered.
+    pub fn try_recv_spec<T: Any + Send + Sync>(&self, spec: CIdSpec) ->  Option<impl Iterator<Item=NetMsg<T>> + '_> {
         let tid = TypeId::of::<T>();
         let mid = *self.parts.tid_map.get(&tid)?;
 

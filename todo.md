@@ -6,7 +6,7 @@
 - [x] Remove the Register custom, as custom `Serialize`/`Deserialize` impls are allowed.
 - [x] Remove the `<C, R, D>` generics as they end up everywhere.
 - [ ] Standardize logging.
-- [ ] Make sure that you can't receive a tcp message on udp and vice versa.
+- [x] Add try_recv.
 
 ## For v0.4.0:
 - [ ] Query support. (Optionally listen on another port and respond to query requests).
