@@ -138,7 +138,7 @@ impl Server {
                 }
                 Err(e) if e.kind() == ErrorKind::WouldBlock => {}
                 Err(e) => {
-                    error!("Error in handling a pending connection. {}", e);
+                    error!("IO error occurred while handling a pending connection. {}", e);
                     remove.push((idx, None));
                 }
             }
@@ -450,8 +450,12 @@ impl Server {
         // TCP
         for cid in self.cids().collect::<Vec<_>>() {
             loop {
+                if !self.alive(cid) {
+                    break;
+                }
+
                 let msg = self.recv_tcp(cid);
-                if self.handle_tcp(&mut i, cid, msg) {
+                if self.handle_tcp_msg(&mut i, cid, msg) {
                     // Done yielding messages.
                     break;
                 }
@@ -461,7 +465,7 @@ impl Server {
         // UDP
         loop {
             let msg = self.recv_udp();
-            if self.handle_udp(&mut i, msg) {
+            if self.handle_udp_msg(&mut i, msg) {
                 // Done yielding messages.
                 break;
             }
@@ -478,7 +482,7 @@ impl Server {
     /// Otherwise it adds it to the msg buffer.
     ///
     /// returns weather the tcp connection is done yielding messages.
-    fn handle_tcp(
+    fn handle_tcp_msg(
         &mut self,
         count: &mut u32,
         cid: CId,
@@ -488,7 +492,7 @@ impl Server {
             Err(e) if e.kind() == WouldBlock => true,
             // Other error occurred.
             Err(e) => {
-                error!("TCP: An error occurred while receiving a message. {}", e);
+                error!("TCP({}): IO error occurred while receiving data. {}", cid, e);
                 self.disconnected.push((cid, Status::Dropped(e)));
                 true
             }
@@ -515,7 +519,7 @@ impl Server {
     /// Otherwise it adds it to the msg buffer.
     ///
     /// returns weather the udp connection is done yielding messages.
-    fn handle_udp(
+    fn handle_udp_msg(
         &mut self,
         count: &mut u32,
         msg: io::Result<(MId, ErasedNetMsg)>,
@@ -524,7 +528,7 @@ impl Server {
             Err(e) if e.kind() == WouldBlock => true,
             // Other error occurred.
             Err(e) => {
-                error!("UDP: An error occurred while receiving a message. {}", e);
+                error!("UDP: IO error occurred while receiving data. {}", e);
                 true
             }
             // Got a message.

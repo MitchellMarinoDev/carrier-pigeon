@@ -38,7 +38,6 @@ impl TcpCon {
 				MId: {}, size: {}. Discarding message.",
                 MAX_MESSAGE_SIZE, mid, total_len
             );
-            error!("{}", e_msg);
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
         // Message can be sent!
@@ -88,10 +87,10 @@ impl TcpCon {
 	                but the max allowed message size is {}.\
 					carrier-pigeon never sends a message greater than this; \
 					this message was likely not sent by carrier-pigeon. \
+	                This will cause issues when trying to read; \
 	                Discarding this message and closing connection.",
                 header.len, MAX_MESSAGE_SIZE
             );
-            error!("{}", e_msg);
             tcp.shutdown(Shutdown::Both)?;
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }

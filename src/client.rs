@@ -104,7 +104,6 @@ impl Client {
                 "Client: First received message was MId: {} not MId: {} (Response message)",
                 mid, RESPONSE_TYPE_MID
             );
-            error!("{}", msg);
             return Err(Error::new(ErrorKind::InvalidData, msg));
         }
 
@@ -292,7 +291,7 @@ impl Client {
                 Err(e) if e.kind() == ErrorKind::WouldBlock => break,
                 // IO Error occurred.
                 Err(e) => {
-                    error!("IO Error occurred while receiving data. {}", e);
+                    error!("TCP: IO error occurred while receiving data. {}", e);
                     self.status = Status::Dropped(e);
                 }
                 // Successfully got a message.
@@ -307,10 +306,28 @@ impl Client {
             }
         }
 
-        while let Ok((mid, net_msg)) = self.recv_udp() {
-            i += 1;
-            self.msg_buff[mid].push(net_msg);
+        // UDP
+        loop {
+            if !self.status.connected() {
+                break;
+            }
+
+            let recv = self.recv_udp();
+            match recv {
+                // No more data.
+                Err(e) if e.kind() == ErrorKind::WouldBlock => break,
+                // IO Error occurred.
+                Err(e) => {
+                    error!("UDP: IO error occurred while receiving data. {}", e);
+                }
+                // Successfully got a message.
+                Ok((mid, net_msg)) => {
+                    i += 1;
+                    self.msg_buff[mid].push(net_msg);
+                }
+            }
         }
+
         i
     }
 

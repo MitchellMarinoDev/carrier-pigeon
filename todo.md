@@ -5,10 +5,11 @@
 - [x] Make send calls take an immutable reference by using a ReadWriteLock.
 - [x] Remove the Register custom, as custom `Serialize`/`Deserialize` impls are allowed.
 - [x] Remove the `<C, R, D>` generics as they end up everywhere.
-- [ ] Standardize logging.
+- [x] Standardize logging.
 - [x] Add try_recv.
 
 ## For v0.4.0:
-- [ ] Query support. (Optionally listen on another port and respond to query requests).
+- [ ] Query support for server. (Optionally listen on another port and respond to query requests).
 - [ ] TcpConnection buffering (Buffer all tcp messages sent, then write them all when a `send_tcp` method is called).
 - [ ] Ticks and multi tick message buffering.
+- [ ] Compile in messages.

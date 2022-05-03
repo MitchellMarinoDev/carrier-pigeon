@@ -1,6 +1,6 @@
 use crate::net::{MAX_MESSAGE_SIZE, MAX_SAFE_MESSAGE_SIZE};
 use crate::MId;
-use log::{error, trace, warn};
+use log::{debug, error, trace};
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, UdpSocket};
@@ -63,7 +63,8 @@ impl UdpCon {
         if n != len {
             error!(
                 "UDP: Couldn't send all the bytes of a message (mid: {}). \
-				Wanted to send {} but could only send {}.",
+				Wanted to send {} but could only send {}. This will likely \
+				cause issues on the other side.",
                 mid, len, n
             );
         }
@@ -82,12 +83,11 @@ impl UdpCon {
                 MId: {}, size: {}. Discarding message.",
                 MAX_MESSAGE_SIZE, mid, total_len
             );
-            error!("{}", e_msg);
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
 
         if total_len > MAX_SAFE_MESSAGE_SIZE {
-            warn!(
+            debug!(
                 "UDP: Outgoing message size is greater than the maximum SAFE message size.\
                 MId: {}, size: {}. Sending message anyway.",
                 mid, total_len
@@ -130,7 +130,6 @@ impl UdpCon {
         // Data should already be received.
         if n == 0 {
             let e_msg = format!("UDP: The connection was dropped.");
-            warn!("{}", e_msg);
             return Err(Error::new(ErrorKind::NotConnected, e_msg));
         }
 
