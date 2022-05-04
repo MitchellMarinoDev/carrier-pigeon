@@ -104,7 +104,7 @@ fn main() {
         }
 
         // receive messages from the server.
-        for msg in client.recv::<Msg>().unwrap() {
+        for msg in client.recv::<Msg>() {
             println!("{}: \"{}\"", msg.from, msg.text);
         }
 

@@ -35,7 +35,7 @@ fn send_recv() {
 
     assert_eq!(server.recv_msgs(), 20);
 
-    let tcp_msgs: Vec<_> = server.recv::<TcpMsg>().unwrap().collect();
+    let tcp_msgs: Vec<_> = server.recv::<TcpMsg>().collect();
     assert_eq!(tcp_msgs.len(), 10); // Make sure all 10 tcp messages went through.
 
     for (i, msg) in tcp_msgs.into_iter().enumerate() {
@@ -45,7 +45,7 @@ fn send_recv() {
 
     // Despite UDP being unreliable, we are sending the messages through localhost
     // so none should get lost.
-    let udp_msgs: Vec<_> = server.recv::<UdpMsg>().unwrap().map(|m| m.m).collect();
+    let udp_msgs: Vec<_> = server.recv::<UdpMsg>().map(|m| m.m).collect();
     assert_eq!(udp_msgs.len(), 10); // Make sure all 10 udp messages went through.
 
     // Udp is unreliable unordered. Assert that all messages arrive.
@@ -76,7 +76,7 @@ fn send_recv() {
 
     assert_eq!(client.recv_msgs(), 20);
 
-    let tcp_msgs: Vec<_> = client.recv::<TcpMsg>().unwrap().collect();
+    let tcp_msgs: Vec<_> = client.recv::<TcpMsg>().collect();
     assert_eq!(tcp_msgs.len(), 10); // Make sure all 10 tcp messages went through.
 
     for (i, p) in tcp_msgs.into_iter().enumerate() {
@@ -86,7 +86,7 @@ fn send_recv() {
 
     // Despite UDP being unreliable, we are sending the messages through localhost
     // so none should get lost.
-    let udp_msgs: Vec<_> = client.recv::<UdpMsg>().unwrap().map(|msg| msg.m).collect();
+    let udp_msgs: Vec<_> = client.recv::<UdpMsg>().map(|msg| msg.m).collect();
     assert_eq!(udp_msgs.len(), 10); // Make sure all 10 udp messages went through.
 
     // Udp is unreliable unordered. Assert that all messages arrive.

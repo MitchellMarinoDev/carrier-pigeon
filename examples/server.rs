@@ -77,7 +77,7 @@ fn main() {
         let mut cids_to_disconnect = vec![];
 
 
-        for msg in server.recv::<Msg>().unwrap() {
+        for msg in server.recv::<Msg>() {
             println!(
                 "Client {} sent message: {}: \"{}\"",
                 msg.cid, msg.from, msg.text

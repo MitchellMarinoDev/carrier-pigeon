@@ -12,7 +12,12 @@ use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, TcpListener};
 use std::time::{Duration, Instant};
 
+/// The timeout from after a TCP connection was made before a connection
+/// packet must be sent.
 const TIMEOUT: Duration = Duration::from_millis(10_000);
+
+/// The maximum number of connections we will handle at a time.
+const MAX_N_CONNECTION_HANDLE: usize = 4;
 
 /// A server.
 ///
@@ -113,13 +118,16 @@ impl Server {
     /// Handle the new connection attempts by calling the given hook.
     pub fn handle_new_cons<C: Any + Send + Sync, R: Any + Send + Sync>(&mut self, hook: &mut dyn FnMut(CId, C) -> (bool, R)) -> u32 {
         // Start waiting on the connection messages for new connections.
-        // TODO: add cap to connections that we are handling.
-        while let Ok((stream, _addr)) = self.listener.accept() {
-            debug!("New connection attempt.");
-            stream.set_nonblocking(true).unwrap();
-            let tcp_con = TcpCon::from_stream(stream);
-            let cid = self.new_cid();
-            self.new_cons.push((tcp_con, cid, Instant::now()));
+        while self.new_cons.len() < MAX_N_CONNECTION_HANDLE {
+            if let Ok((stream, _addr)) = self.listener.accept() {
+                debug!("New connection attempt.");
+                stream.set_nonblocking(true).unwrap();
+                let tcp_con = TcpCon::from_stream(stream);
+                let cid = self.new_cid();
+                self.new_cons.push((tcp_con, cid, Instant::now()));
+            } else {
+                break;
+            }
         }
 
         let mut accept_count = 0;
@@ -450,10 +458,6 @@ impl Server {
         // TCP
         for cid in self.cids().collect::<Vec<_>>() {
             loop {
-                if !self.alive(cid) {
-                    break;
-                }
-
                 let msg = self.recv_tcp(cid);
                 if self.handle_tcp_msg(&mut i, cid, msg) {
                     // Done yielding messages.

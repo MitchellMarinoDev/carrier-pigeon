@@ -1,7 +1,7 @@
 use crate::net::{TcpHeader, MAX_MESSAGE_SIZE};
 use crate::MId;
 use io::Error;
-use log::{error, trace};
+use log::trace;
 use std::io;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream};

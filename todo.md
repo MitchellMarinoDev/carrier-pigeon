@@ -11,5 +11,4 @@
 ## For v0.4.0:
 - [ ] Query support for server. (Optionally listen on another port and respond to query requests).
 - [ ] TcpConnection buffering (Buffer all tcp messages sent, then write them all when a `send_tcp` method is called).
-- [ ] Ticks and multi tick message buffering.
-- [ ] Compile in messages.
+- [ ] Compile messages into MsgTable using macros.
