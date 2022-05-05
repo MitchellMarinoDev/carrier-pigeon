@@ -157,7 +157,9 @@ impl Server {
             // we need to send the response message.
             if let Some(r) = resp {
                 self.add_tcp_con_cid(cid, con);
-                let _ = self.send_to(&r, cid);
+                if let Err(e) = self.send_to(&r, cid) {
+                    error!("IO error occurred while responding to a pending connection. {}", e);
+                }
             }
         }
 
