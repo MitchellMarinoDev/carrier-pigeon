@@ -4,7 +4,7 @@ use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
 use crate::MId;
 use hashbrown::HashMap;
-use log::{debug, error};
+use log::{debug, error, trace};
 use std::any::{Any, type_name, TypeId};
 use std::io;
 use std::io::ErrorKind::{InvalidData, WouldBlock};
@@ -340,7 +340,7 @@ impl Server {
         let b = ser_fn(msg)
             .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Serialization Error."))?;
 
-        debug!(
+        trace!(
             "Sending message of MId {}, len {}, to CId {}",
             mid,
             b.len(),
