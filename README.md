@@ -12,7 +12,7 @@ to send it. This also allows you to send and receive different types of messages
 
 ### Also check out the [Bevy](https://bevyengine.org/) plugin.
 
-([bevy-pigeon](https://github.com/MitchellMarinoDev/bevy-pigeon)).
+[bevy-pigeon](https://github.com/MitchellMarinoDev/bevy-pigeon).
 
 ## Documentation
 

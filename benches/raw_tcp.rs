@@ -4,17 +4,14 @@
 extern crate test;
 
 use test::Bencher;
-use carrier_pigeon::tcp::TcpCon;
-use crate::helper::create_tcp_pair;
+use crate::helper::create_tcp_con_pair;
 
 mod helper;
 
 #[bench]
 fn single_raw_tcp_big(b: &mut Bencher) {
-    let (s1, s2) = create_tcp_pair();
-    let s1 = TcpCon::from_stream(s1);
+    let (s1, mut s2) = create_tcp_con_pair();
     s1.set_nonblocking(true).unwrap();
-    let mut s2 = TcpCon::from_stream(s2);
 
     let msg = ['A' as u8; 504];
 
@@ -27,10 +24,8 @@ fn single_raw_tcp_big(b: &mut Bencher) {
 
 #[bench]
 fn single_raw_tcp_small(b: &mut Bencher) {
-    let (s1, s2) = create_tcp_pair();
-    let s1 = TcpCon::from_stream(s1);
+    let (s1, mut s2) = create_tcp_con_pair();
     s1.set_nonblocking(true).unwrap();
-    let mut s2 = TcpCon::from_stream(s2);
 
     let msg = ['A' as u8; 10];
 
@@ -43,10 +38,8 @@ fn single_raw_tcp_small(b: &mut Bencher) {
 
 #[bench]
 fn many_raw_tcp_big(b: &mut Bencher) {
-    let (s1, s2) = create_tcp_pair();
-    let s1 = TcpCon::from_stream(s1);
+    let (s1, mut s2) = create_tcp_con_pair();
     s1.set_nonblocking(true).unwrap();
-    let mut s2 = TcpCon::from_stream(s2);
 
     let msg = ['A' as u8; 504];
 
@@ -63,10 +56,8 @@ fn many_raw_tcp_big(b: &mut Bencher) {
 
 #[bench]
 fn many_raw_tcp_small(b: &mut Bencher) {
-    let (s1, s2) = create_tcp_pair();
-    let s1 = TcpCon::from_stream(s1);
+    let (s1, mut s2) = create_tcp_con_pair();
     s1.set_nonblocking(true).unwrap();
-    let mut s2 = TcpCon::from_stream(s2);
 
     let msg = ['A' as u8; 10];
 

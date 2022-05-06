@@ -6,22 +6,16 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::Error;
 use std::ops::Deref;
+use std::time::Duration;
+use serde::{Serialize, Deserialize};
 
 /// The maximum safe message size that can be sent on udp,
 /// after taking off the possible overheads from the transport.
 ///
-/// Note that `carrier-pigeon` imposes a 4-byte overhead on every message so
-/// the data must be `MAX_SAFE_MESSAGE_SIZE - 4` or less to be guaranteed to
+/// The data must be `MAX_SAFE_MESSAGE_SIZE` or less to be guaranteed to
 /// be deliverable on udp.
 /// [source](https://newbedev.com/what-is-the-largest-safe-udp-packet-size-on-the-internet/)
-pub const MAX_SAFE_MESSAGE_SIZE: usize = 508;
-
-/// The absolute maximum payload size that can be received. This is used for
-/// sizing the buffer.
-///
-/// Note that `carrier-pigeon` imposes a 4-byte overhead on every message so
-/// the data must be `MAX_MESSAGE_SIZE - 4` or less.
-pub const MAX_MESSAGE_SIZE: usize = 2048;
+pub const MAX_SAFE_MESSAGE_SIZE: usize = 504;
 
 /// An enum representing the 2 possible transports.
 ///
@@ -152,6 +146,72 @@ impl CIdSpec {
 
             (Only(only), Except(except)) => only != except,
             (Except(except), Only(only)) => only != except,
+        }
+    }
+}
+
+/// Client configuration.
+///
+/// This needs to be defined before creating a client.
+///
+/// Contains all configurable information about the client.
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub struct CConfig {
+    /// The maximum message size in bytes. This should be the same on client and server.
+    /// This is used for sizing the buffer for TCP and UDP.
+    /// Any attempts to send messages over this size will be discarded. Keep in mind, there is
+    /// still a soft limit for UDP messages (`MAX_SAFE_MSG_SIZE`).
+    pub max_msg_size: usize,
+}
+
+impl CConfig {
+    /// Creates a new Client configuration.
+    pub fn new(max_msg_size: usize) -> Self {
+        CConfig { max_msg_size }
+    }
+}
+
+impl Default for CConfig {
+    fn default() -> Self {
+        CConfig { max_msg_size: 2048 }
+    }
+}
+
+/// Server configuration.
+///
+/// This needs to be defined before starting up the server.
+///
+/// Contains all configurable information about the server.
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub struct SConfig {
+    /// The timeout for handling new connections. The time to wait for a connection message
+    /// after establishing a tcp connection.
+    pub timeout: Duration,
+    /// The maximum number of connections that this can handle at the same time.
+    pub max_con_handle: usize,
+    /// The maximum message size in bytes. This is used for sizing the buffer for TCP and UDP.
+    /// Any attempts to send messages over this size will be discarded. Keep in mind, there is
+    /// still a soft limit for UDP messages (`MAX_SAFE_MSG_SIZE`)
+    pub max_msg_size: usize,
+}
+
+impl SConfig {
+    /// Creates a new Server configuration.
+    pub fn new(timeout: Duration, max_con_handle: usize, max_msg_size: usize) -> Self {
+        SConfig {
+            timeout,
+            max_con_handle,
+            max_msg_size,
+        }
+    }
+}
+
+impl Default for SConfig {
+    fn default() -> Self {
+        SConfig {
+            timeout: Duration::from_millis(5_000),
+            max_con_handle: 4,
+            max_msg_size: 2048,
         }
     }
 }

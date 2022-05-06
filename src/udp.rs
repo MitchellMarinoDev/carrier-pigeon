@@ -1,33 +1,43 @@
-use crate::net::{MAX_MESSAGE_SIZE, MAX_SAFE_MESSAGE_SIZE};
+use crate::net::MAX_SAFE_MESSAGE_SIZE;
 use crate::MId;
 use log::{debug, error, trace};
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, UdpSocket};
-use crate::header::{UDP_HEADER_LEN, UdpHeader};
+use crate::header::{TCP_HEADER_LEN, UDP_HEADER_LEN, UdpHeader};
 
 /// A type wrapping a [`UdpSocket`].
 ///
 /// Provides read/write abstractions for sending `carrier-pigeon` messages.
 pub struct UdpCon {
     /// Used for receiving only. This way send calls can take immutable refs.
-    buff: [u8; MAX_MESSAGE_SIZE],
+    buff: Vec<u8>,
     udp: UdpSocket,
 }
 
 impl UdpCon {
     /// Creates a new [`UdpCon`] by creating a new [`UdpSocket`] that connects to `peer`.
     /// Sets the socket to non-blocking.
-    pub fn new(local: SocketAddr, peer: Option<SocketAddr>) -> io::Result<Self> {
+    pub fn new(local: SocketAddr, peer: Option<SocketAddr>, max_msg_size: usize) -> io::Result<Self> {
         let udp = UdpSocket::bind(local)?;
         if let Some(peer) = peer {
             udp.connect(peer)?;
         }
         udp.set_nonblocking(true)?;
         Ok(UdpCon {
-            buff: [0; MAX_MESSAGE_SIZE],
+            buff: vec![0; max_msg_size + UDP_HEADER_LEN],
             udp,
         })
+    }
+
+    /// Gets the total buffer size.
+    fn buff_size(&self) -> usize {
+        self.buff.len()
+    }
+
+    /// Gets the maximum message size.
+    fn max_msg_size(&self) -> usize {
+        self.buff.len()-TCP_HEADER_LEN
     }
 
     pub fn send_to(&self, addr: SocketAddr, mid: MId, payload: &[u8]) -> io::Result<()> {
@@ -77,11 +87,11 @@ impl UdpCon {
         let total_len = payload.len() + UDP_HEADER_LEN;
         let mut buff = vec![0; total_len];
         // Check if the message is valid, and should be sent.
-        if total_len > MAX_MESSAGE_SIZE {
+        if total_len > self.buff_size() {
             let e_msg = format!(
                 "UDP: Outgoing message size is greater than the maximum message size ({}). \
                 MId: {}, size: {}. Discarding message.",
-                MAX_MESSAGE_SIZE, mid, total_len
+                self.max_msg_size(), mid, total_len
             );
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }

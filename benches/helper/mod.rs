@@ -5,6 +5,8 @@ use std::net::{TcpListener, TcpStream, UdpSocket};
 use crate::helper::test_messages::{get_table_parts, Connection, Disconnect, Response};
 use log::debug;
 use carrier_pigeon::{Client, Server};
+use carrier_pigeon::net::{CConfig, SConfig};
+use carrier_pigeon::tcp::TcpCon;
 
 pub mod test_messages;
 
@@ -16,13 +18,13 @@ pub fn create_client_server_pair() -> (Client, Server) {
     let parts = get_table_parts();
 
     debug!("Creating server.");
-    let mut server = Server::new(ADDR_LOCAL.parse().unwrap(), parts.clone()).unwrap();
+    let mut server = Server::new(ADDR_LOCAL.parse().unwrap(), parts.clone(), SConfig::default()).unwrap();
     let addr = server.listen_addr();
     debug!("Server created on addr: {}", addr);
 
     debug!("Creating client.");
     // Start client connection.
-    let client = Client::new(addr, parts, Connection::new("John"));
+    let client = Client::new(addr, parts, CConfig::default(), Connection::new("John"));
 
     // Spin until the connection is handled.
     // Normally this would be done in the game loop
@@ -45,6 +47,15 @@ pub fn create_tcp_pair() -> (TcpStream, TcpStream) {
     let addr = listener.local_addr().unwrap();
     let s1 = TcpStream::connect(addr).unwrap();
     let (s2, _) = listener.accept().unwrap();
+    (s1, s2)
+}
+
+/// Creates a pair of [`TcpCon`]s that are connected to each other.
+/// Panics if any issues occur.
+pub fn create_tcp_con_pair() -> (TcpCon, TcpCon) {
+    let (s1, s2) = create_tcp_pair();
+    let s1 = TcpCon::from_stream(s1, 2048);
+    let mut s2 = TcpCon::from_stream(s2, 2048);
     (s1, s2)
 }
 

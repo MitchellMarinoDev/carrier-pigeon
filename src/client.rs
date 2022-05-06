@@ -1,5 +1,5 @@
 use crate::message_table::{MsgTableParts, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID};
-use crate::net::{ErasedNetMsg, NetMsg, Status, Transport};
+use crate::net::{CConfig, ErasedNetMsg, NetMsg, Status, Transport};
 use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
 use crate::MId;
@@ -20,6 +20,8 @@ use std::time::Duration;
 ///
 /// Contains a TCP and UDP connection to the server.
 pub struct Client {
+    /// The configuration of the client.
+    config: CConfig,
     /// The status of the client
     status: Status,
     /// The received message buffer.
@@ -45,11 +47,12 @@ impl Client {
     pub fn new<C: Any + Send + Sync>(
         peer: SocketAddr,
         parts: MsgTableParts,
+        config: CConfig,
         con_msg: C,
     ) -> PendingClient {
         let (client_tx, client_rx) = crossbeam_channel::bounded(1);
 
-        std::thread::spawn(move || client_tx.send(Self::new_blocking(peer, parts, con_msg)));
+        std::thread::spawn(move || client_tx.send(Self::new_blocking(peer, parts, config, con_msg)));
 
         PendingClient { channel: client_rx }
     }
@@ -58,20 +61,21 @@ impl Client {
     fn new_blocking<C: Any + Send + Sync>(
         peer: SocketAddr,
         parts: MsgTableParts,
+        config: CConfig,
         con_msg: C,
     ) -> io::Result<(Self, Box<dyn Any + Send + Sync>)> {
         debug!("Attempting to create a client connection to {}", peer);
         // TCP & UDP Connections.
         let tcp = TcpStream::connect(peer)?;
         tcp.set_read_timeout(Some(Duration::from_millis(10_000)))?;
-        let tcp = TcpCon::from_stream(tcp);
+        let tcp = TcpCon::from_stream(tcp, config.max_msg_size);
         let local_addr = tcp.local_addr().unwrap();
         trace!(
             "TcpStream established from {} to {}",
             local_addr,
             tcp.peer_addr().unwrap()
         );
-        let udp = UdpCon::new(local_addr, Some(peer))?;
+        let udp = UdpCon::new(local_addr, Some(peer), config.max_msg_size)?;
         trace!(
             "UdpSocket connected from {} to {}",
             udp.local_addr().unwrap(),
@@ -84,6 +88,7 @@ impl Client {
         }
 
         let mut client = Client {
+            config,
             status: Status::Connected,
             msg_buff,
             tcp,
@@ -184,6 +189,11 @@ impl Client {
         };
 
         Ok((mid, net_msg))
+    }
+
+    /// Gets the config of the client.
+    pub fn config(&self) -> &CConfig {
+        &self.config
     }
 
     /// Disconnects from the server. You should ***always*** call this
