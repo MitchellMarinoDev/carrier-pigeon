@@ -26,8 +26,7 @@ impl TcpHeader {
         TcpHeader { mid, len }
     }
 
-    /// Converts the [`TcpHeader`] to big endian bytes to be sent over
-    /// the internet.
+    /// Converts the [`TcpHeader`] to big endian bytes to be sent over the internet.
     pub fn to_be_bytes(&self) -> [u8; TCP_HEADER_LEN] {
         let mid_b = (self.mid as u16).to_be_bytes();
         let len_b = (self.len as u16).to_be_bytes();
@@ -48,11 +47,9 @@ impl TcpHeader {
 
 /// A header to be sent before the payload on UDP.
 ///
-/// `len` and `time` are sent as big endian u16s.
-/// This means they have a max value of **`65535`**.
-/// This shouldn't pose any real issues for the MId.
-/// The rest of the unix millis is reconstructed on the
-/// other end.
+/// `len` and `time` are sent as big endian u16s. This means they have a max value of **`65535`**.
+/// This shouldn't pose any real issues for the MId. The rest of the time unix millis is
+/// reconstructed on the other end.
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 pub struct UdpHeader {
     /// The message id.
@@ -62,13 +59,12 @@ pub struct UdpHeader {
 }
 
 impl UdpHeader {
-    /// Creates a [`TcpHeader`] with the given [`MId`] and `length`.
+    /// Creates a [`UdpHeader`] with the given [`MId`] and `length`.
     pub fn new(mid: MId) -> Self {
         UdpHeader { mid, time: unix_millis() }
     }
 
-    /// Converts the [`TcpHeader`] to big endian bytes to be sent over
-    /// the internet.
+    /// Converts the [`UdpHeader`] to big endian bytes to be sent over the internet.
     pub fn to_be_bytes(&self) -> [u8; UDP_HEADER_LEN] {
         let mid_b = (self.mid as u16).to_be_bytes();
         let time_b = (self.time as u16).to_be_bytes();
@@ -76,7 +72,7 @@ impl UdpHeader {
         [mid_b[0], mid_b[1], time_b[0], time_b[1]]
     }
 
-    /// Converts the big endian bytes back into a [`TcpHeader`].
+    /// Converts the big endian bytes back into a [`UdpHeader`].
     pub fn from_be_bytes(bytes: &[u8]) -> Self {
         assert_eq!(bytes.len(), UDP_HEADER_LEN);
 

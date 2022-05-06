@@ -150,40 +150,13 @@ impl CIdSpec {
     }
 }
 
-/// Client configuration.
-///
-/// This needs to be defined before creating a client.
-///
-/// Contains all configurable information about the client.
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
-pub struct CConfig {
-    /// The maximum message size in bytes. This should be the same on client and server.
-    /// This is used for sizing the buffer for TCP and UDP.
-    /// Any attempts to send messages over this size will be discarded. Keep in mind, there is
-    /// still a soft limit for UDP messages (`MAX_SAFE_MSG_SIZE`).
-    pub max_msg_size: usize,
-}
-
-impl CConfig {
-    /// Creates a new Client configuration.
-    pub fn new(max_msg_size: usize) -> Self {
-        CConfig { max_msg_size }
-    }
-}
-
-impl Default for CConfig {
-    fn default() -> Self {
-        CConfig { max_msg_size: 2048 }
-    }
-}
-
-/// Server configuration.
+/// Configuration for a client or server.
 ///
 /// This needs to be defined before starting up the server.
 ///
 /// Contains all configurable information about the server.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
-pub struct SConfig {
+pub struct Config {
     /// The timeout for handling new connections. The time to wait for a connection message
     /// after establishing a tcp connection.
     pub timeout: Duration,
@@ -195,10 +168,10 @@ pub struct SConfig {
     pub max_msg_size: usize,
 }
 
-impl SConfig {
+impl Config {
     /// Creates a new Server configuration.
     pub fn new(timeout: Duration, max_con_handle: usize, max_msg_size: usize) -> Self {
-        SConfig {
+        Config {
             timeout,
             max_con_handle,
             max_msg_size,
@@ -206,9 +179,9 @@ impl SConfig {
     }
 }
 
-impl Default for SConfig {
+impl Default for Config {
     fn default() -> Self {
-        SConfig {
+        Config {
             timeout: Duration::from_millis(5_000),
             max_con_handle: 4,
             max_msg_size: 2048,

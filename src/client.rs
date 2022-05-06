@@ -1,5 +1,5 @@
 use crate::message_table::{MsgTableParts, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID};
-use crate::net::{CConfig, ErasedNetMsg, NetMsg, Status, Transport};
+use crate::net::{Config, ErasedNetMsg, NetMsg, Status, Transport};
 use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
 use crate::MId;
@@ -12,7 +12,6 @@ use std::io;
 use std::io::{Error, ErrorKind};
 use std::io::ErrorKind::InvalidData;
 use std::net::{SocketAddr, TcpStream};
-use std::time::Duration;
 
 /// A Client connection.
 ///
@@ -21,8 +20,8 @@ use std::time::Duration;
 /// Contains a TCP and UDP connection to the server.
 pub struct Client {
     /// The configuration of the client.
-    config: CConfig,
-    /// The status of the client
+    config: Config,
+    /// The status of the client. Whether it is connected/disconnected etc.
     status: Status,
     /// The received message buffer.
     ///
@@ -43,11 +42,11 @@ impl Client {
     ///
     /// Creates a new [`Client`] on another thread, passing back a [`PendingClient`].
     /// This [`PendingClient`] allows you to wait for the client to send the connection
-    /// message, and the server to send back the response message.
+    /// message, and for the server to send back the response message.
     pub fn new<C: Any + Send + Sync>(
         peer: SocketAddr,
         parts: MsgTableParts,
-        config: CConfig,
+        config: Config,
         con_msg: C,
     ) -> PendingClient {
         let (client_tx, client_rx) = crossbeam_channel::bounded(1);
@@ -57,17 +56,17 @@ impl Client {
         PendingClient { channel: client_rx }
     }
 
-    /// Creates a new [`Client`] blocking.
+    /// Creates a new [`Client`] by blocking.
     fn new_blocking<C: Any + Send + Sync>(
         peer: SocketAddr,
         parts: MsgTableParts,
-        config: CConfig,
+        config: Config,
         con_msg: C,
     ) -> io::Result<(Self, Box<dyn Any + Send + Sync>)> {
         debug!("Attempting to create a client connection to {}", peer);
         // TCP & UDP Connections.
         let tcp = TcpStream::connect(peer)?;
-        tcp.set_read_timeout(Some(Duration::from_millis(10_000)))?;
+        tcp.set_read_timeout(Some(config.timeout))?;
         let tcp = TcpCon::from_stream(tcp, config.max_msg_size);
         let local_addr = tcp.local_addr().unwrap();
         trace!(
@@ -137,7 +136,8 @@ impl Client {
     /// A function that encapsulates the receiving logic for the TCP transport.
     ///
     /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
-    /// no more messages can be yielded without blocking.
+    /// no more messages can be yielded without blocking. [`InvalidData`] likely means
+    /// carrier-pigeon got bad data.
     fn recv_tcp(&mut self) -> io::Result<(MId, ErasedNetMsg)> {
         let (mid, bytes) = self.tcp.recv()?;
 
@@ -166,7 +166,7 @@ impl Client {
     ///
     /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
     /// no more messages can be yielded without blocking. [`InvalidData`] likely means
-    /// carrier-pigeon detected bad data.
+    /// carrier-pigeon got bad data.
     fn recv_udp(&mut self) -> io::Result<(MId, ErasedNetMsg)> {
         let (mid, time, bytes) = self.udp.recv()?;
 
@@ -192,11 +192,11 @@ impl Client {
     }
 
     /// Gets the config of the client.
-    pub fn config(&self) -> &CConfig {
+    pub fn config(&self) -> &Config {
         &self.config
     }
 
-    /// Disconnects from the server. You should ***always*** call this
+    /// Disconnects from the server. You should call this
     /// method before dropping the client to let the server know that
     /// you intentionally disconnected. The `discon_msg` allows you to
     /// give a reason for the disconnect.
@@ -223,13 +223,9 @@ impl Client {
         self.status().connected()
     }
 
-    /// Sends a message to the connected computer.
-    /// ### Errors
-    /// If the client isn't connected to another computer,
-    /// This will return [`NetError::NotConnected`].
-    /// If the message type isn't registered, this will return
-    /// [`NetError::TypeNotRegistered`]. If the msg fails to be
-    /// serialized this will return [`NetError::SerdeError`].
+    /// Sends a message to the peer.
+    ///
+    /// `T` must be registered in the [`MsgTable`].
     pub fn send<T: Any + Send + Sync>(&self, msg: &T) -> io::Result<()> {
         let tid = TypeId::of::<T>();
         if !self.parts.valid_tid(tid) {
@@ -348,7 +344,7 @@ impl Client {
         }
     }
 
-    /// Gets the local -ess.
+    /// Gets the local address.
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.tcp.local_addr()
     }
@@ -487,4 +483,3 @@ impl OptionPendingClient {
         Some(self.channel?.recv().unwrap().map(|(client, m)| (client, *m.downcast::<R>().expect("The generic parameter `R` must be the response message type (the same `R` that you passed into `MsgTable::build`)."))))
     }
 }
-

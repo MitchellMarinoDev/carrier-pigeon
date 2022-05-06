@@ -1,5 +1,5 @@
 use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID};
-use crate::net::{CId, DeserFn, Status, Transport, CIdSpec, ErasedNetMsg, NetMsg, SConfig};
+use crate::net::{CId, DeserFn, Status, Transport, CIdSpec, ErasedNetMsg, NetMsg, Config};
 use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
 use crate::MId;
@@ -24,7 +24,7 @@ pub struct Server {
     /// The current cid. incremented then assigned to new connections.
     current_cid: CId,
     /// The configuration of the server.
-    config: SConfig,
+    config: Config,
     /// The received message buffer.
     ///
     /// Each [`MId`] has its own vector.
@@ -65,7 +65,7 @@ impl Server {
     /// Creates a new [`Server`].
     ///
     /// Creates a new [`Server`] listening on the address `listen_addr`.
-    pub fn new(mut listen_addr: SocketAddr, parts: MsgTableParts, config: SConfig) -> io::Result<Self> {
+    pub fn new(mut listen_addr: SocketAddr, parts: MsgTableParts, config: Config) -> io::Result<Self> {
         let listener = TcpListener::bind(listen_addr)?;
         listen_addr = listener.local_addr().unwrap();
         listener.set_nonblocking(true)?;
@@ -95,7 +95,7 @@ impl Server {
     }
 
     /// Gets the config of the server.
-    pub fn config(&self) -> &SConfig {
+    pub fn config(&self) -> &Config {
         &self.config
     }
 

@@ -17,7 +17,7 @@ use log::LevelFilter;
 use simple_logger::SimpleLogger;
 use std::env;
 use std::time::Duration;
-use carrier_pigeon::net::{CIdSpec, SConfig};
+use carrier_pigeon::net::{CIdSpec, Config};
 
 mod shared;
 
@@ -41,7 +41,7 @@ fn main() {
     let parts = table.build::<Connection, Response, Disconnect>().unwrap();
 
     // Start the server.
-    let mut server = Server::new(addr, parts, SConfig::default()).expect("Failed to create server.");
+    let mut server = Server::new(addr, parts, Config::default()).expect("Failed to create server.");
 
     let blacklisted_users = vec!["John", "Jane"];
 

@@ -21,7 +21,7 @@ use std::io::stdin;
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::time::Duration;
 use std::{env, thread};
-use carrier_pigeon::net::CConfig;
+use carrier_pigeon::net::Config;
 
 mod shared;
 
@@ -50,7 +50,7 @@ fn main() {
     };
 
     // Start the connection to the server.
-    let client = Client::new(addr, parts, CConfig::default(), con_msg);
+    let client = Client::new(addr, parts, Config::default(), con_msg);
 
     // Block until the connection is made.
     let (mut client, resp) = client.block().expect("Failed to connect to server.");

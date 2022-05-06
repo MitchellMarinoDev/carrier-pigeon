@@ -9,47 +9,35 @@ use std::fmt::{Display, Formatter};
 use std::io;
 use MsgRegError::NonUniqueIdentifier;
 
-/// A type for collecting the parts needed to send
-/// a struct over the network.
+/// A type for collecting the parts needed to send a struct over the network.
 ///
-/// IMPORTANT: The Message tables on all clients and
-/// the server **need** to have exactly the same types
-/// registered **in the same order**.
-/// If this is not possible, use [`SortedMsgTable`].
+/// IMPORTANT: The Message tables on all clients and the server **need** to have exactly the same
+/// types registered **in the same order**. If this is not possible, use [`SortedMsgTable`].
 #[derive(Clone)]
 pub struct MsgTable {
     table: Vec<(TypeId, Transport, SerFn, DeserFn)>,
 }
 
-/// A type for collecting the parts needed to send a
-/// struct over the network.
+/// A type for collecting the parts needed to send a struct over the network.
 ///
-/// This is a variation of [`MsgTable`]. You should use this
-/// type only when you don't know the order of registration.
-/// In place of a constant registration order, types must be
-/// registered with a unique string. The list is then sorted
-/// on this string when built.
+/// This is a variation of [`MsgTable`]. You should use this type only when you don't know the
+/// order of registration. In place of a constant registration order, types must be registered
+/// with a unique string identifier. The list is then sorted on this identifier when built.
 ///
-/// If a type is registered with the same name, it will be
-/// ignored, therefore namespacing is encouraged if you are
-/// allowing modders or external plugins to add networking
-/// types.
+/// If a type is registered with the same name, it will be ignored, therefore namespacing is
+/// encouraged if you are allowing mods or external plugins to add networking types.
 ///
-/// IMPORTANT: The Message tables on all clients and the
-/// server **need** to have exactly the same types
-/// registered, although they do **not** need to be registered
-/// in the same order.
+/// IMPORTANT: The Message tables on all clients and the server **need** to have exactly the
+/// same types registered, although they do **not** need to be registered in the same order.
 #[derive(Clone)]
 pub struct SortedMsgTable {
     table: Vec<(String, TypeId, Transport, SerFn, DeserFn)>,
 }
 
-/// The useful parts of the [`MsgTable`]
-/// (or [`SortedMsgTable`]).
+/// The useful parts of the [`MsgTable`] (or [`SortedMsgTable`]).
 ///
-/// You can build this by registering your types
-/// with a [`MsgTable`], then building it
-/// with [`MsgTable::build()`].
+/// You can build this by registering your types with a [`MsgTable`], then building it with
+/// [`MsgTable::build()`].
 #[derive(Clone)]
 pub struct MsgTableParts {
     pub tid_map: HashMap<TypeId, MId>,
@@ -69,10 +57,9 @@ impl MsgTable {
     }
 
     /// Adds all registrations from `other` into this table.
-    ///
-    /// All errors are thrown before mutating self. If no errors
-    /// are thrown, all entries are added; if an error is thrown,
-    /// no entries are added.
+
+    /// All errors are thrown before mutating self. If no errors are thrown, all entries are added;
+    /// if an error is thrown, no entries are added.
     pub fn join(&mut self, other: &MsgTable) -> Result<(), MsgRegError> {
         // Validate
         if other.table.iter()
@@ -148,9 +135,9 @@ impl MsgTable {
     /// Consumes the Message table, and turns it into a [`MsgTableParts`].
     ///
     /// This should be called with the generic parameters:
-    ///  - C is the connection message type.
-    ///  - R is the response message type.
-    ///  - D is the disconnect message type.
+    ///  - `C` is the connection message type.
+    ///  - `R` is the response message type.
+    ///  - `D` is the disconnect message type.
     ///
     /// The generic parameters should **not** be registered before hand.
     pub fn build<C, R, D>(self) -> Result<MsgTableParts, MsgRegError>
@@ -201,9 +188,8 @@ impl SortedMsgTable {
 
     /// Adds all registrations from `other` into this table.
     ///
-    /// All errors are thrown before mutating self. If no errors
-    /// are thrown, all entries are added; if an error is thrown,
-    /// no entries are added.
+    /// All errors are thrown before mutating self. If no errors are thrown, all entries are added;
+    /// if an error is thrown, no entries are added.
     pub fn join(&mut self, other: &SortedMsgTable) -> Result<(), MsgRegError> {
         // Validate
         if other.table.iter()
@@ -295,9 +281,9 @@ impl SortedMsgTable {
     /// Consumes the Message table, and turns it into a [`MsgTableParts`].
     ///
     /// This should be called with the generic parameters:
-    ///  - C is the connection message type.
-    ///  - R is the response message type.
-    ///  - D is the disconnect message type.
+    ///  - `C` is the connection message type.
+    ///  - `R` is the response message type.
+    ///  - `f` is the disconnect message type.
     ///
     /// The generic parameters should **not** be registered before hand.
     pub fn build<C, R, D>(mut self) -> Result<MsgTableParts, MsgRegError>
