@@ -10,6 +10,10 @@ to send it. This also allows you to send and receive different types of messages
 
 `carrier-pigeon = "0.3.0"`
 
+### Also check out the [Bevy](https://bevyengine.org/) plugin.
+
+([bevy-pigeon](https://github.com/MitchellMarinoDev/bevy-pigeon)).
+
 ## Documentation
 
 The documentation can be found on [Docs.rs](https://docs.rs/carrier-pigeon)
