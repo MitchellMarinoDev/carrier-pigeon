@@ -8,6 +8,7 @@
 - [x] Standardize logging.
 - [x] Add try_recv.
 - [ ] make NetMsg have getters.
+- [ ] make arg order consistent.
 
 ## For v0.4.0:
 - [ ] Server discovery.

@@ -137,7 +137,7 @@ impl Server {
         for (idx, (con, cid, time)) in self.new_cons.iter_mut().enumerate() {
             match Self::handle_new_con::<C>(deser_fn, con, time) {
                 Ok(c) => {
-                    let (acc, r) = hook(*cid, c);
+                    let (acc, r): (bool, R) = hook(*cid, c);
                     if acc {
                         debug!("Accepted new connection at {}.", con.peer_addr().unwrap());
                         accept_count += 1;
@@ -324,10 +324,10 @@ impl Server {
     ///
     /// ## Errors
     /// If the client isn't connected to another computer,
-    /// This will return [`Error::NotConnected`].
+    /// This will return a not connected error.
     /// If the message type isn't registered, this will return
-    /// [`Error::TypeNotRegistered`]. If the msg fails to be
-    /// serialized this will return [`Error::SerdeError`].
+    /// a type not registered error. If the msg fails to be
+    /// serialized this will return serialization error.
     pub fn send_to<T: Any + Send + Sync>(&self, msg: &T, cid: CId) -> io::Result<()> {
         let tid = TypeId::of::<T>();
         if !self.valid_tid(tid) {
