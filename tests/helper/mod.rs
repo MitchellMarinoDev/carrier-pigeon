@@ -4,6 +4,7 @@
 use crate::helper::test_messages::{get_table_parts, Connection, Disconnect, Response};
 use log::debug;
 use carrier_pigeon::{Client, Server};
+use carrier_pigeon::net::{CConfig, SConfig};
 
 pub mod test_messages;
 
@@ -15,13 +16,13 @@ pub fn create_client_server_pair() -> (Client, Server) {
     let parts = get_table_parts();
 
     debug!("Creating server.");
-    let mut server = Server::new(ADDR_LOCAL.parse().unwrap(), parts.clone()).unwrap();
+    let mut server = Server::new(ADDR_LOCAL.parse().unwrap(), parts.clone(), SConfig::default()).unwrap();
     let addr = server.listen_addr();
     debug!("Server created on addr: {}", addr);
 
     debug!("Creating client.");
     // Start client connection.
-    let client = Client::new(addr, parts, Connection::new("John"));
+    let client = Client::new(addr, parts, CConfig::default(), Connection::new("John"));
 
     // Spin until the connection is handled.
     // Normally this would be done in the game loop

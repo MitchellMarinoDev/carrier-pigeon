@@ -1,4 +1,4 @@
-use crate::net::{TcpHeader, MAX_MESSAGE_SIZE};
+use crate::net::TcpHeader;
 use crate::MId;
 use io::Error;
 use log::trace;
@@ -12,17 +12,27 @@ use crate::header::TCP_HEADER_LEN;
 ///
 /// Provides read/write abstractions for sending `carrier-pigeon` messages.
 pub struct TcpCon {
-    buff: [u8; MAX_MESSAGE_SIZE],
+    buff: Vec<u8>,
     tcp: RwLock<TcpStream>,
 }
 
 impl TcpCon {
     /// Creates a new [`TcpCon`] from the [`TcpStream`] `tcp`.
-    pub fn from_stream(tcp: TcpStream) -> Self {
+    pub fn from_stream(tcp: TcpStream, max_msg_size: usize) -> Self {
         TcpCon {
-            buff: [0; MAX_MESSAGE_SIZE],
+            buff: vec![0; max_msg_size + TCP_HEADER_LEN],
             tcp: tcp.into(),
         }
+    }
+
+    /// Gets the total buffer size.
+    fn buff_size(&self) -> usize {
+        self.buff.len()
+    }
+
+    /// Gets the maximum message size.
+    fn max_msg_size(&self) -> usize {
+        self.buff.len()-TCP_HEADER_LEN
     }
 
     /// Sends the payload `payload` to the peer.
@@ -32,11 +42,11 @@ impl TcpCon {
         let total_len = payload.len() + TCP_HEADER_LEN;
         let mut buff = vec![0; total_len];
         // Check if the message is valid, and should be sent.
-        if total_len > MAX_MESSAGE_SIZE {
+        if total_len > self.buff_size() {
             let e_msg = format!(
                 "TCP: Outgoing message size is greater than the maximum message size ({}). \
 				MId: {}, size: {}. Discarding message.",
-                MAX_MESSAGE_SIZE, mid, total_len
+                self.max_msg_size(), mid, total_len
             );
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
@@ -81,7 +91,7 @@ impl TcpCon {
         let header = TcpHeader::from_be_bytes(&self.buff[..TCP_HEADER_LEN]);
         let total_expected_len = header.len + TCP_HEADER_LEN;
 
-        if header.len > MAX_MESSAGE_SIZE - TCP_HEADER_LEN {
+        if header.len > self.max_msg_size() {
             let e_msg = format!(
                 "TCP: The header of a received message indicates a size of {},\
 	                but the max allowed message size is {}.\
@@ -89,7 +99,7 @@ impl TcpCon {
 					this message was likely not sent by carrier-pigeon. \
 	                This will cause issues when trying to read; \
 	                Discarding this message and closing connection.",
-                header.len, MAX_MESSAGE_SIZE
+                header.len, self.max_msg_size()
             );
             tcp.shutdown(Shutdown::Both)?;
             return Err(Error::new(ErrorKind::InvalidData, e_msg));

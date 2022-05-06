@@ -7,8 +7,8 @@
 - [x] Remove the `<C, R, D>` generics as they end up everywhere.
 - [x] Standardize logging.
 - [x] Add try_recv.
-- [ ] make NetMsg have getters.
 - [ ] make arg order consistent.
+- [ ] check docs
 
 ## For v0.4.0:
 - [ ] Server discovery.

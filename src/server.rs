@@ -1,5 +1,5 @@
 use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID};
-use crate::net::{CId, DeserFn, Status, Transport, CIdSpec, ErasedNetMsg, NetMsg};
+use crate::net::{CId, DeserFn, Status, Transport, CIdSpec, ErasedNetMsg, NetMsg, SConfig};
 use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
 use crate::MId;
@@ -12,13 +12,6 @@ use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, TcpListener};
 use std::time::{Duration, Instant};
 
-/// The timeout from after a TCP connection was made before a connection
-/// packet must be sent.
-const TIMEOUT: Duration = Duration::from_millis(10_000);
-
-/// The maximum number of connections we will handle at a time.
-const MAX_N_CONNECTION_HANDLE: usize = 4;
-
 /// A server.
 ///
 /// Listens on a address and port, allowing for clients to connect.
@@ -30,6 +23,8 @@ const MAX_N_CONNECTION_HANDLE: usize = 4;
 pub struct Server {
     /// The current cid. incremented then assigned to new connections.
     current_cid: CId,
+    /// The configuration of the server.
+    config: SConfig,
     /// The received message buffer.
     ///
     /// Each [`MId`] has its own vector.
@@ -70,11 +65,11 @@ impl Server {
     /// Creates a new [`Server`].
     ///
     /// Creates a new [`Server`] listening on the address `listen_addr`.
-    pub fn new(mut listen_addr: SocketAddr, parts: MsgTableParts) -> io::Result<Self> {
+    pub fn new(mut listen_addr: SocketAddr, parts: MsgTableParts, config: SConfig) -> io::Result<Self> {
         let listener = TcpListener::bind(listen_addr)?;
         listen_addr = listener.local_addr().unwrap();
         listener.set_nonblocking(true)?;
-        let udp = UdpCon::new(listen_addr, None)?;
+        let udp = UdpCon::new(listen_addr, None, config.max_msg_size)?;
 
         debug!("New server created at {}.", listen_addr);
 
@@ -86,6 +81,7 @@ impl Server {
 
         Ok(Server {
             current_cid: 0,
+            config,
             msg_buff,
             new_cons: vec![],
             disconnected: vec![],
@@ -96,6 +92,11 @@ impl Server {
             addr_cid: Default::default(),
             parts,
         })
+    }
+
+    /// Gets the config of the server.
+    pub fn config(&self) -> &SConfig {
+        &self.config
     }
 
     /// Disconnects from the given `cid`. You should always disconnect
@@ -117,12 +118,12 @@ impl Server {
 
     /// Handle the new connection attempts by calling the given hook.
     pub fn handle_new_cons<C: Any + Send + Sync, R: Any + Send + Sync>(&mut self, hook: &mut dyn FnMut(CId, C) -> (bool, R)) -> u32 {
-        // Start waiting on the connection messages for new connections.
-        while self.new_cons.len() < MAX_N_CONNECTION_HANDLE {
+        // Start handling new connections.
+        while self.new_cons.len() < self.config.max_con_handle {
             if let Ok((stream, _addr)) = self.listener.accept() {
                 debug!("New connection attempt.");
                 stream.set_nonblocking(true).unwrap();
-                let tcp_con = TcpCon::from_stream(stream);
+                let tcp_con = TcpCon::from_stream(stream, self.config.max_msg_size);
                 let cid = self.new_cid();
                 self.new_cons.push((tcp_con, cid, Instant::now()));
             } else {
@@ -135,7 +136,7 @@ impl Server {
         let mut remove = vec![];
         let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
         for (idx, (con, cid, time)) in self.new_cons.iter_mut().enumerate() {
-            match Self::handle_new_con::<C>(deser_fn, con, time) {
+            match Self::handle_new_con::<C>(deser_fn, con, self.config.timeout, time) {
                 Ok(c) => {
                     let (acc, r): (bool, R) = hook(*cid, c);
                     if acc {
@@ -181,9 +182,10 @@ impl Server {
     fn handle_new_con<C: Any + Send + Sync>(
         deser_fn: DeserFn,
         con: &mut TcpCon,
+        timeout: Duration,
         time: &Instant,
     ) -> io::Result<C> {
-        if time.elapsed() > TIMEOUT {
+        if time.elapsed() > timeout {
             return Err(Error::new(
                 ErrorKind::TimedOut,
                 "The new connection did not send a connection message in time.",
