@@ -32,17 +32,17 @@ This contains a client and server command line programs.
 
 - [x] Connection, response, disconnect messages built in and extremely flexible.
 - [x] Independent message sending.
-- [x] TCP and UDP channels.
+- [x] TCP and UDP connections.
 - [x] Client and Server types.
 - [x] Built in serialization/deserialization.
-- [x] Custom serialization support.
 - [x] [Bevy](https://bevyengine.org/) integration ([bevy-pigeon](https://github.com/MitchellMarinoDev/bevy-pigeon)).
 
 ### Planned Features
 
-- [ ] More config options.
-- [ ] Benchmarks (On the way!)
-- [ ] RPCs
+- [ ] Server discovery.
+- [ ] Query support for server. (Optionally listen on another port and respond to query requests).
+- [ ] Optional buffering of TCP messages (Buffer all tcp messages sent, then write them all when a `send_tcp` method is called).
+- [ ] Compile messages into MsgTable using macros.
 
 ## Contributing
 
