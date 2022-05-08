@@ -90,7 +90,7 @@ fn main() {
             }
 
             // Broadcast the message to all other clients.
-            server.send_spec(msg.m, CIdSpec::Except(msg.cid)).unwrap();
+            server.send_spec(CIdSpec::Except(msg.cid), msg.m).unwrap();
         }
 
         for cid in cids_to_disconnect {

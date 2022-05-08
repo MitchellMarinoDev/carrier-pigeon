@@ -1,8 +1,7 @@
 //! An attempt to serialize the current time as a u16.
 //!
-//! To do this, we send the least significant 16 bits of the unix millis.
-//! Then on the receiving side, we can assume that the next 16 bits of the
-//! send time are going to be the same, or 1 less.
+//! To do this, we send the least significant 16 bits of the unix millis. Then on the receiving
+//! side, we can assume that the next 16 bits of the send time are going to be the same, or 1 less.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -15,8 +14,7 @@ pub fn unix_millis() -> u32 {
     (millis & 0xFFFF_FFFF) as u32
 }
 
-/// Uses the 16 least significant bits of the unix millis time stamp, and reconstructs
-/// rest.
+/// Uses the 16 least significant bits of the unix millis time stamp, and reconstructs rest.
 pub(crate) fn reconstruct_millis(lsb: u16) -> u32 {
     reconstruct_millis_inner(unix_millis(), lsb)
 }

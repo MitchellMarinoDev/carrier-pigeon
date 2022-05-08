@@ -1,9 +1,9 @@
 //! # carrier-pigeon
 //! A rusty networking library for games.
 //!
-//! A simple networking library that handles all the serialization, sending, receiving,
-//! and deserialization. This way you can worry about what to send, and pigeon will worry
-//! about how to send it.
+//! A simple networking library that handles all the serialization, sending, receiving, and
+//! deserialization. This way you can worry about what to send, and pigeon will worry about how
+//! to send it.
 //!
 //! ## Examples
 //!

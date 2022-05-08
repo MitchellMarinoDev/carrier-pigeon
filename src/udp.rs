@@ -16,8 +16,8 @@ pub struct UdpCon {
 }
 
 impl UdpCon {
-    /// Creates a new [`UdpCon`] by creating a new [`UdpSocket`] that connects to `peer`.
-    /// Sets the socket to non-blocking.
+    /// Creates a new [`UdpCon`] by creating a new [`UdpSocket`] that connects to `peer`. Sets the
+    /// socket to non-blocking.
     pub fn new(local: SocketAddr, peer: Option<SocketAddr>, max_msg_size: usize) -> io::Result<Self> {
         let udp = UdpSocket::bind(local)?;
         if let Some(peer) = peer {
@@ -81,8 +81,7 @@ impl UdpCon {
         Ok(())
     }
 
-    /// The shared code for sending a message.
-    /// Produces a buffer given the payload
+    /// The shared code for sending a message. Produces a buffer given the payload
     fn send_shared(&self, mid: MId, payload: &[u8]) -> io::Result<Vec<u8>> {
         let total_len = payload.len() + UDP_HEADER_LEN;
         let mut buff = vec![0; total_len];

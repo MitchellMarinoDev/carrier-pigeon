@@ -14,12 +14,11 @@ use std::time::{Duration, Instant};
 
 /// A server.
 ///
-/// Listens on a address and port, allowing for clients to connect.
-/// Newly connected clients will be given a client ID (CId) starting
-/// at `1` that is unique for the session.
+/// Listens on a address and port, allowing for clients to connect. Newly connected clients will
+/// be given a client ID (CId) starting at `1` that is unique for the session.
 ///
-/// This will manage multiple connections to clients. Each connection
-/// will have a TCP and UDP connection on the same address and port.
+/// This will manage multiple connections to clients. Each connection will have a TCP and UDP
+/// connection on the same address and port.
 pub struct Server {
     /// The current cid. incremented then assigned to new connections.
     current_cid: CId,
@@ -44,17 +43,15 @@ pub struct Server {
 
     /// The map from CId to SocketAddr for the UDP messages to be sent to.
     ///
-    /// This needs to be a mirror of `addr_cid`, and needs to be added and
-    /// removed with the TCP connections.
-    /// Because of these things, ***ALWAYS*** use the `add_tcp_con` and
-    /// `rm_tcp_con` functions to mutate these maps.
+    /// This needs to be a mirror of `addr_cid`, and needs to be added and removed with the TCP
+    /// connections. Because of these things, ***ALWAYS*** use the `add_tcp_con` and `rm_tcp_con`
+    /// functions to mutate these maps.
     cid_addr: HashMap<CId, SocketAddr>,
     /// The map from SocketAddr to CId for the UDP messages to be sent to.
     ///
-    /// This needs to be a mirror of `cid_addr`, and needs to be added and
-    /// removed with the TCP connections.
-    /// Because of these things, ***ALWAYS*** use the `add_tcp_con` and
-    /// `rm_tcp_con` functions to mutate these maps.
+    /// This needs to be a mirror of `cid_addr`, and needs to be added and removed with the TCP
+    /// connections. Because of these things, ***ALWAYS*** use the `add_tcp_con` and `rm_tcp_con`
+    /// functions to mutate these maps.
     addr_cid: HashMap<SocketAddr, CId>,
 
     /// The [`MsgTableParts`] to use for sending messages.
@@ -99,16 +96,15 @@ impl Server {
         &self.config
     }
 
-    /// Disconnects from the given `cid`. You should always disconnect
-    /// all clients before dropping the server to let the clients know
-    /// that you intentionally disconnected. The `discon_msg` allows you
-    /// to give a reason for the disconnect.
+    /// Disconnects from the given `cid`. You should always disconnect all clients before dropping
+    /// the server to let the clients know that you intentionally disconnected. The `discon_msg`
+    /// allows you to give a reason for the disconnect.
     pub fn disconnect<T: Any + Send + Sync>(&mut self, discon_msg: &T, cid: CId) -> io::Result<()> {
         if !self.alive(cid) {
             return Err(io::Error::new(ErrorKind::InvalidData, "Invalid CId."));
         }
         debug!("Disconnecting CId {}", cid);
-        self.send_to(discon_msg, cid)?;
+        self.send_to(cid, discon_msg)?;
         // Close the TcpCon
         self.tcp.get_mut(&cid).unwrap().close()?;
         // No shutdown method on udp.
@@ -158,7 +154,7 @@ impl Server {
             // we need to send the response message.
             if let Some(r) = resp {
                 self.add_tcp_con_cid(cid, con);
-                if let Err(e) = self.send_to(&r, cid) {
+                if let Err(e) = self.send_to(cid, &r) {
                     error!("IO error occurred while responding to a pending connection. {}", e);
                 }
             }
@@ -169,16 +165,14 @@ impl Server {
 
     /// Handles a new connection by trying to read the connection message.
     ///
-    /// If there is an error in connection (including timeout) this will
-    /// return `Err(e)`. If the connection is not finished it will return
-    /// `Ok(None)`. If the connection opened successfully, it will return
-    /// `Ok(Some(c))`.
+    /// If there is an error in connection (including timeout) this will return `Err(e)`. If the
+    /// connection is not finished it will return `Ok(None)`. If the connection opened
+    /// successfully, it will return `Ok(Some(c))`.
     ///
-    /// If this returns an error other than a `WouldBlock` error, it should
-    /// be removed from the list of pending connections. If it returns
-    /// Ok(Some(c)) it should also be removed, as it has finished connecting
-    /// successfully. It should not be removed from this list if it returns
-    /// Ok(None), as that means the connection is still pending.
+    /// If this returns an error other than a `WouldBlock` error, it should be removed from the
+    /// list of pending connections. If it returns `Ok(Some(c))` it should also be removed, as it
+    /// has finished connecting successfully. It should not be removed from this list if it returns
+    /// `Ok(None)`, as that means the connection is still pending.
     fn handle_new_con<C: Any + Send + Sync>(
         deser_fn: DeserFn,
         con: &mut TcpCon,
@@ -252,8 +246,8 @@ impl Server {
 
     /// A function that encapsulates the receiving logic for the TCP transport.
     ///
-    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
-    /// no more messages can be yielded without blocking.
+    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means no more
+    /// messages can be yielded without blocking.
     fn recv_tcp(&mut self, cid: CId) -> io::Result<(MId, ErasedNetMsg)> {
         let tcp = match self.tcp.get_mut(&cid) {
             Some(tcp) => tcp,
@@ -283,11 +277,11 @@ impl Server {
         Ok((mid, net_msg))
     }
 
-    /// A function that encapsulates the receiving logic for the UDP transport.
+    /// A function that encapsulates the receiving logic for the `UDP` transport.
     ///
-    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
-    /// no more messages can be yielded without blocking. [`InvalidData`] likely means
-    /// carrier-pigeon detected bad data.
+    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means no more
+    /// messages can be yielded without blocking. [`InvalidData`] likely means carrier-pigeon
+    /// got bad data.
     fn recv_udp(&mut self) -> io::Result<(MId, ErasedNetMsg)> {
         let (from, mid, time, bytes) = self.udp.recv_from()?;
 
@@ -323,14 +317,7 @@ impl Server {
     }
 
     /// Sends a message to the [`CId`] `cid`.
-    ///
-    /// ## Errors
-    /// If the client isn't connected to another computer,
-    /// This will return a not connected error.
-    /// If the message type isn't registered, this will return
-    /// a type not registered error. If the msg fails to be
-    /// serialized this will return serialization error.
-    pub fn send_to<T: Any + Send + Sync>(&self, msg: &T, cid: CId) -> io::Result<()> {
+    pub fn send_to<T: Any + Send + Sync>(&self, cid: CId, msg: &T) -> io::Result<()> {
         let tid = TypeId::of::<T>();
         if !self.valid_tid(tid) {
             return Err(io::Error::new(
@@ -361,18 +348,18 @@ impl Server {
     /// Broadcasts a message to all connected clients.
     pub fn broadcast<T: Any + Send + Sync>(&self, msg: &T) -> io::Result<()> {
         for cid in self.cids() {
-            self.send_to(msg, cid)?;
+            self.send_to(cid, msg)?;
         }
         Ok(())
     }
 
-        /// Sends a message to all [`CId`]s that match `spec`.
-    pub fn send_spec<T: Any + Send + Sync>(&self, msg: &T, spec: CIdSpec) -> io::Result<()> {
+    /// Sends a message to all [`CId`]s that match `spec`.
+    pub fn send_spec<T: Any + Send + Sync>(&self, spec: CIdSpec, msg: &T) -> io::Result<()> {
         for cid in self
             .cids()
             .filter(|cid| spec.matches(*cid))
         {
-            self.send_to(msg, cid)?;
+            self.send_to(cid, msg)?;
         }
         Ok(())
     }
@@ -412,8 +399,8 @@ impl Server {
         )
     }
 
-    /// Gets an iterator for the messages of type `T` that have
-    /// been received from [`CId`]s that match `spec`.
+    /// Gets an iterator for the messages of type `T` that have been received from [`CId`]s that
+    /// match `spec`.
     ///
     /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
     ///
@@ -433,8 +420,8 @@ impl Server {
             .map(|net_msg| net_msg.to_typed().unwrap())
     }
 
-    /// Gets an iterator for the messages of type `T` that have
-    /// been received from [`CId`]s that match `spec`.
+    /// Gets an iterator for the messages of type `T` that have been received from [`CId`]s that
+    /// match `spec`.
     ///
     /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
     ///
@@ -451,11 +438,10 @@ impl Server {
         )
     }
 
-    /// Receives the messages from the connections.
-    /// This should be done before calling `recv<T>()`.
+    /// Receives the messages from the connections. This should be done before calling `recv<T>()`.
     ///
-    /// When done in a game loop, you should call `clear_msgs()`, then `recv_msgs()`
-    /// before default time. This will clear the messages between frames.
+    /// When done in a game loop, you should call `clear_msgs()`, then `recv_msgs()` before default
+    /// time. This will clear the messages between frames.
     pub fn recv_msgs(&mut self) -> u32 {
         let mut i = 0;
 
@@ -481,13 +467,12 @@ impl Server {
         i
     }
 
-    /// Logic for handling a new TCP message.
+    /// Logic for handling a new `TCP` message.
     ///
     /// Increments `count` when it successfully got a message including a disconnect message.
     ///
-    /// When getting an error, this will disconnect the peer.
-    /// When getting a disconnection message, this will add it to the disconnection que.
-    /// Otherwise it adds it to the msg buffer.
+    /// When getting an error, this will disconnect the peer. When getting a disconnection message,
+    /// this will add it to the disconnection que. Otherwise it adds it to the msg buffer.
     ///
     /// returns weather the tcp connection is done yielding messages.
     fn handle_tcp_msg(
@@ -519,12 +504,11 @@ impl Server {
         }
     }
 
-    /// Logic for handling a new UDP message.
+    /// Logic for handling a new `UDP` message.
     ///
     /// Increments `count` when it successfully got a message
     ///
-    /// When getting an error, this will log and ignore it.
-    /// Otherwise it adds it to the msg buffer.
+    /// When getting an error, this will log and ignore it. Otherwise it adds it to the msg buffer.
     ///
     /// returns weather the udp connection is done yielding messages.
     fn handle_udp_msg(
@@ -565,7 +549,7 @@ impl Server {
         self.cid_addr.keys().map(|cid| *cid)
     }
 
-    /// Returns whether the connection of the given CId is alive.
+    /// Returns whether the connection of the given [`CId`] is alive.
     pub fn alive(&self, cid: CId) -> bool {
         self.cid_addr.contains_key(&cid)
     }
@@ -575,19 +559,18 @@ impl Server {
         self.parts.valid_tid(tid)
     }
 
-    /// The number of active connections.
-    /// To ensure an accurate count, it is best to call this after calling
-    /// [`handle_disconnects()`](Self::handle_disconnects).
+    /// The number of active connections. To ensure an accurate count, it is best to call this
+    /// after calling [`handle_disconnects()`](Self::handle_disconnects).
     pub fn connection_count(&self) -> usize {
         self.cid_addr.len()
     }
 
-    /// Gets the address of the given CId.
+    /// Gets the address of the given [`CId`].
     pub fn addr_of(&self, cid: CId) -> Option<SocketAddr> {
         self.cid_addr.get(&cid).map(|o| *o)
     }
 
-    /// Gets the address of the given CId.
+    /// Gets the address of the given [`CId`].
     pub fn cid_of(&self, addr: SocketAddr) -> Option<CId> {
         self.addr_cid.get(&addr).map(|o| *o)
     }
@@ -598,7 +581,8 @@ impl Server {
         self.current_cid
     }
 
-    /// Adds a TCP connection with the [`CId`] `cid`. The cid needs to be unique, generate one with `new_cid()`.
+    /// Adds a `TCP` connection with the [`CId`] `cid`. The cid needs to be unique, generate one
+    /// with `new_cid()`.
     fn add_tcp_con_cid(&mut self, cid: CId, con: TcpCon) {
         let peer_addr = con.peer_addr().unwrap();
         self.tcp.insert(cid, con);
@@ -606,7 +590,7 @@ impl Server {
         self.cid_addr.insert(cid, peer_addr);
     }
 
-    /// Removes a TCP connection.
+    /// Removes a `TCP` connection.
     fn rm_tcp_con(&mut self, cid: CId) -> io::Result<()> {
         self.tcp.remove(&cid).ok_or(Error::new(InvalidData, "Invalid CId."))?;
         let addr = self.cid_addr.remove(&cid).unwrap();

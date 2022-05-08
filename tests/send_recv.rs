@@ -60,14 +60,14 @@ fn send_recv() {
     // Send 10 tcp messages.
     for i in 0..10 {
         server
-            .send_to(&TcpMsg::new(format!("Test TCP message {}", i)), 1)
+            .send_to(1, &TcpMsg::new(format!("Test TCP message {}", i)))
             .unwrap();
     }
 
     // Send 10 udp messages.
     for i in 0..10 {
         server
-            .send_to(&UdpMsg::new(format!("Test UDP message {}", i)), 1)
+            .send_to(1, &UdpMsg::new(format!("Test UDP message {}", i)))
             .unwrap();
     }
 

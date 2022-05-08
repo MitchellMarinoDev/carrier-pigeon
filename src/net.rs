@@ -33,7 +33,7 @@ pub type DeserFn = fn(&[u8]) -> Result<Box<dyn Any + Send + Sync>, io::Error>;
 pub type SerFn = fn(&(dyn Any + Send + Sync)) -> Result<Vec<u8>, io::Error>;
 
 #[derive(Debug)]
-/// An enum for the possible states of a connection
+/// An enum for the possible states of a connection.
 pub enum Status {
     /// The connection is still live.
     Connected,
@@ -68,7 +68,8 @@ impl Status {
     /// Turns this into an option with the disconnect message.
     ///
     /// ### Panics
-    /// Panics if the generic parameter `D` isn't the disconnect message type (the same `D` that you passed into `MsgTable::build`).
+    /// Panics if the generic parameter `D` isn't the disconnect message type (the same `D` that
+    /// you passed into `MsgTable::build`).
     pub fn disconnected<D: Any + Send + Sync>(&self) -> Option<&D> {
         match self {
             Status::Disconnected(d) => Some(d.downcast_ref().expect("The generic parameter `D` must be the disconnection message type (the same `D` that you passed into `MsgTable::build`).")),
@@ -196,7 +197,7 @@ pub(crate) struct ErasedNetMsg {
     pub(crate) cid: CId,
     /// The timestamp that the message was sent in unix millis.
     ///
-    /// This is only `Some` if the message was sent with UDP.
+    /// This is always `Some` if the message was sent with UDP, and always `None` if sent with TCP.
     pub(crate) time: Option<u32>,
     /// The actual message.
     pub(crate) msg: Box<dyn Any + Send + Sync>,
@@ -221,8 +222,7 @@ pub struct NetMsg<'n, T: Any + Send + Sync> {
     pub cid: CId,
     /// The timestamp that the message was sent in unix millis.
     ///
-    /// This is always `Some` if the message was sent with UDP,
-    /// and always `None` if sent with TCP.
+    /// This is always `Some` if the message was sent with UDP, and always `None` if sent with TCP.
     pub time: Option<u32>,
     /// The actual message.
     ///
