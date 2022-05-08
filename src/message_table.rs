@@ -62,8 +62,11 @@ impl MsgTable {
     /// if an error is thrown, no entries are added.
     pub fn join(&mut self, other: &MsgTable) -> Result<(), MsgRegError> {
         // Validate
-        if other.table.iter()
-            .any(|(tid, _, _, _)| self.tid_registered(*tid)) {
+        if other
+            .table
+            .iter()
+            .any(|(tid, _, _, _)| self.tid_registered(*tid))
+        {
             return Err(TypeAlreadyRegistered);
         }
 
@@ -76,8 +79,8 @@ impl MsgTable {
 
     /// If type `T` has been registered or not.
     pub fn is_registered<T>(&self) -> bool
-        where
-            T: Any + Send + Sync + DeserializeOwned + Serialize,
+    where
+        T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
         let tid = TypeId::of::<T>();
         self.tid_registered(tid)
@@ -192,13 +195,19 @@ impl SortedMsgTable {
     /// if an error is thrown, no entries are added.
     pub fn join(&mut self, other: &SortedMsgTable) -> Result<(), MsgRegError> {
         // Validate
-        if other.table.iter()
-            .any(|(_, tid, _, _, _)| self.tid_registered(*tid)) {
+        if other
+            .table
+            .iter()
+            .any(|(_, tid, _, _, _)| self.tid_registered(*tid))
+        {
             return Err(TypeAlreadyRegistered);
         }
 
-        if other.table.iter()
-            .any(|(id, _, _, _, _)| self.identifier_registered(&*id)) {
+        if other
+            .table
+            .iter()
+            .any(|(id, _, _, _, _)| self.identifier_registered(&*id))
+        {
             return Err(NonUniqueIdentifier);
         }
 
@@ -211,8 +220,8 @@ impl SortedMsgTable {
 
     /// If type `T` has been registered or not.
     pub fn is_registered<T>(&self) -> bool
-        where
-            T: Any + Send + Sync + DeserializeOwned + Serialize,
+    where
+        T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
         let tid = TypeId::of::<T>();
         self.tid_registered(tid)
@@ -233,7 +242,8 @@ impl SortedMsgTable {
     where
         T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
-        self.table.push(self.get_registration::<T>(identifier.into(), transport)?);
+        self.table
+            .push(self.get_registration::<T>(identifier.into(), transport)?);
         Ok(())
     }
 

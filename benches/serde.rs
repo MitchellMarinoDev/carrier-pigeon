@@ -5,16 +5,14 @@
 extern crate test;
 mod helper;
 
+use crate::helper::test_messages::UdpMsg;
 use std::hint::black_box;
 use test::Bencher;
-use crate::helper::test_messages::UdpMsg;
 
 #[bench]
 fn ser(b: &mut Bencher) {
     let udp = black_box(UdpMsg::new("Short Message"));
-    b.iter(|| {
-        bincode::serialize(&udp)
-    })
+    b.iter(|| bincode::serialize(&udp))
 }
 
 #[bench]

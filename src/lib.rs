@@ -21,7 +21,7 @@ mod message_table;
 mod server;
 mod time;
 
-pub use client::{Client, PendingClient, OptionPendingClient};
+pub use client::{Client, OptionPendingClient, PendingClient};
 pub use header::TcpHeader;
 pub use message_table::{MsgRegError, MsgTable, MsgTableParts, SortedMsgTable};
 pub use net::{CId, MId, Transport};

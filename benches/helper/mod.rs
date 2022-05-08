@@ -1,12 +1,12 @@
 #![allow(unused)]
 //! Helper functions and types to make setting up the tests easier.
 
-use std::net::{TcpListener, TcpStream, UdpSocket};
 use crate::helper::test_messages::{get_table_parts, Connection, Disconnect, Response};
-use log::debug;
-use carrier_pigeon::{Client, Server};
 use carrier_pigeon::net::{CConfig, Config};
 use carrier_pigeon::tcp::TcpCon;
+use carrier_pigeon::{Client, Server};
+use log::debug;
+use std::net::{TcpListener, TcpStream, UdpSocket};
 
 pub mod test_messages;
 
@@ -18,7 +18,12 @@ pub fn create_client_server_pair() -> (Client, Server) {
     let parts = get_table_parts();
 
     debug!("Creating server.");
-    let mut server = Server::new(ADDR_LOCAL.parse().unwrap(), parts.clone(), Config::default()).unwrap();
+    let mut server = Server::new(
+        ADDR_LOCAL.parse().unwrap(),
+        parts.clone(),
+        Config::default(),
+    )
+    .unwrap();
     let addr = server.listen_addr();
     debug!("Server created on addr: {}", addr);
 
@@ -29,7 +34,9 @@ pub fn create_client_server_pair() -> (Client, Server) {
     // Spin until the connection is handled.
     // Normally this would be done in the game loop
     // and there would be other things to do.
-    while 0 == server.handle_new_cons(&mut |_cid, _con_msg: Connection| (true, Response::Accepted)) {}
+    while 0 == server.handle_new_cons(&mut |_cid, _con_msg: Connection| (true, Response::Accepted))
+    {
+    }
 
     // Finish the client connection.
     let (client, response_msg) = client.block::<Response>().unwrap();

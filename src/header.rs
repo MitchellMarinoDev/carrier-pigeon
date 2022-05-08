@@ -61,7 +61,10 @@ pub struct UdpHeader {
 impl UdpHeader {
     /// Creates a [`UdpHeader`] with the given [`MId`] and `length`.
     pub fn new(mid: MId) -> Self {
-        UdpHeader { mid, time: unix_millis() }
+        UdpHeader {
+            mid,
+            time: unix_millis(),
+        }
     }
 
     /// Converts the [`UdpHeader`] to big endian bytes to be sent over the internet.

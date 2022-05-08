@@ -6,11 +6,11 @@ use crate::MId;
 use crossbeam_channel::internal::SelectHandle;
 use crossbeam_channel::Receiver;
 use log::{debug, error, trace};
-use std::any::{Any, type_name, TypeId};
+use std::any::{type_name, Any, TypeId};
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
-use std::io::{Error, ErrorKind};
 use std::io::ErrorKind::InvalidData;
+use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, TcpStream};
 
 /// A Client connection.
@@ -51,7 +51,9 @@ impl Client {
     ) -> PendingClient {
         let (client_tx, client_rx) = crossbeam_channel::bounded(1);
 
-        std::thread::spawn(move || client_tx.send(Self::new_blocking(peer, parts, config, con_msg)));
+        std::thread::spawn(move || {
+            client_tx.send(Self::new_blocking(peer, parts, config, con_msg))
+        });
 
         PendingClient { channel: client_rx }
     }
@@ -203,7 +205,7 @@ impl Client {
     pub fn disconnect<D: Any + Send + Sync>(&mut self, discon_msg: &D) -> io::Result<()> {
         let tid = TypeId::of::<D>();
         if self.parts.tid_map[&tid] != DISCONNECT_TYPE_MID {
-            return Err(Error::new(InvalidData, "The generic parameter `D` must be the disconnection message type (the same `D` that you passed into `MsgTable::build`)."))
+            return Err(Error::new(InvalidData, "The generic parameter `D` must be the disconnection message type (the same `D` that you passed into `MsgTable::build`)."));
         }
         debug!("Disconnecting client.");
         self.send(discon_msg)?;
@@ -258,10 +260,8 @@ impl Client {
         }
         let mid = self.parts.tid_map[&tid];
 
-        self.msg_buff[mid]
-            .iter()
-            .map(|m| m.to_typed().unwrap())
-}
+        self.msg_buff[mid].iter().map(|m| m.to_typed().unwrap())
+    }
 
     /// Gets an iterator for the messages of type `T`.
     ///
@@ -270,11 +270,7 @@ impl Client {
         let tid = TypeId::of::<T>();
         let mid = *self.parts.tid_map.get(&tid)?;
 
-        Some(
-            self.msg_buff[mid]
-                .iter()
-                .map(|m| m.to_typed().unwrap()),
-        )
+        Some(self.msg_buff[mid].iter().map(|m| m.to_typed().unwrap()))
     }
 
     /// Receives the messages from the connections.

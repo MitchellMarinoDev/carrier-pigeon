@@ -3,8 +3,8 @@
 #![feature(test)]
 extern crate test;
 
-use test::Bencher;
 use crate::helper::create_tcp_con_pair;
+use test::Bencher;
 
 mod helper;
 

@@ -1,8 +1,8 @@
 #![feature(test)]
 extern crate test;
 
-use test::Bencher;
 use crate::helper::create_udp_pair;
+use test::Bencher;
 
 mod helper;
 

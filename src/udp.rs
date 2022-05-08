@@ -1,10 +1,10 @@
+use crate::header::{UdpHeader, TCP_HEADER_LEN, UDP_HEADER_LEN};
 use crate::net::MAX_SAFE_MESSAGE_SIZE;
 use crate::MId;
 use log::{debug, error, trace};
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, UdpSocket};
-use crate::header::{TCP_HEADER_LEN, UDP_HEADER_LEN, UdpHeader};
 
 /// A type wrapping a [`UdpSocket`].
 ///
@@ -18,7 +18,11 @@ pub struct UdpCon {
 impl UdpCon {
     /// Creates a new [`UdpCon`] by creating a new [`UdpSocket`] that connects to `peer`. Sets the
     /// socket to non-blocking.
-    pub fn new(local: SocketAddr, peer: Option<SocketAddr>, max_msg_size: usize) -> io::Result<Self> {
+    pub fn new(
+        local: SocketAddr,
+        peer: Option<SocketAddr>,
+        max_msg_size: usize,
+    ) -> io::Result<Self> {
         let udp = UdpSocket::bind(local)?;
         if let Some(peer) = peer {
             udp.connect(peer)?;
@@ -37,7 +41,7 @@ impl UdpCon {
 
     /// Gets the maximum message size.
     fn max_msg_size(&self) -> usize {
-        self.buff.len()-TCP_HEADER_LEN
+        self.buff.len() - TCP_HEADER_LEN
     }
 
     pub fn send_to(&self, addr: SocketAddr, mid: MId, payload: &[u8]) -> io::Result<()> {
@@ -46,7 +50,9 @@ impl UdpCon {
 
         trace!(
             "UDP: Sending message with MId: {}, len: {} to {}.",
-            mid, len, addr
+            mid,
+            len,
+            addr
         );
         let n = self.udp.send_to(&buff[..len], addr)?;
 
@@ -90,7 +96,9 @@ impl UdpCon {
             let e_msg = format!(
                 "UDP: Outgoing message size is greater than the maximum message size ({}). \
                 MId: {}, size: {}. Discarding message.",
-                self.max_msg_size(), mid, total_len
+                self.max_msg_size(),
+                mid,
+                total_len
             );
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
@@ -111,7 +119,7 @@ impl UdpCon {
             buff[i] = b;
         }
         for (i, b) in payload.iter().enumerate() {
-            buff[i+UDP_HEADER_LEN] = *b;
+            buff[i + UDP_HEADER_LEN] = *b;
         }
         Ok(buff)
     }

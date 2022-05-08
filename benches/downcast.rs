@@ -3,8 +3,8 @@
 
 extern crate test;
 
-use test::Bencher;
 use std::any::Any;
+use test::Bencher;
 
 #[bench]
 fn downcast_unwrap(b: &mut Bencher) {

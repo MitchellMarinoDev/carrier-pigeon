@@ -1,11 +1,11 @@
 use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID};
-use crate::net::{CId, DeserFn, Status, Transport, CIdSpec, ErasedNetMsg, NetMsg, Config};
+use crate::net::{CId, CIdSpec, Config, DeserFn, ErasedNetMsg, NetMsg, Status, Transport};
 use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
 use crate::MId;
 use hashbrown::HashMap;
 use log::{debug, error, trace};
-use std::any::{Any, type_name, TypeId};
+use std::any::{type_name, Any, TypeId};
 use std::io;
 use std::io::ErrorKind::{InvalidData, WouldBlock};
 use std::io::{Error, ErrorKind};
@@ -62,7 +62,11 @@ impl Server {
     /// Creates a new [`Server`].
     ///
     /// Creates a new [`Server`] listening on the address `listen_addr`.
-    pub fn new(mut listen_addr: SocketAddr, parts: MsgTableParts, config: Config) -> io::Result<Self> {
+    pub fn new(
+        mut listen_addr: SocketAddr,
+        parts: MsgTableParts,
+        config: Config,
+    ) -> io::Result<Self> {
         let listener = TcpListener::bind(listen_addr)?;
         listen_addr = listener.local_addr().unwrap();
         listener.set_nonblocking(true)?;
@@ -113,7 +117,10 @@ impl Server {
     }
 
     /// Handle the new connection attempts by calling the given hook.
-    pub fn handle_new_cons<C: Any + Send + Sync, R: Any + Send + Sync>(&mut self, hook: &mut dyn FnMut(CId, C) -> (bool, R)) -> u32 {
+    pub fn handle_new_cons<C: Any + Send + Sync, R: Any + Send + Sync>(
+        &mut self,
+        hook: &mut dyn FnMut(CId, C) -> (bool, R),
+    ) -> u32 {
         // Start handling new connections.
         while self.new_cons.len() < self.config.max_con_handle {
             if let Ok((stream, _addr)) = self.listener.accept() {
@@ -143,7 +150,10 @@ impl Server {
                 }
                 Err(e) if e.kind() == ErrorKind::WouldBlock => {}
                 Err(e) => {
-                    error!("IO error occurred while handling a pending connection. {}", e);
+                    error!(
+                        "IO error occurred while handling a pending connection. {}",
+                        e
+                    );
                     remove.push((idx, None));
                 }
             }
@@ -155,7 +165,10 @@ impl Server {
             if let Some(r) = resp {
                 self.add_tcp_con_cid(cid, con);
                 if let Err(e) = self.send_to(cid, &r) {
-                    error!("IO error occurred while responding to a pending connection. {}", e);
+                    error!(
+                        "IO error occurred while responding to a pending connection. {}",
+                        e
+                    );
                 }
             }
         }
@@ -194,7 +207,8 @@ impl Server {
         }
 
         let con_msg = deser_fn(msg).map_err(|o| {
-            let e_msg = format!("Encountered a deserialization error when handling a new connection. {o}");
+            let e_msg =
+                format!("Encountered a deserialization error when handling a new connection. {o}");
             Error::new(ErrorKind::InvalidData, e_msg)
         })?;
 
@@ -271,7 +285,7 @@ impl Server {
         let net_msg = ErasedNetMsg {
             cid,
             time: None,
-            msg
+            msg,
         };
 
         Ok((mid, net_msg))
@@ -310,7 +324,7 @@ impl Server {
         let net_msg = ErasedNetMsg {
             cid,
             time: Some(time),
-            msg
+            msg,
         };
 
         Ok((mid, net_msg))
@@ -355,10 +369,7 @@ impl Server {
 
     /// Sends a message to all [`CId`]s that match `spec`.
     pub fn send_spec<T: Any + Send + Sync>(&self, spec: CIdSpec, msg: &T) -> io::Result<()> {
-        for cid in self
-            .cids()
-            .filter(|cid| spec.matches(*cid))
-        {
+        for cid in self.cids().filter(|cid| spec.matches(*cid)) {
             self.send_to(cid, msg)?;
         }
         Ok(())
@@ -371,7 +382,7 @@ impl Server {
     /// ### Panics
     /// Panics if the type `T` was not registered.
     /// For a non-panicking version, see [try_recv()](Self::try_recv).
-    pub fn recv<'s, T: Any + Send + Sync>(&'s self) -> impl Iterator<Item=NetMsg<T>> + 's {
+    pub fn recv<'s, T: Any + Send + Sync>(&'s self) -> impl Iterator<Item = NetMsg<T>> + 's {
         let tid = TypeId::of::<T>();
         if !self.parts.valid_tid(tid) {
             panic!("Type ({}) not registered.", type_name::<T>());
@@ -388,14 +399,16 @@ impl Server {
     /// Make sure to call [`recv_msgs()`](Self::recv_msgs) before calling this.
     ///
     /// Returns `None` if the type `T` was not registered.
-    pub fn try_recv<'s, T: Any + Send + Sync>(&'s self) -> Option<impl Iterator<Item=NetMsg<T>> + 's> {
+    pub fn try_recv<'s, T: Any + Send + Sync>(
+        &'s self,
+    ) -> Option<impl Iterator<Item = NetMsg<T>> + 's> {
         let tid = TypeId::of::<T>();
         let mid = *self.parts.tid_map.get(&tid)?;
 
         Some(
             self.msg_buff[mid]
                 .iter()
-                .map(|m| m.to_typed::<T>().unwrap())
+                .map(|m| m.to_typed::<T>().unwrap()),
         )
     }
 
@@ -407,7 +420,10 @@ impl Server {
     /// ### Panics
     /// Panics if the type `T` was not registered.
     /// For a non-panicking version, see [try_recv_spec()](Self::try_recv_spec).
-    pub fn recv_spec<T: Any + Send + Sync>(&self, spec: CIdSpec) ->  impl Iterator<Item=NetMsg<T>> + '_ {
+    pub fn recv_spec<T: Any + Send + Sync>(
+        &self,
+        spec: CIdSpec,
+    ) -> impl Iterator<Item = NetMsg<T>> + '_ {
         let tid = TypeId::of::<T>();
         if !self.parts.valid_tid(tid) {
             panic!("Type ({}) not registered.", type_name::<T>());
@@ -426,7 +442,10 @@ impl Server {
     /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
     ///
     /// Returns `None` if the type `T` was not registered.
-    pub fn try_recv_spec<T: Any + Send + Sync>(&self, spec: CIdSpec) ->  Option<impl Iterator<Item=NetMsg<T>> + '_> {
+    pub fn try_recv_spec<T: Any + Send + Sync>(
+        &self,
+        spec: CIdSpec,
+    ) -> Option<impl Iterator<Item = NetMsg<T>> + '_> {
         let tid = TypeId::of::<T>();
         let mid = *self.parts.tid_map.get(&tid)?;
 
@@ -434,7 +453,7 @@ impl Server {
             self.msg_buff[mid]
                 .iter()
                 .filter(move |net_msg| spec.matches(net_msg.cid))
-                .map(|net_msg| net_msg.to_typed().unwrap())
+                .map(|net_msg| net_msg.to_typed().unwrap()),
         )
     }
 
@@ -485,7 +504,10 @@ impl Server {
             Err(e) if e.kind() == WouldBlock => true,
             // Other error occurred.
             Err(e) => {
-                error!("TCP({}): IO error occurred while receiving data. {}", cid, e);
+                error!(
+                    "TCP({}): IO error occurred while receiving data. {}",
+                    cid, e
+                );
                 self.disconnected.push((cid, Status::Dropped(e)));
                 true
             }
@@ -494,7 +516,8 @@ impl Server {
                 *count += 1;
                 if mid == DISCONNECT_TYPE_MID {
                     debug!("Disconnecting peer {}", cid);
-                    self.disconnected.push((cid, Status::Disconnected(net_msg.msg)));
+                    self.disconnected
+                        .push((cid, Status::Disconnected(net_msg.msg)));
                     return true;
                 }
 
@@ -511,11 +534,7 @@ impl Server {
     /// When getting an error, this will log and ignore it. Otherwise it adds it to the msg buffer.
     ///
     /// returns weather the udp connection is done yielding messages.
-    fn handle_udp_msg(
-        &mut self,
-        count: &mut u32,
-        msg: io::Result<(MId, ErasedNetMsg)>,
-    ) -> bool {
+    fn handle_udp_msg(&mut self, count: &mut u32, msg: io::Result<(MId, ErasedNetMsg)>) -> bool {
         match msg {
             Err(e) if e.kind() == WouldBlock => true,
             // Other error occurred.
@@ -592,7 +611,9 @@ impl Server {
 
     /// Removes a `TCP` connection.
     fn rm_tcp_con(&mut self, cid: CId) -> io::Result<()> {
-        self.tcp.remove(&cid).ok_or(Error::new(InvalidData, "Invalid CId."))?;
+        self.tcp
+            .remove(&cid)
+            .ok_or(Error::new(InvalidData, "Invalid CId."))?;
         let addr = self.cid_addr.remove(&cid).unwrap();
         self.addr_cid.remove(&addr);
         Ok(())

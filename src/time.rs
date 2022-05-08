@@ -26,7 +26,9 @@ pub(crate) fn reconstruct_millis(lsb: u16) -> u32 {
 fn reconstruct_millis_inner(now: u32, lsb: u16) -> u32 {
     let now_lsb = (now & 0xFFFF) as u16;
     let mut msb = now & 0xFFFF_0000;
-    if lsb > now_lsb { msb -= 0x0001_0000; }
+    if lsb > now_lsb {
+        msb -= 0x0001_0000;
+    }
     msb | lsb as u32
 }
 
@@ -48,7 +50,11 @@ mod tests {
             // Test reconstruction
             let lsb = (point.0 & 0xFFFF) as u16;
             let reconstructed = reconstruct_millis_inner(point.1, lsb);
-            assert_eq!(reconstructed, point.0, "Send:\t\t\t {:#10x},\nReceive:\t\t {:#10x},\nReconstructed:\t {:#10x}", point.0, point.1, reconstructed);
+            assert_eq!(
+                reconstructed, point.0,
+                "Send:\t\t\t {:#10x},\nReceive:\t\t {:#10x},\nReconstructed:\t {:#10x}",
+                point.0, point.1, reconstructed
+            );
         }
     }
 }

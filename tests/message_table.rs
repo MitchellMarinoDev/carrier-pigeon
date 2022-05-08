@@ -1,10 +1,10 @@
 //! Tests for testing the functionality of the [`MsgTable`] and [`SortedMsgTable`].
 use crate::helper::test_messages::{Connection, Disconnect, Response, TcpMsg, UdpMsg};
+use carrier_pigeon::MsgRegError::{NonUniqueIdentifier, TypeAlreadyRegistered};
 use carrier_pigeon::Transport::{TCP, UDP};
 use carrier_pigeon::{MsgRegError, MsgTable, SortedMsgTable};
 use hashbrown::HashMap;
 use std::any::TypeId;
-use carrier_pigeon::MsgRegError::{NonUniqueIdentifier, TypeAlreadyRegistered};
 
 mod helper;
 
@@ -93,7 +93,6 @@ fn parts_gen_sorted() {
     assert_eq!(parts.ser.len(), 5);
     assert_eq!(parts.deser.len(), 5);
 
-
     // Make sure the tables generated the same.
     assert_eq!(parts.tid_map, parts2.tid_map);
     assert_eq!(parts.transports, parts2.transports);
@@ -176,7 +175,9 @@ fn join_error() {
     let mut table1 = SortedMsgTable::new();
     table1.register::<TcpMsg>(TCP, "tests::TcpMsg").unwrap();
     let mut table2 = SortedMsgTable::new();
-    table2.register::<TcpMsg>(UDP, "tests::OtherTcpMsg").unwrap();
+    table2
+        .register::<TcpMsg>(UDP, "tests::OtherTcpMsg")
+        .unwrap();
 
     assert_eq!(table1.join(&table2).unwrap_err(), TypeAlreadyRegistered);
 

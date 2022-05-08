@@ -14,6 +14,7 @@
 //! `disconnect-me`.
 
 use crate::shared::{Connection, Disconnect, Msg, Response};
+use carrier_pigeon::net::Config;
 use carrier_pigeon::{Client, MsgTable, Transport};
 use log::LevelFilter;
 use simple_logger::SimpleLogger;
@@ -21,7 +22,6 @@ use std::io::stdin;
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::time::Duration;
 use std::{env, thread};
-use carrier_pigeon::net::Config;
 
 mod shared;
 

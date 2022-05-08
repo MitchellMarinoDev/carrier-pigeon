@@ -1,13 +1,13 @@
 //! Networking things that are not specific to either transport.
 
 pub use crate::header::TcpHeader;
+use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::Error;
 use std::ops::Deref;
 use std::time::Duration;
-use serde::{Serialize, Deserialize};
 
 /// The maximum safe message size that can be sent on udp,
 /// after taking off the possible overheads from the transport.

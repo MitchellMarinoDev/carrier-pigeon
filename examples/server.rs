@@ -12,12 +12,12 @@
 //! not be broadcast to the other clients.
 
 use crate::shared::{Connection, Disconnect, Msg, Response};
+use carrier_pigeon::net::{CIdSpec, Config};
 use carrier_pigeon::{MsgTable, Server, Transport};
 use log::LevelFilter;
 use simple_logger::SimpleLogger;
 use std::env;
 use std::time::Duration;
-use carrier_pigeon::net::{CIdSpec, Config};
 
 mod shared;
 
@@ -75,7 +75,6 @@ fn main() {
         });
 
         let mut cids_to_disconnect = vec![];
-
 
         for msg in server.recv::<Msg>() {
             println!(

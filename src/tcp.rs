@@ -1,3 +1,4 @@
+use crate::header::TCP_HEADER_LEN;
 use crate::net::TcpHeader;
 use crate::MId;
 use io::Error;
@@ -6,7 +7,6 @@ use std::io;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::sync::RwLock;
-use crate::header::TCP_HEADER_LEN;
 
 /// A type wrapping a [`TcpStream`].
 ///
@@ -32,7 +32,7 @@ impl TcpCon {
 
     /// Gets the maximum message size.
     fn max_msg_size(&self) -> usize {
-        self.buff.len()-TCP_HEADER_LEN
+        self.buff.len() - TCP_HEADER_LEN
     }
 
     /// Sends the payload `payload` to the peer.
@@ -46,7 +46,9 @@ impl TcpCon {
             let e_msg = format!(
                 "TCP: Outgoing message size is greater than the maximum message size ({}). \
 				MId: {}, size: {}. Discarding message.",
-                self.max_msg_size(), mid, total_len
+                self.max_msg_size(),
+                mid,
+                total_len
             );
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
@@ -60,7 +62,7 @@ impl TcpCon {
             buff[i] = b;
         }
         for (i, b) in payload.iter().enumerate() {
-            buff[i+TCP_HEADER_LEN] = *b;
+            buff[i + TCP_HEADER_LEN] = *b;
         }
 
         // Send
@@ -99,7 +101,8 @@ impl TcpCon {
 					this message was likely not sent by carrier-pigeon. \
 	                This will cause issues when trying to read; \
 	                Discarding this message and closing connection.",
-                header.len, self.max_msg_size()
+                header.len,
+                self.max_msg_size()
             );
             tcp.shutdown(Shutdown::Both)?;
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
@@ -113,7 +116,10 @@ impl TcpCon {
             total_expected_len,
         );
 
-        Ok((header.mid, &self.buff[TCP_HEADER_LEN..header.len + TCP_HEADER_LEN]))
+        Ok((
+            header.mid,
+            &self.buff[TCP_HEADER_LEN..header.len + TCP_HEADER_LEN],
+        ))
     }
 
     /// Moves the internal [`TcpStream`] into or out of nonblocking mode.
