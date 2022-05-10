@@ -1,4 +1,4 @@
-# carrier-pigeon
+# carrier_pigeon
 
 A rusty networking library for games.
 
@@ -6,17 +6,17 @@ Carrier pigeon builds on the standard library's `TcpStream` and `UdpSocket` type
 sending, receiving, and deserialization. This way you can worry about what to send, and pigeon will worry about how 
 to send it. This also allows you to send and receive different types of messages independently.
 
-### Add carrier-pigeon to your `Cargo.toml`:
+### Add carrier_pigeon to your `Cargo.toml`:
 
-`carrier-pigeon = "0.3.0"`
+`carrier_pigeon = "0.3.0"`
 
 ### Also check out the [Bevy](https://bevyengine.org/) plugin.
 
-[bevy-pigeon](https://github.com/MitchellMarinoDev/bevy-pigeon).
+[bevy-pigeon](https://github.com/MitchellMarinoDev/bevy_pigeon).
 
 ## Documentation
 
-The documentation can be found on [Docs.rs](https://docs.rs/carrier-pigeon)
+The documentation can be found on [Docs.rs](https://docs.rs/carrier_pigeon)
 
 ### Quickstart
 
@@ -35,7 +35,7 @@ This contains a client and server command line programs.
 - [x] TCP and UDP connections.
 - [x] Client and Server types.
 - [x] Built in serialization/deserialization.
-- [x] [Bevy](https://bevyengine.org/) integration ([bevy-pigeon](https://github.com/MitchellMarinoDev/bevy-pigeon)).
+- [x] [Bevy](https://bevyengine.org/) integration ([bevy-pigeon](https://github.com/MitchellMarinoDev/bevy_pigeon)).
 
 ### Planned Features
 

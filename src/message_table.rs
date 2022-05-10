@@ -305,9 +305,9 @@ impl SortedMsgTable {
         // Always prepend the Connection and Disconnect types first.
         // This gives them universal MIds.
         let con_discon_types = [
-            self.get_registration::<C>("carrier-pigeon::connection".to_owned(), Transport::TCP)?,
-            self.get_registration::<R>("carrier-pigeon::response".to_owned(), Transport::TCP)?,
-            self.get_registration::<D>("carrier-pigeon::disconnect".to_owned(), Transport::TCP)?,
+            self.get_registration::<C>("carrier_pigeon::connection".to_owned(), Transport::TCP)?,
+            self.get_registration::<R>("carrier_pigeon::response".to_owned(), Transport::TCP)?,
+            self.get_registration::<D>("carrier_pigeon::disconnect".to_owned(), Transport::TCP)?,
         ];
 
         // Sort by identifier string so that registration order doesn't matter.

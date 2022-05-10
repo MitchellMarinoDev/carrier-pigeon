@@ -294,7 +294,7 @@ impl Server {
     /// A function that encapsulates the receiving logic for the `UDP` transport.
     ///
     /// Any errors in receiving are returned. An error of type [`WouldBlock`] means no more
-    /// messages can be yielded without blocking. [`InvalidData`] likely means carrier-pigeon
+    /// messages can be yielded without blocking. [`InvalidData`] likely means carrier_pigeon
     /// got bad data.
     fn recv_udp(&mut self) -> io::Result<(MId, ErasedNetMsg)> {
         let (from, mid, time, bytes) = self.udp.recv_from()?;

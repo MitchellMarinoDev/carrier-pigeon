@@ -1,11 +1,11 @@
 [package]
-name = "carrier-pigeon"
+name = "carrier_pigeon"
 version = "0.3.0"
 authors = ["Mitchell Marino <mitchoah@gmail.com>"]
 edition = "2021"
 description = "A rusty networking library for games."
 readme = "README.md"
-repository = "https://github.com/MitchellMarinoDev/carrier-pigeon/"
+repository = "https://github.com/MitchellMarinoDev/carrier_pigeon/"
 license = "MIT OR Apache-2.0"
 keywords = ["game", "gamedev", "networking"]
 categories = ["game-development", "network-programming"]

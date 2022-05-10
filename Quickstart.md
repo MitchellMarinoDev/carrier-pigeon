@@ -1,6 +1,6 @@
 # Quickstart guide
 
-This will walk you through what you need to know to use `carrier-pigeon`.
+This will walk you through what you need to know to use `carrier_pigeon`.
 
 ### Messages
 
@@ -10,7 +10,7 @@ is independent of the others. This means adding another message type won't mess 
 This not only makes it scalable for your code, but makes it easy for plugins to add their own message types without
 interfacing with yours.
 
-For (de)serialization, carrier-pigeon uses [bincode](https://docs.rs/bincode/latest/bincode/) for speed and serialized
+For (de)serialization, carrier_pigeon uses [bincode](https://docs.rs/bincode/latest/bincode/) for speed and serialized
 size.
 
 Messages need to be registered in a `MsgTable` for them to be used. The Message tables on all clients and the server

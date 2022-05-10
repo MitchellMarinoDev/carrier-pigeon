@@ -8,7 +8,7 @@ use std::net::{SocketAddr, UdpSocket};
 
 /// A type wrapping a [`UdpSocket`].
 ///
-/// Provides read/write abstractions for sending `carrier-pigeon` messages.
+/// Provides read/write abstractions for sending `carrier_pigeon` messages.
 pub struct UdpCon {
     /// Used for receiving only. This way send calls can take immutable refs.
     buff: Vec<u8>,
