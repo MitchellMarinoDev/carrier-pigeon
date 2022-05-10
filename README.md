@@ -1,5 +1,8 @@
 # carrier_pigeon
 
+[![crates.io](https://img.shields.io/crates/v/carrier_pigeon)](https://crates.io/crates/carrier_pigeon)
+[![docs.rs](https://docs.rs/carrier_pigeon/badge.svg)](https://docs.rs/carrier_pigeon)
+
 A rusty networking library for games.
 
 Carrier pigeon builds on the standard library's `TcpStream` and `UdpSocket` types and handles all the serialization, 
@@ -12,7 +15,7 @@ to send it. This also allows you to send and receive different types of messages
 
 ### Also check out the [Bevy](https://bevyengine.org/) plugin.
 
-[bevy-pigeon](https://github.com/MitchellMarinoDev/bevy_pigeon).
+[bevy_pigeon](https://github.com/MitchellMarinoDev/bevy_pigeon).
 
 ## Documentation
 
@@ -35,7 +38,7 @@ This contains a client and server command line programs.
 - [x] TCP and UDP connections.
 - [x] Client and Server types.
 - [x] Built in serialization/deserialization.
-- [x] [Bevy](https://bevyengine.org/) integration ([bevy-pigeon](https://github.com/MitchellMarinoDev/bevy_pigeon)).
+- [x] [Bevy](https://bevyengine.org/) integration ([bevy_pigeon](https://github.com/MitchellMarinoDev/bevy_pigeon)).
 
 ### Planned Features
 
