@@ -23,7 +23,7 @@ The documentation can be found on [Docs.rs](https://docs.rs/carrier_pigeon)
 
 ### Quickstart
 
-A quickstart guide that goes in more detail is found at [/Quickstart.md](Quickstart.md)
+A quickstart guide that goes in more detail is found at [`/quickstart.md`](quickstart.md)
 
 ### Examples
 
