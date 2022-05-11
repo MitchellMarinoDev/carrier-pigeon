@@ -1,4 +1,5 @@
 # TODO:
+- [ ] Change handle_disconnects to handle_disconnect in loop.
 
 ## For v0.4.0:
 - [ ] Server discovery.
