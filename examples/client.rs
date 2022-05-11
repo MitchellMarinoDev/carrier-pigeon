@@ -67,6 +67,8 @@ fn main() {
 
     // This represents the game loop in your favorite game engine.
     loop {
+        // If the client is closed, stop running.
+        if !client.open() { break; }
         // These 2 methods should generally be called at the start of every frame.
         // They should also be called before default time so that all other systems get called
         // with the updated messages.

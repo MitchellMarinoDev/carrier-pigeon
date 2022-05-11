@@ -224,6 +224,9 @@ impl Server {
         let mut i = 0;
 
         for (cid, status) in self.disconnected.drain(..) {
+            // Don't handle the same CId twice
+            if !self.tcp.contains_key(&cid) || cids_to_rm.contains(&cid) { continue; }
+
             hook(cid, status);
             cids_to_rm.push(cid);
             i += 1;
