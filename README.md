@@ -34,6 +34,8 @@ This contains a client and server command line programs.
 ## Features
 
 - [x] Connection, response, disconnect messages built in and extremely flexible.
+- [x] Configuration for buffer size, timeouts and more.
+- [x] Send/Recv calls take an immutable referance allowing for parallelism.
 - [x] Independent message sending.
 - [x] TCP and UDP connections.
 - [x] Client and Server types.
