@@ -41,13 +41,13 @@ pub struct SortedMsgTable {
 #[derive(Clone)]
 pub struct MsgTableParts {
     /// The mapping from TypeId to MessageId.
-    pub(crate) tid_map: HashMap<TypeId, MId>,
+    pub tid_map: HashMap<TypeId, MId>,
     /// The transport associated with each message type.
-    pub(crate) transports: Vec<Transport>,
+    pub transports: Vec<Transport>,
     /// The serialization functions associated with each message type.
-    pub(crate) ser: Vec<SerFn>,
+    pub ser: Vec<SerFn>,
     /// The deserialization functions associated with each message type.
-    pub(crate) deser: Vec<DeserFn>,
+    pub deser: Vec<DeserFn>,
 }
 
 pub const CONNECTION_TYPE_MID: MId = 0;
