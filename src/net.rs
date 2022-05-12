@@ -28,8 +28,12 @@ pub enum Transport {
 }
 
 /// The function used to deserialize a message.
+///
+/// fn(&[u8]) -> Result<Box<dyn Any + Send + Sync>, io::Error>
 pub type DeserFn = fn(&[u8]) -> Result<Box<dyn Any + Send + Sync>, io::Error>;
 /// The function used to serialize a message.
+///
+/// fn(&(dyn Any + Send + Sync)) -> Result<Vec<u8>, io::Error>
 pub type SerFn = fn(&(dyn Any + Send + Sync)) -> Result<Vec<u8>, io::Error>;
 
 #[derive(Debug)]

@@ -40,10 +40,14 @@ pub struct SortedMsgTable {
 /// [`MsgTable::build()`].
 #[derive(Clone)]
 pub struct MsgTableParts {
-    pub tid_map: HashMap<TypeId, MId>,
-    pub transports: Vec<Transport>,
-    pub ser: Vec<SerFn>,
-    pub deser: Vec<DeserFn>,
+    /// The mapping from TypeId to MessageId.
+    pub(crate) tid_map: HashMap<TypeId, MId>,
+    /// The transport associated with each message type.
+    pub(crate) transports: Vec<Transport>,
+    /// The serialization functions associated with each message type.
+    pub(crate) ser: Vec<SerFn>,
+    /// The deserialization functions associated with each message type.
+    pub(crate) deser: Vec<DeserFn>,
 }
 
 pub const CONNECTION_TYPE_MID: MId = 0;
