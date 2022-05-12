@@ -1,4 +1,4 @@
-use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID};
+use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID};
 use crate::net::{CId, CIdSpec, Config, DeserFn, ErasedNetMsg, NetMsg, Status, Transport};
 use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
@@ -330,7 +330,7 @@ impl Server {
         if let Err(e) = self.send_to(cid, resp) {
             error!("IO error occurred while responding to a pending connection. {} at {}", e, addr);
         } else {
-            debug!("Accepted new connection at {}.", addr);
+            debug!("Accepted new connection {} at {}.", cid, addr);
         }
     }
 
@@ -341,10 +341,22 @@ impl Server {
         con: TcpCon,
         resp: &R,
     ) {
-        if let Err(e) = self.send_to(cid, resp) {
-            error!("IO error occurred while responding to a pending connection. {}", e);
+        // Get items necessary to send.
+        let ser = self.parts.ser[RESPONSE_TYPE_MID];
+        let payload = match ser(resp) {
+            Ok(p) => p,
+            Err(e) => {
+                error!("{}", e);
+                return;
+            },
+        };
+
+        // Send.
+        let addr = con.peer_addr().unwrap();
+        if let Err(e) = con.send(RESPONSE_TYPE_MID, &payload) {
+            error!("IO error occurred while responding to a pending connection. {} at {}", e, addr);
         } else {
-            debug!("Rejected incoming connection at {}.", con.peer_addr().unwrap());
+            debug!("Rejected new connection {} at {}.", cid, addr);
         }
     }
 
@@ -481,8 +493,7 @@ impl Server {
         let mid = self.parts.tid_map[&tid];
         let transport = self.parts.transports[mid];
         let ser_fn = self.parts.ser[mid];
-        let b = ser_fn(msg)
-            .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Serialization Error."))?;
+        let b = ser_fn(msg)?;
 
         trace!(
             "Sending message of MId {}, len {}, to CId {}",
