@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub const ADDR_LOCAL: &str = "127.0.0.1:7777";
+
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 /// A message from a user
 pub struct Msg {

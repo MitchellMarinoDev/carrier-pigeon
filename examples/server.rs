@@ -11,7 +11,7 @@
 //! they will be disconnected, and their message will
 //! not be broadcast to the other clients.
 
-use crate::shared::{Connection, Disconnect, Msg, Response};
+use crate::shared::{ADDR_LOCAL, Connection, Disconnect, Msg, Response};
 use carrier_pigeon::net::{CIdSpec, Config};
 use carrier_pigeon::{MsgTable, Server, Transport};
 use log::LevelFilter;
@@ -30,7 +30,7 @@ fn main() {
 
     let mut args = env::args().skip(1);
     // Get the address from the command line args, or use loopback on port 7799.
-    let addr = args.next().unwrap_or("127.0.0.1:7797".to_owned());
+    let addr = args.next().unwrap_or(ADDR_LOCAL.to_owned());
     let addr = addr.parse().expect("Could not parse address.");
 
     // Create the message table.
