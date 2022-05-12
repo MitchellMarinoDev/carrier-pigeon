@@ -6,6 +6,7 @@ use crate::MId;
 use hashbrown::HashMap;
 use log::{debug, error, trace};
 use std::any::{type_name, Any, TypeId};
+use std::collections::VecDeque;
 use std::io;
 use std::io::ErrorKind::{InvalidData, WouldBlock};
 use std::io::{Error, ErrorKind};
@@ -33,7 +34,7 @@ pub struct Server {
     /// not sent a connection message yet).
     new_cons: Vec<(TcpCon, CId, Instant)>,
     /// Disconnected connections.
-    disconnected: Vec<(CId, Status)>,
+    disconnected: VecDeque<(CId, Status)>,
     /// The listener for new connections.
     listener: TcpListener,
     /// The TCP connection for this client.
@@ -85,7 +86,7 @@ impl Server {
             config,
             msg_buff,
             new_cons: vec![],
-            disconnected: vec![],
+            disconnected: VecDeque::new(),
             listener,
             tcp: HashMap::new(),
             udp,
@@ -112,7 +113,7 @@ impl Server {
         // Close the TcpCon
         self.tcp.get_mut(&cid).unwrap().close()?;
         // No shutdown method on udp.
-        self.disconnected.push((cid, Status::Closed));
+        self.disconnected.push_back((cid, Status::Closed));
         Ok(())
     }
 
@@ -216,28 +217,32 @@ impl Server {
         Ok(con_msg)
     }
 
-    /// Handles the disconnect events.
-    pub fn handle_disconnects(&mut self, hook: &mut dyn FnMut(CId, Status)) -> u32 {
-        let mut cids_to_rm = vec![];
+    /// Handles a single disconnect, if there is one available to handle.
+    ///
+    /// If there is no disconnects to handle, `hook` will not be called.
+    ///
+    /// Returns weather it handled a disconnect.
+    pub fn handle_disconnect(&mut self, hook: impl FnOnce(CId, Status)) -> bool {
+        while let Some((cid, status)) = self.disconnected.pop_front() {
+            // If the disconnect is a live connection
+            if !self.alive(cid) { continue; }
 
-        // disconnect counts.
-        let mut i = 0;
-
-        for (cid, status) in self.disconnected.drain(..) {
-            // Don't handle the same CId twice
-            if !self.tcp.contains_key(&cid) || cids_to_rm.contains(&cid) { continue; }
-
+            // call hook.
             hook(cid, status);
-            cids_to_rm.push(cid);
-            i += 1;
-        }
-
-        // Remove the CIds
-        for cid in cids_to_rm {
             debug!("Removing CId {}", cid);
             self.rm_tcp_con(cid).unwrap();
+            return true;
         }
+        false
+    }
 
+    /// Handles all remaining disconnects.
+    ///
+    /// Returns the number of disconnects handled.
+    pub fn handle_disconnects(&mut self, hook: impl FnMut(CId, Status) + Copy) -> u32 {
+        // disconnect counts.
+        let mut i = 0;
+        while self.handle_disconnect(hook) { i += 1 }
         i
     }
 
@@ -511,7 +516,7 @@ impl Server {
                     "TCP({}): IO error occurred while receiving data. {}",
                     cid, e
                 );
-                self.disconnected.push((cid, Status::Dropped(e)));
+                self.disconnected.push_back((cid, Status::Dropped(e)));
                 true
             }
             // Got a message.
@@ -520,7 +525,7 @@ impl Server {
                 if mid == DISCONNECT_TYPE_MID {
                     debug!("Disconnecting peer {}", cid);
                     self.disconnected
-                        .push((cid, Status::Disconnected(net_msg.msg)));
+                        .push_back((cid, Status::Disconnected(net_msg.msg)));
                     return true;
                 }
 

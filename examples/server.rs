@@ -55,7 +55,7 @@ fn main() {
 
         // This should be called every once in a while to clean up so that the
         // server doesn't send messages to disconnected clients.
-        server.handle_disconnects(&mut |cid, status| {
+        server.handle_disconnects(|cid, status| {
             println!("CId {} disconnected with status: {:?}", cid, status);
         });
 
