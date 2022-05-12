@@ -15,7 +15,7 @@ to send it. This also allows you to send and receive different types of messages
 
 ### Also check out the [Bevy](https://bevyengine.org/) plugin.
 
-[bevy_pigeon](https://github.com/MitchellMarinoDev/bevy_pigeon).
+[bevy-pigeon](https://github.com/MitchellMarinoDev/bevy-pigeon).
 
 ## Documentation
 
@@ -39,7 +39,7 @@ This contains a client and server command line programs.
 - [x] TCP and UDP connections.
 - [x] Client and Server types.
 - [x] Built in serialization/deserialization.
-- [x] [Bevy](https://bevyengine.org/) integration ([bevy_pigeon](https://github.com/MitchellMarinoDev/bevy_pigeon)).
+- [x] [Bevy](https://bevyengine.org/) integration ([bevy-pigeon](https://github.com/MitchellMarinoDev/bevy-pigeon)).
 
 ### Planned Features
 
