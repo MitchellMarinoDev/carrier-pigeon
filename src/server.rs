@@ -117,77 +117,162 @@ impl Server {
         Ok(())
     }
 
-    /// Handle the new connection attempts by calling the given hook.
-    pub fn handle_new_cons<C: Any + Send + Sync, R: Any + Send + Sync>(
+    /// Handles all available new connection attempts in a loop, calling the given hook for each.
+    ///
+    /// The hook function should return `(should_accept, response_msg)`.
+    ///
+    /// Types `C` and `R` need to match the `C` and `R` types that you passed into
+    /// [`MsgTable::build()`](MsgTable::build).
+    ///
+    /// Returns whether a connection was handled.
+    pub fn handle_new_con<C: Any + Send + Sync, R: Any + Send + Sync>(
         &mut self,
-        hook: &mut dyn FnMut(CId, C) -> (bool, R),
-    ) -> u32 {
-        // Start handling new connections.
-        while self.new_cons.len() < self.config.max_con_handle {
-            if let Ok((stream, _addr)) = self.listener.accept() {
-                debug!("New connection attempt.");
-                stream.set_nonblocking(true).unwrap();
-                let tcp_con = TcpCon::from_stream(stream, self.config.max_msg_size);
-                let cid = self.new_cid();
-                self.new_cons.push((tcp_con, cid, Instant::now()));
-            } else {
-                break;
-            }
-        }
+        mut hook: impl FnMut(CId, C) -> (bool, R),
+    ) -> bool {
+        // Start handling incoming connections.
+        self.start_incoming();
 
-        let mut accept_count = 0;
+        // If we have no active connections, we don't have to continue.
+        if self.new_cons.len() == 0 { return false; }
+
         // Handle the new connections.
-        let mut remove = vec![];
         let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
+
+        // List of accepted connections.
+        let mut accepted = vec![];
+        // List of rejected connections.
+        let mut rejected = vec![];
+        // List of connections that errored out.
+        let mut dead = vec![];
+
         for (idx, (con, cid, time)) in self.new_cons.iter_mut().enumerate() {
-            match Self::handle_new_con::<C>(deser_fn, con, self.config.timeout, time) {
+            match Self::handle_con_helper::<C>(deser_fn, con, self.config.timeout, time) {
+                // Done connecting.
                 Ok(c) => {
-                    let (acc, r): (bool, R) = hook(*cid, c);
+                    // Call hook
+                    let (acc, resp) = hook(*cid, c);
                     if acc {
-                        debug!("Accepted new connection at {}.", con.peer_addr().unwrap());
-                        accept_count += 1;
+                        accepted.push((idx, resp));
+                    } else {
+                        rejected.push((idx, resp));
                     }
-                    remove.push((idx, Some(r)));
+                    break; // Only handle 1 connection max.
                 }
+                // Not done yet.
                 Err(e) if e.kind() == ErrorKind::WouldBlock => {}
+                // Error in connecting.
                 Err(e) => {
-                    error!(
-                        "IO error occurred while handling a pending connection. {}",
-                        e
-                    );
-                    remove.push((idx, None));
-                }
-            }
-        }
-        for (idx, resp) in remove {
-            let (con, cid, _) = self.new_cons.remove(idx);
-            // If `resp` is Some, the connection was accepted and
-            // we need to send the response message.
-            if let Some(r) = resp {
-                self.add_tcp_con_cid(cid, con);
-                if let Err(e) = self.send_to(cid, &r) {
-                    error!(
-                        "IO error occurred while responding to a pending connection. {}",
-                        e
-                    );
+                    error!("IO error occurred while handling a pending connection. {}", e);
+                    dead.push(idx);
                 }
             }
         }
 
-        accept_count
+        // Dead connections do not count as handled; they do not call the hook.
+        let handled = accepted.len() > 0 || rejected.len() > 0;
+
+        // Handle accepted.
+        for (idx, resp) in accepted {
+            let (con, cid, _) = self.new_cons.remove(idx);
+            self.accept_incoming(cid, con, &resp);
+        }
+
+        // Handle rejected.
+        for (idx, resp) in rejected {
+            let (con, cid, _) = self.new_cons.remove(idx);
+            self.reject_incoming(cid, con, &resp);
+        }
+
+        // Handle dead.
+        for idx in dead {
+            self.new_cons.remove(idx);
+        }
+
+        handled
     }
 
-    /// Handles a new connection by trying to read the connection message.
+    /// Handles all available new connection attempts in a loop, calling the given hook for each.
+    ///
+    /// The hook function should return `(should_accept, response_msg)`.
+    ///
+    /// Types `C` and `R` need to match the `C` and `R` types that you passed into
+    /// [`MsgTable::build()`](MsgTable::build).
+    ///
+    /// Returns the number of handled connections.
+    pub fn handle_new_cons<C: Any + Send + Sync, R: Any + Send + Sync>(
+        &mut self,
+        mut hook: impl FnMut(CId, C) -> (bool, R) + Copy,
+    ) -> u32 {
+        // Start handling incoming connections.
+        self.start_incoming();
+
+        // If we have no active connections, we don't have to continue.
+        if self.new_cons.len() == 0 { return 0; }
+
+        // Handle the new connections.
+        let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
+
+        // List of accepted connections.
+        let mut accepted = vec![];
+        // List of rejected connections.
+        let mut rejected = vec![];
+        // List of connections that errored out.
+        let mut dead = vec![];
+
+        for (idx, (con, cid, time)) in self.new_cons.iter_mut().enumerate() {
+            match Self::handle_con_helper::<C>(deser_fn, con, self.config.timeout, time) {
+                // Done connecting.
+                Ok(c) => {
+                    // Call hook
+                    let (acc, resp) = hook(*cid, c);
+                    if acc {
+                        accepted.push((idx, resp));
+                    } else {
+                        rejected.push((idx, resp));
+                    }
+                }
+                // Not done yet.
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {}
+                // Error in connecting.
+                Err(e) => {
+                    error!("IO error occurred while handling a pending connection. {}", e);
+                    dead.push(idx);
+                }
+            }
+        }
+
+        // Dead connections do not count as handled; they do not call the hook.
+        let handled = accepted.len() + rejected.len();
+
+        // Handle accepted.
+        for (idx, resp) in accepted {
+            let (con, cid, _) = self.new_cons.remove(idx);
+            self.accept_incoming(cid, con, &resp);
+        }
+
+        // Handle rejected.
+        for (idx, resp) in rejected {
+            let (con, cid, _) = self.new_cons.remove(idx);
+            self.reject_incoming(cid, con, &resp);
+        }
+
+        // Handle dead.
+        for idx in dead {
+            self.new_cons.remove(idx);
+        }
+
+        handled as u32
+    }
+
+    /// Encapsulates new connection handling logic by trying to read the connection message.
     ///
     /// If there is an error in connection (including timeout) this will return `Err(e)`. If the
-    /// connection is not finished it will return `Ok(None)`. If the connection opened
-    /// successfully, it will return `Ok(Some(c))`.
+    /// connection opened successfully, it will return `Ok(c)`.
     ///
     /// If this returns an error other than a `WouldBlock` error, it should be removed from the
-    /// list of pending connections. If it returns `Ok(Some(c))` it should also be removed, as it
-    /// has finished connecting successfully. It should not be removed from this list if it returns
-    /// `Ok(None)`, as that means the connection is still pending.
-    fn handle_new_con<C: Any + Send + Sync>(
+    /// list of pending connections. If it returns `Ok(c)` it should also be removed, as it has
+    /// finished connecting successfully.
+    fn handle_con_helper<C: Any + Send + Sync>(
         deser_fn: DeserFn,
         con: &mut TcpCon,
         timeout: Duration,
@@ -208,13 +293,59 @@ impl Server {
         }
 
         let con_msg = deser_fn(msg).map_err(|o| {
-            let e_msg =
-                format!("Encountered a deserialization error when handling a new connection. {o}");
-            Error::new(ErrorKind::InvalidData, e_msg)
+            Error::new(
+                ErrorKind::InvalidData,
+                format!("Encountered a deserialization error when handling a new connection. {}", o),
+            )
         })?;
 
         let con_msg = *con_msg.downcast::<C>().unwrap();
         Ok(con_msg)
+    }
+
+    /// Helper function that start handling the incoming tcp connections.
+    fn start_incoming(&mut self,) {
+        while self.new_cons.len() < self.config.max_con_handle {
+            if let Ok((stream, _addr)) = self.listener.accept() {
+                debug!("New connection attempt.");
+                stream.set_nonblocking(true).unwrap();
+                let tcp_con = TcpCon::from_stream(stream, self.config.max_msg_size);
+                let cid = self.new_cid();
+                self.new_cons.push((tcp_con, cid, Instant::now()));
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// A helper function that accepts the incoming connection.
+    fn accept_incoming<R: Any + Send + Sync>(
+        &mut self,
+        cid: CId,
+        con: TcpCon,
+        resp: &R,
+    ) {
+        let addr = con.peer_addr().unwrap();
+        self.add_tcp_con_cid(cid, con);
+        if let Err(e) = self.send_to(cid, resp) {
+            error!("IO error occurred while responding to a pending connection. {} at {}", e, addr);
+        } else {
+            debug!("Accepted new connection at {}.", addr);
+        }
+    }
+
+    /// A helper function that rejects the incoming connection.
+    fn reject_incoming<R: Any + Send + Sync>(
+        &self,
+        cid: CId,
+        con: TcpCon,
+        resp: &R,
+    ) {
+        if let Err(e) = self.send_to(cid, resp) {
+            error!("IO error occurred while responding to a pending connection. {}", e);
+        } else {
+            debug!("Rejected incoming connection at {}.", con.peer_addr().unwrap());
+        }
     }
 
     /// Handles a single disconnect, if there is one available to handle.
@@ -222,7 +353,7 @@ impl Server {
     /// If there is no disconnects to handle, `hook` will not be called.
     ///
     /// Returns weather it handled a disconnect.
-    pub fn handle_disconnect(&mut self, hook: impl FnOnce(CId, Status)) -> bool {
+    pub fn handle_disconnect(&mut self, mut hook: impl FnMut(CId, Status)) -> bool {
         while let Some((cid, status)) = self.disconnected.pop_front() {
             // If the disconnect is a live connection
             if !self.alive(cid) { continue; }

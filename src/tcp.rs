@@ -72,6 +72,10 @@ impl TcpCon {
         Ok(())
     }
 
+    /// Receives a single message from the peer. Does not deserialize it.
+    ///
+    /// If a message is not available yet, this will yield an error with the kind `WouldBlock`.
+    /// All other errors returned are actual IO errors.
     pub fn recv(&mut self) -> io::Result<(MId, &[u8])> {
         // Peak the header.
         let mut tcp = self.tcp.write().unwrap();
@@ -80,7 +84,7 @@ impl TcpCon {
             0 => {
                 return Err(Error::new(
                     ErrorKind::ConnectionAborted,
-                    "TCP: The peer closed the connection.",
+                    "The connection was closed.",
                 ))
             }
             _ => {
@@ -95,7 +99,7 @@ impl TcpCon {
 
         if header.len > self.max_msg_size() {
             let e_msg = format!(
-                "TCP: The header of a received message indicates a size of {},\
+                "The header of a received message indicates a size of {},\
 	                but the max allowed message size is {}.\
 					carrier_pigeon never sends a message greater than this; \
 					this message was likely not sent by carrier_pigeon. \
