@@ -27,15 +27,14 @@ A quickstart guide that goes in more detail is found at [`/quickstart.md`](quick
 
 ### Examples
 
-There is a simple chat program example in the
-[`examples/` directory](examples).
+There is a simple chat program example in the [`examples/` directory](examples).
 This contains a client and server command line programs.
 
 ## Features
 
 - [x] Connection, response, disconnect messages built in and extremely flexible.
 - [x] Configuration for buffer size, timeouts and more.
-- [x] Send/Recv calls take an immutable referance allowing for parallelism.
+- [x] Send/Recv calls take an immutable reference allowing for parallelism.
 - [x] Independent message sending.
 - [x] TCP and UDP connections.
 - [x] Client and Server types.
