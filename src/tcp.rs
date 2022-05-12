@@ -10,7 +10,7 @@ use std::sync::RwLock;
 
 /// A type wrapping a [`TcpStream`].
 ///
-/// Provides read/write abstractions for sending `carrier_pigeon` messages.
+/// Provides read/write abstractions for sending `carrier-pigeon` messages.
 pub struct TcpCon {
     buff: Vec<u8>,
     tcp: RwLock<TcpStream>,
@@ -101,8 +101,8 @@ impl TcpCon {
             let e_msg = format!(
                 "The header of a received message indicates a size of {},\
 	                but the max allowed message size is {}.\
-					carrier_pigeon never sends a message greater than this; \
-					this message was likely not sent by carrier_pigeon. \
+					carrier-pigeon never sends a message greater than this; \
+					this message was likely not sent by carrier-pigeon. \
 	                This will cause issues when trying to read; \
 	                Discarding this message and closing connection.",
                 header.len,

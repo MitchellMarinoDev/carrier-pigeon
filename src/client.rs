@@ -139,7 +139,7 @@ impl Client {
     ///
     /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
     /// no more messages can be yielded without blocking. [`InvalidData`] likely means
-    /// carrier_pigeon got bad data.
+    /// carrier-pigeon got bad data.
     fn recv_tcp(&mut self) -> io::Result<(MId, ErasedNetMsg)> {
         let (mid, bytes) = self.tcp.recv()?;
 
@@ -168,7 +168,7 @@ impl Client {
     ///
     /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
     /// no more messages can be yielded without blocking. [`InvalidData`] likely means
-    /// carrier_pigeon got bad data.
+    /// carrier-pigeon got bad data.
     fn recv_udp(&mut self) -> io::Result<(MId, ErasedNetMsg)> {
         let (mid, time, bytes) = self.udp.recv()?;
 
