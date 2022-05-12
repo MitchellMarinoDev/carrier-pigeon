@@ -43,7 +43,7 @@ fn main() {
     // Start the server.
     let mut server = Server::new(addr, parts, Config::default()).expect("Failed to create server.");
 
-    let blacklisted_users = vec!["John", "Jane"];
+    let blacklisted_users = vec!["john", "jane"];
 
     // This represents the game loop in your favorite game engine.
     loop {
@@ -63,7 +63,7 @@ fn main() {
         server.handle_new_cons(|_cid, con_msg: Connection| {
             // You can capture variables from the context to decide if you want
             // to accept or reject the connection request.
-            let blacklisted = blacklisted_users.contains(&&*con_msg.user);
+            let blacklisted = blacklisted_users.contains(&&*con_msg.user.to_lowercase());
 
             if blacklisted {
                 let resp_msg = Response::Rejected("This user is blacklisted".to_owned());
