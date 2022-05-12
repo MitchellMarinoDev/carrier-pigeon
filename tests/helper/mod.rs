@@ -33,7 +33,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
     // Normally this would be done in the game loop
     // and there would be other things to do.
     while 0
-        == server.handle_new_cons::<Connection, Response>(&mut |_cid, _con_msg| {
+        == server.handle_new_cons(|_cid, _con_msg: Connection| {
             (true, Response::Accepted)
         })
     {}

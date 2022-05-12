@@ -27,7 +27,7 @@ fn graceful_disconnect() {
         std::thread::sleep(Duration::from_millis(100));
 
         let recv_count = server.recv_msgs();
-        let discon_count = server.handle_disconnects(&mut |_cid, status| {
+        let discon_count = server.handle_disconnects(|_cid, status| {
             assert_eq!(
                 status.disconnected(),
                 Some(&Disconnect::new("Testing Disconnect Client."))
@@ -87,7 +87,7 @@ fn drop_test() {
         std::thread::sleep(Duration::from_millis(100));
 
         server.recv_msgs();
-        let counts = server.handle_disconnects(&mut |_cid, status| {
+        let counts = server.handle_disconnects(|_cid, status| {
             assert!(status.dropped().is_some(), "Expected status to be dropped");
         });
 
