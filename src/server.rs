@@ -201,7 +201,7 @@ impl Server {
     /// Returns the number of handled connections.
     pub fn handle_new_cons<C: Any + Send + Sync, R: Any + Send + Sync>(
         &mut self,
-        mut hook: impl FnMut(CId, C) -> (bool, R) + Copy,
+        mut hook: impl FnMut(CId, C) -> (bool, R),
     ) -> u32 {
         // Start handling incoming connections.
         self.start_incoming();
@@ -382,10 +382,21 @@ impl Server {
     /// Handles all remaining disconnects.
     ///
     /// Returns the number of disconnects handled.
-    pub fn handle_disconnects(&mut self, hook: impl FnMut(CId, Status) + Copy) -> u32 {
+    pub fn handle_disconnects(&mut self, mut hook: impl FnMut(CId, Status)) -> u32 {
         // disconnect counts.
         let mut i = 0;
-        while self.handle_disconnect(hook) { i += 1 }
+
+        while let Some((cid, status)) = self.disconnected.pop_front() {
+            // If the disconnect is a live connection
+            if !self.alive(cid) { continue; }
+
+            // call hook.
+            hook(cid, status);
+            debug!("Removing CId {}", cid);
+            self.rm_tcp_con(cid).unwrap();
+            i += 1;
+        }
+
         i
     }
 
