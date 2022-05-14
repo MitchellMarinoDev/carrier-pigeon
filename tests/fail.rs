@@ -10,7 +10,7 @@ fn client_fail() {
     let parts = get_table_parts();
 
     let client = Client::new(
-        "127.0.0.1:7778".parse().unwrap(),
+        "127.0.0.1:7778",
         parts,
         Config::default(),
         Connection::new("John Smith"),

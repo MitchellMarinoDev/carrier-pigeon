@@ -17,7 +17,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
 
     debug!("Creating server.");
     let mut server = Server::new(
-        ADDR_LOCAL.parse().unwrap(),
+        ADDR_LOCAL,
         parts.clone(),
         Config::default(),
     )

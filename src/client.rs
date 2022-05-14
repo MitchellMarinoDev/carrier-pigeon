@@ -11,7 +11,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::ErrorKind::InvalidData;
 use std::io::{Error, ErrorKind};
-use std::net::{SocketAddr, TcpStream};
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 
 /// A Client connection.
 ///
@@ -43,8 +43,8 @@ impl Client {
     /// Creates a new [`Client`] on another thread, passing back a [`PendingClient`].
     /// This [`PendingClient`] allows you to wait for the client to send the connection
     /// message, and for the server to send back the response message.
-    pub fn new<C: Any + Send + Sync>(
-        peer: SocketAddr,
+    pub fn new<C: Any + Send + Sync, A: ToSocketAddrs + Send + 'static>(
+        peer: A,
         parts: MsgTableParts,
         config: Config,
         con_msg: C,
@@ -59,18 +59,19 @@ impl Client {
     }
 
     /// Creates a new [`Client`] by blocking.
-    fn new_blocking<C: Any + Send + Sync>(
-        peer: SocketAddr,
+    fn new_blocking<C: Any + Send + Sync, A: ToSocketAddrs>(
+        peer: A,
         parts: MsgTableParts,
         config: Config,
         con_msg: C,
     ) -> io::Result<(Self, Box<dyn Any + Send + Sync>)> {
-        debug!("Attempting to create a client connection to {}", peer);
+        debug!("Attempting to create a client connection.");
         // TCP & UDP Connections.
         let tcp = TcpStream::connect(peer)?;
         tcp.set_read_timeout(Some(config.timeout))?;
         let tcp = TcpCon::from_stream(tcp, config.max_msg_size);
         let local_addr = tcp.local_addr().unwrap();
+        let peer = tcp.peer_addr().unwrap();
         trace!(
             "TcpStream established from {} to {}",
             local_addr,

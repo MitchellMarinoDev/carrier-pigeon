@@ -31,7 +31,6 @@ fn main() {
     let mut args = env::args().skip(1);
     // Get the address from the command line args, or use loopback on port 7799.
     let addr = args.next().unwrap_or(ADDR_LOCAL.to_owned());
-    let addr = addr.parse().expect("Could not parse address.");
 
     // Create the message table.
     // This should be the same on the client and server.

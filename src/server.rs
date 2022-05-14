@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 use std::io;
 use std::io::ErrorKind::{InvalidData, WouldBlock};
 use std::io::{Error, ErrorKind};
-use std::net::{SocketAddr, TcpListener};
+use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
 use std::time::{Duration, Instant};
 
 /// A server.
@@ -63,13 +63,13 @@ impl Server {
     /// Creates a new [`Server`].
     ///
     /// Creates a new [`Server`] listening on the address `listen_addr`.
-    pub fn new(
-        mut listen_addr: SocketAddr,
+    pub fn new<A: ToSocketAddrs>(
+        listen_addr: A,
         parts: MsgTableParts,
         config: Config,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(listen_addr)?;
-        listen_addr = listener.local_addr().unwrap();
+        let listen_addr = listener.local_addr().unwrap();
         listener.set_nonblocking(true)?;
         let udp = UdpCon::new(listen_addr, None, config.max_msg_size)?;
 
