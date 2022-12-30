@@ -68,6 +68,7 @@ impl UdpHeader {
     }
 
     /// Converts the [`UdpHeader`] to big endian bytes to be sent over the internet.
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_be_bytes(&self) -> [u8; UDP_HEADER_LEN] {
         let mid_b = (self.mid as u16).to_be_bytes();
         let time_b = (self.time as u16).to_be_bytes();

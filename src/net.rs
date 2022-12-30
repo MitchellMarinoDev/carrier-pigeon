@@ -63,10 +63,7 @@ impl Display for Status {
 impl Status {
     /// Returns whether the status is [`Status::Connected`].
     pub fn connected(&self) -> bool {
-        match self {
-            Status::Connected => true,
-            _ => false,
-        }
+        matches!(self, Status::Connected)
     }
 
     /// Turns this into an option with the disconnect message.
@@ -99,10 +96,7 @@ impl Status {
 
     /// Returns whether the status is [`Status::Closed`].
     pub fn closed(&self) -> bool {
-        match self {
-            Status::Closed => true,
-            _ => false,
-        }
+        matches!(self, Status::Closed)
     }
 }
 

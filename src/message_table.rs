@@ -13,7 +13,7 @@ use MsgRegError::NonUniqueIdentifier;
 ///
 /// IMPORTANT: The Message tables on all clients and the server **need** to have exactly the same
 /// types registered **in the same order**. If this is not possible, use [`SortedMsgTable`].
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct MsgTable {
     table: Vec<(TypeId, Transport, SerFn, DeserFn)>,
 }
@@ -29,7 +29,7 @@ pub struct MsgTable {
 ///
 /// IMPORTANT: The Message tables on all clients and the server **need** to have exactly the
 /// same types registered, although they do **not** need to be registered in the same order.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SortedMsgTable {
     table: Vec<(String, TypeId, Transport, SerFn, DeserFn)>,
 }
@@ -57,7 +57,7 @@ pub const DISCONNECT_TYPE_MID: MId = 2;
 impl MsgTable {
     /// Creates a new [`MsgTable`].
     pub fn new() -> Self {
-        MsgTable { table: vec![] }
+        MsgTable::default()
     }
 
     /// Adds all registrations from `other` into this table.
@@ -76,7 +76,7 @@ impl MsgTable {
 
         // Join
         for entry in other.table.iter() {
-            self.table.push(entry.clone());
+            self.table.push(*entry);
         }
         Ok(())
     }
@@ -190,7 +190,7 @@ impl MsgTable {
 impl SortedMsgTable {
     /// Creates a new [`SortedMsgTable`].
     pub fn new() -> Self {
-        SortedMsgTable { table: vec![] }
+        SortedMsgTable::default()
     }
 
     /// Adds all registrations from `other` into this table.
@@ -210,7 +210,7 @@ impl SortedMsgTable {
         if other
             .table
             .iter()
-            .any(|(id, _, _, _, _)| self.identifier_registered(&*id))
+            .any(|(id, _, _, _, _)| self.identifier_registered(id))
         {
             return Err(NonUniqueIdentifier);
         }
@@ -238,7 +238,7 @@ impl SortedMsgTable {
 
     /// If the type with [`TypeId`] `tid` has been registered or not.
     pub fn identifier_registered(&self, identifier: &str) -> bool {
-        self.table.iter().any(|(id, _, _, _, _)| identifier == &*id)
+        self.table.iter().any(|(id, _, _, _, _)| identifier == *id)
     }
 
     /// Registers a message type so that it can be sent over the network.
@@ -275,7 +275,7 @@ impl SortedMsgTable {
         };
 
         // Check if the identifier has been registered already.
-        if self.identifier_registered(&*identifier) {
+        if self.identifier_registered(&identifier) {
             return Err(NonUniqueIdentifier);
         }
 

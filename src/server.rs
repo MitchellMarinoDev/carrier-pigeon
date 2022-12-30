@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 ///
 /// This will manage multiple connections to clients. Each connection will have a TCP and UDP
 /// connection on the same address and port.
+#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct Server {
     /// The current cid. incremented then assigned to new connections.
     current_cid: CId,
@@ -133,7 +134,7 @@ impl Server {
         self.start_incoming();
 
         // If we have no active connections, we don't have to continue.
-        if self.new_cons.len() == 0 { return false; }
+        if self.new_cons.is_empty() { return false; }
 
         // Handle the new connections.
         let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
@@ -169,7 +170,7 @@ impl Server {
         }
 
         // Dead connections do not count as handled; they do not call the hook.
-        let handled = accepted.len() > 0 || rejected.len() > 0;
+        let handled = !(accepted.is_empty() && rejected.is_empty());
 
         // Handle accepted.
         for (idx, resp) in accepted {
@@ -207,7 +208,7 @@ impl Server {
         self.start_incoming();
 
         // If we have no active connections, we don't have to continue.
-        if self.new_cons.len() == 0 { return 0; }
+        if self.new_cons.is_empty() { return 0; }
 
         // Handle the new connections.
         let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
@@ -543,7 +544,7 @@ impl Server {
     /// ### Panics
     /// Panics if the type `T` was not registered.
     /// For a non-panicking version, see [try_recv()](Self::try_recv).
-    pub fn recv<'s, T: Any + Send + Sync>(&'s self) -> impl Iterator<Item = NetMsg<T>> + 's {
+    pub fn recv<T: Any + Send + Sync>(&self) -> impl Iterator<Item = NetMsg<T>>{
         let tid = TypeId::of::<T>();
         if !self.parts.valid_tid(tid) {
             panic!("Type ({}) not registered.", type_name::<T>());
@@ -560,9 +561,9 @@ impl Server {
     /// Make sure to call [`recv_msgs()`](Self::recv_msgs) before calling this.
     ///
     /// Returns `None` if the type `T` was not registered.
-    pub fn try_recv<'s, T: Any + Send + Sync>(
-        &'s self,
-    ) -> Option<impl Iterator<Item = NetMsg<T>> + 's> {
+    pub fn try_recv<T: Any + Send + Sync>(
+        &self,
+    ) -> Option<impl Iterator<Item = NetMsg<T>>> {
         let tid = TypeId::of::<T>();
         let mid = *self.parts.tid_map.get(&tid)?;
 
@@ -726,7 +727,7 @@ impl Server {
 
     /// An iterator of the [`CId`]s.
     pub fn cids(&self) -> impl Iterator<Item = CId> + '_ {
-        self.cid_addr.keys().map(|cid| *cid)
+        self.cid_addr.keys().copied()
     }
 
     /// Returns whether the connection of the given [`CId`] is alive.
@@ -747,12 +748,12 @@ impl Server {
 
     /// Gets the address of the given [`CId`].
     pub fn addr_of(&self, cid: CId) -> Option<SocketAddr> {
-        self.cid_addr.get(&cid).map(|o| *o)
+        self.cid_addr.get(&cid).copied()
     }
 
     /// Gets the address of the given [`CId`].
     pub fn cid_of(&self, addr: SocketAddr) -> Option<CId> {
-        self.addr_cid.get(&addr).map(|o| *o)
+        self.addr_cid.get(&addr).copied()
     }
 
     // Private:
@@ -774,7 +775,7 @@ impl Server {
     fn rm_tcp_con(&mut self, cid: CId) -> io::Result<()> {
         self.tcp
             .remove(&cid)
-            .ok_or(Error::new(InvalidData, "Invalid CId."))?;
+            .ok_or_else(|| Error::new(InvalidData, "Invalid CId."))?;
         let addr = self.cid_addr.remove(&cid).unwrap();
         self.addr_cid.remove(&addr);
         Ok(())

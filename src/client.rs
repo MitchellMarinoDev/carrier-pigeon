@@ -18,6 +18,7 @@ use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 /// This can only connect to 1 server.
 ///
 /// Contains a TCP and UDP connection to the server.
+#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct Client {
     /// The configuration of the client.
     config: Config,
@@ -43,7 +44,8 @@ impl Client {
     /// Creates a new [`Client`] on another thread, passing back a [`PendingClient`].
     /// This [`PendingClient`] allows you to wait for the client to send the connection
     /// message, and for the server to send back the response message.
-    pub fn new<C: Any + Send + Sync, A: ToSocketAddrs + Send + 'static>(
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new<C: Any + Send + Sync, A: ToSocketAddrs + Send + 'static> (
         peer: A,
         parts: MsgTableParts,
         config: Config,
@@ -417,9 +419,9 @@ impl PendingClient {
     }
 }
 
-impl Into<OptionPendingClient> for PendingClient {
-    fn into(self) -> OptionPendingClient {
-        self.option()
+impl From<PendingClient> for OptionPendingClient {
+    fn from(value: PendingClient) -> Self {
+        value.option()
     }
 }
 
@@ -435,6 +437,7 @@ impl Into<OptionPendingClient> for PendingClient {
 /// The most notable difference is the `take` method only takes `&mut self`, instead of `self`,
 /// and the returns from most methods are wrapped in an option.
 pub struct OptionPendingClient {
+    #[allow(clippy::type_complexity)]
     channel: Option<Receiver<io::Result<(Client, Box<dyn Any + Send + Sync>)>>>,
 }
 
