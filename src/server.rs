@@ -1,4 +1,6 @@
-use crate::message_table::{MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID};
+use crate::message_table::{
+    MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID,
+};
 use crate::net::{CId, CIdSpec, Config, DeserFn, ErasedNetMsg, NetMsg, Status, Transport};
 use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
@@ -134,7 +136,9 @@ impl Server {
         self.start_incoming();
 
         // If we have no active connections, we don't have to continue.
-        if self.new_cons.is_empty() { return false; }
+        if self.new_cons.is_empty() {
+            return false;
+        }
 
         // Handle the new connections.
         let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
@@ -163,7 +167,10 @@ impl Server {
                 Err(e) if e.kind() == ErrorKind::WouldBlock => {}
                 // Error in connecting.
                 Err(e) => {
-                    error!("IO error occurred while handling a pending connection. {}", e);
+                    error!(
+                        "IO error occurred while handling a pending connection. {}",
+                        e
+                    );
                     dead.push(idx);
                 }
             }
@@ -208,7 +215,9 @@ impl Server {
         self.start_incoming();
 
         // If we have no active connections, we don't have to continue.
-        if self.new_cons.is_empty() { return 0; }
+        if self.new_cons.is_empty() {
+            return 0;
+        }
 
         // Handle the new connections.
         let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
@@ -236,7 +245,10 @@ impl Server {
                 Err(e) if e.kind() == ErrorKind::WouldBlock => {}
                 // Error in connecting.
                 Err(e) => {
-                    error!("IO error occurred while handling a pending connection. {}", e);
+                    error!(
+                        "IO error occurred while handling a pending connection. {}",
+                        e
+                    );
                     dead.push(idx);
                 }
             }
@@ -296,7 +308,10 @@ impl Server {
         let con_msg = deser_fn(msg).map_err(|o| {
             Error::new(
                 ErrorKind::InvalidData,
-                format!("Encountered a deserialization error when handling a new connection. {}", o),
+                format!(
+                    "Encountered a deserialization error when handling a new connection. {}",
+                    o
+                ),
             )
         })?;
 
@@ -305,7 +320,7 @@ impl Server {
     }
 
     /// Helper function that start handling the incoming tcp connections.
-    fn start_incoming(&mut self,) {
+    fn start_incoming(&mut self) {
         while self.new_cons.len() < self.config.max_con_handle {
             if let Ok((stream, _addr)) = self.listener.accept() {
                 debug!("New connection attempt.");
@@ -320,28 +335,21 @@ impl Server {
     }
 
     /// A helper function that accepts the incoming connection.
-    fn accept_incoming<R: Any + Send + Sync>(
-        &mut self,
-        cid: CId,
-        con: TcpCon,
-        resp: &R,
-    ) {
+    fn accept_incoming<R: Any + Send + Sync>(&mut self, cid: CId, con: TcpCon, resp: &R) {
         let addr = con.peer_addr().unwrap();
         self.add_tcp_con_cid(cid, con);
         if let Err(e) = self.send_to(cid, resp) {
-            error!("IO error occurred while responding to a pending connection. {} at {}", e, addr);
+            error!(
+                "IO error occurred while responding to a pending connection. {} at {}",
+                e, addr
+            );
         } else {
             debug!("Accepted new connection {} at {}.", cid, addr);
         }
     }
 
     /// A helper function that rejects the incoming connection.
-    fn reject_incoming<R: Any + Send + Sync>(
-        &self,
-        cid: CId,
-        con: TcpCon,
-        resp: &R,
-    ) {
+    fn reject_incoming<R: Any + Send + Sync>(&self, cid: CId, con: TcpCon, resp: &R) {
         // Get items necessary to send.
         let ser = self.parts.ser[RESPONSE_TYPE_MID];
         let payload = match ser(resp) {
@@ -349,13 +357,16 @@ impl Server {
             Err(e) => {
                 error!("{}", e);
                 return;
-            },
+            }
         };
 
         // Send.
         let addr = con.peer_addr().unwrap();
         if let Err(e) = con.send(RESPONSE_TYPE_MID, &payload) {
-            error!("IO error occurred while responding to a pending connection. {} at {}", e, addr);
+            error!(
+                "IO error occurred while responding to a pending connection. {} at {}",
+                e, addr
+            );
         } else {
             debug!("Rejected new connection {} at {}.", cid, addr);
         }
@@ -369,7 +380,9 @@ impl Server {
     pub fn handle_disconnect(&mut self, mut hook: impl FnMut(CId, Status)) -> bool {
         while let Some((cid, status)) = self.disconnected.pop_front() {
             // If the disconnect is a live connection
-            if !self.alive(cid) { continue; }
+            if !self.alive(cid) {
+                continue;
+            }
 
             // call hook.
             hook(cid, status);
@@ -389,7 +402,9 @@ impl Server {
 
         while let Some((cid, status)) = self.disconnected.pop_front() {
             // If the disconnect is a live connection
-            if !self.alive(cid) { continue; }
+            if !self.alive(cid) {
+                continue;
+            }
 
             // call hook.
             hook(cid, status);
@@ -544,7 +559,7 @@ impl Server {
     /// ### Panics
     /// Panics if the type `T` was not registered.
     /// For a non-panicking version, see [try_recv()](Self::try_recv).
-    pub fn recv<T: Any + Send + Sync>(&self) -> impl Iterator<Item = NetMsg<T>>{
+    pub fn recv<T: Any + Send + Sync>(&self) -> impl Iterator<Item = NetMsg<T>> {
         let tid = TypeId::of::<T>();
         if !self.parts.valid_tid(tid) {
             panic!("Type ({}) not registered.", type_name::<T>());
@@ -561,9 +576,7 @@ impl Server {
     /// Make sure to call [`recv_msgs()`](Self::recv_msgs) before calling this.
     ///
     /// Returns `None` if the type `T` was not registered.
-    pub fn try_recv<T: Any + Send + Sync>(
-        &self,
-    ) -> Option<impl Iterator<Item = NetMsg<T>>> {
+    pub fn try_recv<T: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = NetMsg<T>>> {
         let tid = TypeId::of::<T>();
         let mid = *self.parts.tid_map.get(&tid)?;
 

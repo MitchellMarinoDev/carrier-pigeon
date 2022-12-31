@@ -14,6 +14,7 @@ use MsgRegError::NonUniqueIdentifier;
 /// IMPORTANT: The Message tables on all clients and the server **need** to have exactly the same
 /// types registered **in the same order**. If this is not possible, use [`SortedMsgTable`].
 #[derive(Clone, Default)]
+#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct MsgTable {
     table: Vec<(TypeId, Transport, SerFn, DeserFn)>,
 }
@@ -30,6 +31,7 @@ pub struct MsgTable {
 /// IMPORTANT: The Message tables on all clients and the server **need** to have exactly the
 /// same types registered, although they do **not** need to be registered in the same order.
 #[derive(Clone, Default)]
+#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct SortedMsgTable {
     table: Vec<(String, TypeId, Transport, SerFn, DeserFn)>,
 }
@@ -39,6 +41,7 @@ pub struct SortedMsgTable {
 /// You can build this by registering your types with a [`MsgTable`], then building it with
 /// [`MsgTable::build()`].
 #[derive(Clone)]
+#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct MsgTableParts {
     /// The mapping from TypeId to MessageId.
     pub tid_map: HashMap<TypeId, MId>,

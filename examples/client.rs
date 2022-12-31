@@ -13,7 +13,7 @@
 //! You may request the server to disconnect you by writing
 //! `disconnect-me`.
 
-use crate::shared::{ADDR_LOCAL, Connection, Disconnect, Msg, Response};
+use crate::shared::{Connection, Disconnect, Msg, Response, ADDR_LOCAL};
 use carrier_pigeon::net::Config;
 use carrier_pigeon::{Client, MsgTable, Transport};
 use log::LevelFilter;
@@ -67,7 +67,9 @@ fn main() {
     // This represents the game loop in your favorite game engine.
     loop {
         // If the client is closed, stop running.
-        if !client.open() { break; }
+        if !client.open() {
+            break;
+        }
         // These 2 methods should generally be called at the start of every frame.
         // They should also be called before default time so that all other systems get called
         // with the updated messages.

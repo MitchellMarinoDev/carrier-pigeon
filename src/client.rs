@@ -45,7 +45,7 @@ impl Client {
     /// This [`PendingClient`] allows you to wait for the client to send the connection
     /// message, and for the server to send back the response message.
     #[allow(clippy::new_ret_no_self)]
-    pub fn new<C: Any + Send + Sync, A: ToSocketAddrs + Send + 'static> (
+    pub fn new<C: Any + Send + Sync, A: ToSocketAddrs + Send + 'static>(
         peer: A,
         parts: MsgTableParts,
         config: Config,
@@ -364,11 +364,12 @@ impl Debug for Client {
     }
 }
 
-#[derive(Debug)]
 /// A client that has started connecting, but might not have finished connecting.
 ///
 /// When creating a client, a new thread is spawned for the client connection cycle.
 /// When the client is done being created, it will send it back through this pending client.
+#[derive(Debug)]
+#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct PendingClient {
     channel: Receiver<io::Result<(Client, Box<dyn Any + Send + Sync>)>>,
 }

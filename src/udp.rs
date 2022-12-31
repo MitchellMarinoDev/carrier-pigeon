@@ -146,7 +146,10 @@ impl UdpCon {
     fn recv_shared(&mut self, n: usize) -> io::Result<(MId, u32, &[u8])> {
         // Data should already be received.
         if n == 0 {
-            return Err(Error::new(ErrorKind::NotConnected, "UDP: The connection was dropped.".to_owned()));
+            return Err(Error::new(
+                ErrorKind::NotConnected,
+                "UDP: The connection was dropped.".to_owned(),
+            ));
         }
 
         let header = UdpHeader::from_be_bytes(&self.buff[..UDP_HEADER_LEN]);
