@@ -426,7 +426,6 @@ impl From<PendingClient> for OptionPendingClient {
     }
 }
 
-#[derive(Debug)]
 /// An optional version of the [`PendingClient`].
 ///
 /// Get a [`OptionPendingClient`] with the `option()` method of the [`PendingClient`],
@@ -437,6 +436,8 @@ impl From<PendingClient> for OptionPendingClient {
 ///
 /// The most notable difference is the `take` method only takes `&mut self`, instead of `self`,
 /// and the returns from most methods are wrapped in an option.
+#[derive(Debug)]
+#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct OptionPendingClient {
     #[allow(clippy::type_complexity)]
     channel: Option<Receiver<io::Result<(Client, Box<dyn Any + Send + Sync>)>>>,
