@@ -1,6 +1,5 @@
 use crate::message_table::{MsgTableParts, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID};
 use crate::net::{Config, ErasedNetMsg, NetMsg, Status, Transport};
-use crate::tcp::TcpCon;
 use crate::udp::UdpCon;
 use crate::MId;
 use crossbeam_channel::internal::SelectHandle;
@@ -29,8 +28,6 @@ pub struct Client {
     /// Each [`MId`] has its own vector.
     msg_buff: Vec<Vec<ErasedNetMsg>>,
 
-    /// The TCP connection for this client.
-    tcp: TcpCon,
     /// The UDP connection for this client.
     udp: UdpCon,
 
@@ -71,7 +68,6 @@ impl Client {
         // TCP & UDP Connections.
         let tcp = TcpStream::connect(peer)?;
         tcp.set_read_timeout(Some(config.timeout))?;
-        let tcp = TcpCon::from_stream(tcp, config.max_msg_size);
         let local_addr = tcp.local_addr().unwrap();
         let peer = tcp.peer_addr().unwrap();
         trace!(
@@ -95,7 +91,6 @@ impl Client {
             config,
             status: Status::Connected,
             msg_buff,
-            tcp,
             udp,
             parts,
         };
@@ -118,53 +113,18 @@ impl Client {
 
         debug!(
             "New Client created at {}, to {}.",
-            client.tcp.local_addr().unwrap(),
-            client.tcp.peer_addr().unwrap(),
+            client.udp.local_addr().unwrap(),
+            client.udp.peer_addr().unwrap(),
         );
 
-        client.tcp.set_nonblocking(true)?;
         client.udp.set_nonblocking(true)?;
 
         Ok((client, net_msg.msg))
     }
 
-    /// A function that encapsulates the sending logic for the TCP transport.
-    fn send_tcp(&self, mid: MId, payload: &[u8]) -> io::Result<()> {
-        self.tcp.send(mid, payload)
-    }
-
     /// A function that encapsulates the sending logic for the UDP transport.
     fn send_udp(&self, mid: MId, payload: &[u8]) -> io::Result<()> {
         self.udp.send(mid, payload)
-    }
-
-    /// A function that encapsulates the receiving logic for the TCP transport.
-    ///
-    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
-    /// no more messages can be yielded without blocking. [`InvalidData`] likely means
-    /// carrier-pigeon got bad data.
-    fn recv_tcp(&mut self) -> io::Result<(MId, ErasedNetMsg)> {
-        let (mid, bytes) = self.tcp.recv()?;
-
-        if !self.parts.valid_mid(mid) {
-            let e_msg = format!(
-                "TCP: Got a message specifying MId {}, but the maximum MId is {}.",
-                mid,
-                self.parts.mid_count()
-            );
-            return Err(Error::new(ErrorKind::InvalidData, e_msg));
-        }
-
-        let deser_fn = self.parts.deser[mid];
-        let msg = deser_fn(bytes)?;
-
-        let net_msg = ErasedNetMsg {
-            cid: 0,
-            time: None,
-            msg,
-        };
-
-        Ok((mid, net_msg))
     }
 
     /// A function that encapsulates the receiving logic for the UDP transport.
@@ -350,7 +310,7 @@ impl Client {
 
     /// Gets the address of the peer.
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
-        self.tcp.peer_addr()
+        self.udp.peer_addr()
     }
 }
 

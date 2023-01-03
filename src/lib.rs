@@ -16,7 +16,6 @@
 //! on the GitHub repo.
 
 pub mod net;
-pub mod tcp;
 pub mod udp;
 
 mod client;
@@ -24,6 +23,7 @@ mod header;
 mod message_table;
 mod server;
 mod time;
+mod util;
 
 pub use client::{Client, OptionPendingClient, PendingClient};
 pub use header::TcpHeader;
