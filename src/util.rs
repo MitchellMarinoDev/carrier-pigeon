@@ -1,5 +1,5 @@
-use std::hash::Hash;
 use hashbrown::HashMap;
+use std::hash::Hash;
 
 /// Uses 2 hashmaps allowing you to map with all the benefits of a hashmap
 /// from key to value and value to key.
@@ -9,28 +9,26 @@ struct DoubleHashMap<K: Hash + Eq, V: Hash + Eq> {
 }
 
 impl<K: Hash + Eq, V: Hash + Eq> DoubleHashMap<K, V> {
-    /// Gets a referance to the value associated with the given key.
+    /// Gets a reference to the value associated with the given key.
     pub fn get(&self, key: impl AsRef<K>) -> Option<&V> {
         self.forward.get(key.as_ref())
     }
 
-    /// Gets a mutable referance to the value associated with the given key.
+    /// Gets a mutable reference to the value associated with the given key.
     pub fn get_mut(&mut self, key: impl AsRef<K>) -> Option<&mut V> {
         self.forward.get_mut(key.as_ref())
     }
 
-    /// Gets a referance to the key associated with the given value.
+    /// Gets a reference to the key associated with the given value.
     pub fn get_backward(&self, key: impl AsRef<V>) -> Option<&K> {
         self.backward.get(key.as_ref())
     }
 
-    /// Gets a mutable referance to the key associated with the given value.
+    /// Gets a mutable reference to the key associated with the given value.
     pub fn get_backward_mut(&mut self, key: impl AsRef<V>) -> Option<&mut K> {
         self.backward.get_mut(key.as_ref())
     }
 
     /// Inserts a key value pair into the map.
-    pub fn insert(&mut self, key: K, value: V) {
-
-    }
+    pub fn insert(&mut self, key: K, value: V) {}
 }

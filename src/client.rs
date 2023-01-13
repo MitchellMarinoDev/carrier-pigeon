@@ -1,4 +1,6 @@
-use crate::message_table::{MsgTableParts, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID};
+use crate::message_table::{
+    MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID,
+};
 use crate::net::{Config, ErasedNetMsg, NetMsg, Status, Transport};
 use crate::udp::UdpCon;
 use crate::MId;
@@ -10,7 +12,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::ErrorKind::InvalidData;
 use std::io::{Error, ErrorKind};
-use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 
 /// A Client connection.
 ///
@@ -29,7 +31,7 @@ pub struct Client {
     msg_buff: Vec<Vec<ErasedNetMsg>>,
 
     /// The UDP connection for this client.
-    udp: UdpCon,
+    udp: UdpSocket,
 
     /// The [`MsgTableParts`] to use for sending messages.
     parts: MsgTableParts,
@@ -58,28 +60,48 @@ impl Client {
     }
 
     /// Creates a new [`Client`] by blocking.
-    fn new_blocking<C: Any + Send + Sync, A: ToSocketAddrs>(
-        peer: A,
+    fn new_blocking<C: Any + Send + Sync>(
+        local: impl ToSocketAddrs,
+        peer: impl ToSocketAddrs,
         parts: MsgTableParts,
         config: Config,
         con_msg: C,
     ) -> io::Result<(Self, Box<dyn Any + Send + Sync>)> {
+        // verify that `con_msg` is the correct type.
+        let tid = TypeId::of::<C>();
+        let con_msg_mid = parts.tid_map.get(&tid);
+        match con_msg_mid {
+            None => Err(Error::new(
+                InvalidData,
+                "the type of `con_msg` passed into `Client::new` or `Client::new_blocking` \
+        should match the first type parameter of the `MsgTable::build` function. \
+        The type of con_msg was not registered at all",
+            )),
+            Some(CONNECTION_TYPE_MID) => Ok(()),
+            Some(other_mid) => Err(Error::new(
+                InvalidData,
+                format!(
+                    "the type of `con_msg` passed into `Client::new` or `Client::new_blocking` \
+            should match the first type parameter of the `MsgTable::build` function. \
+            got Mid {}, expected {}",
+                    other_mid, CONNECTION_TYPE_MID
+                ),
+            )),
+        }?;
+
         debug!("Attempting to create a client connection.");
-        // TCP & UDP Connections.
-        let tcp = TcpStream::connect(peer)?;
-        tcp.set_read_timeout(Some(config.timeout))?;
-        let local_addr = tcp.local_addr().unwrap();
-        let peer = tcp.peer_addr().unwrap();
-        trace!(
-            "TcpStream established from {} to {}",
-            local_addr,
-            tcp.peer_addr().unwrap()
-        );
-        let udp = UdpCon::new(local_addr, Some(peer), config.max_msg_size)?;
+        let udp = UdpSocket::bind(local)?;
+        udp.connect(peer)?;
+        udp.set_nonblocking(true)?;
+
         trace!(
             "UdpSocket connected from {} to {}",
-            udp.local_addr().unwrap(),
-            udp.peer_addr().unwrap()
+            udp.local_addr()
+                .map(|addr| addr.to_string())
+                .unwrap_or("UNKNOWN"),
+            udp.peer_addr()
+                .map(|addr| addr.to_string())
+                .unwrap_or("UNKNOWN"),
         );
 
         let mut msg_buff = Vec::with_capacity(parts.mid_count());
@@ -108,7 +130,7 @@ impl Client {
                 "Client: First received message was MId: {} not MId: {} (Response message)",
                 mid, RESPONSE_TYPE_MID
             );
-            return Err(Error::new(ErrorKind::InvalidData, msg));
+            return Err(Error::new(InvalidData, msg));
         }
 
         debug!(
