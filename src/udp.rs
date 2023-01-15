@@ -1,5 +1,4 @@
-use crate::header::{UdpHeader, TCP_HEADER_LEN, UDP_HEADER_LEN};
-use crate::net::MAX_SAFE_MESSAGE_SIZE;
+use crate::net::{HEADER_SIZE, MAX_SAFE_MESSAGE_SIZE, MsgHeader};
 use crate::MId;
 use log::{debug, error, trace};
 use std::io;
@@ -112,7 +111,7 @@ impl UdpCon {
         }
         // Message can be sent!
 
-        let header = UdpHeader::new(mid);
+        let header = MsgHeader::new(mid);
         let h_bytes = header.to_be_bytes();
         // put the header in the front of the message
         for (i, b) in h_bytes.into_iter().enumerate() {
@@ -152,7 +151,7 @@ impl UdpCon {
             ));
         }
 
-        let header = UdpHeader::from_be_bytes(&self.buff[..UDP_HEADER_LEN]);
+        let header = MsgHeader::from_be_bytes(&self.buff[..HEADER_SIZE]);
 
         Ok((header.mid, header.time, &self.buff[UDP_HEADER_LEN..n]))
     }

@@ -1,15 +1,12 @@
-use crate::message_table::{
-    MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID,
-};
-use crate::net::{CId, CIdSpec, Config, DeserFn, ErasedNetMsg, NetMsg, Status, Transport};
-use crate::udp::UdpCon;
+use crate::message_table::{MsgTable, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID};
+use crate::net::{CId, CIdSpec, ErasedNetMsg, NetConfig, NetMsg, Status, Transport};
 use crate::MId;
 use hashbrown::HashMap;
 use log::{debug, error, trace};
 use std::any::{type_name, Any, TypeId};
 use std::collections::VecDeque;
 use std::io;
-use std::io::ErrorKind::{InvalidData, WouldBlock};
+use std::io::ErrorKind::WouldBlock;
 use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
 use std::time::{Duration, Instant};
@@ -26,7 +23,7 @@ pub struct Server {
     /// The current cid. incremented then assigned to new connections.
     current_cid: CId,
     /// The configuration of the server.
-    config: Config,
+    config: NetConfig,
     /// The received message buffer.
     ///
     /// Each [`MId`] has its own vector.
@@ -50,8 +47,8 @@ pub struct Server {
     /// functions to mutate these maps.
     addr_cid: HashMap<SocketAddr, CId>,
 
-    /// The [`MsgTableParts`] to use for sending messages.
-    parts: MsgTableParts,
+    /// The [`MsgTable`] to use for sending messages.
+    parts: MsgTable,
 }
 
 impl Server {
@@ -60,8 +57,8 @@ impl Server {
     /// Creates a new [`Server`] listening on the address `listen_addr`.
     pub fn new<A: ToSocketAddrs>(
         listen_addr: A,
-        parts: MsgTableParts,
-        config: Config,
+        parts: MsgTable,
+        config: NetConfig,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(listen_addr)?;
         let listen_addr = listener.local_addr().unwrap();
@@ -81,7 +78,6 @@ impl Server {
             config,
             msg_buff,
             disconnected: VecDeque::new(),
-            listener,
             udp,
             cid_addr: Default::default(),
             addr_cid: Default::default(),
@@ -90,7 +86,7 @@ impl Server {
     }
 
     /// Gets the config of the server.
-    pub fn config(&self) -> &Config {
+    pub fn config(&self) -> &NetConfig {
         &self.config
     }
 

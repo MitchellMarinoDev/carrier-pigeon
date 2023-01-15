@@ -14,7 +14,7 @@
 //! `disconnect-me`.
 
 use crate::shared::{Connection, Disconnect, Msg, Response, ADDR_LOCAL};
-use carrier_pigeon::net::Config;
+use carrier_pigeon::net::NetConfig;
 use carrier_pigeon::{Client, MsgTable, Transport};
 use log::LevelFilter;
 use simple_logger::SimpleLogger;
@@ -49,7 +49,7 @@ fn main() {
     };
 
     // Start the connection to the server.
-    let client = Client::new(addr, parts, Config::default(), con_msg);
+    let client = Client::new(addr, parts, NetConfig::default(), con_msg);
 
     // Block until the connection is made.
     let (mut client, resp) = client.block().expect("Failed to connect to server.");

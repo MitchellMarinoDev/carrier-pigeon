@@ -12,8 +12,61 @@ use MsgRegError::NonUniqueIdentifier;
 /// Delivery guarantees.
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub enum Guarantees {
+    /// Messages are guaranteed to arrive. Not necessarily in order.
     Reliable,
+    /// Messages are guaranteed to arrive in order.
+    ReliableOrdered,
+    /// The most recent (newest) message is guaranteed to arrive.
+    /// You might not get all the messages if they arrive out of order.
+    ReliableNewest,
+    /// No guarantees about delivery. Messages might or might not arrive.
     Unreliable,
+    /// No delivery guarantee, but you will only get the newest message.
+    /// If an older message arrives after a newer one, it will be discarded.
+    UnreliableNewest,
+}
+
+impl Guarantees {
+    /// Weather this guarantee is reliable.
+    pub fn reliable(&self) -> bool {
+        use Guarantees::*;
+        match self {
+            Reliable | ReliableOrdered | ReliableNewest => true,
+            Unreliable | UnreliableNewest => false,
+        }
+    }
+
+    /// Weather this guarantee is unreliable.
+    pub fn unreliable(&self) -> bool {
+        !self.reliable()
+    }
+
+    /// Weather this guarantee is ordered.
+    pub fn ordered(&self) -> bool {
+        use Guarantees::*;
+        match self {
+            ReliableOrdered => true,
+            Reliable | ReliableNewest | Unreliable | UnreliableNewest => false,
+        }
+    }
+
+    /// Weather this guarantee is newest.
+    pub fn newest(&self) -> bool {
+        use Guarantees::*;
+        match self {
+            ReliableNewest | UnreliableNewest => true,
+            Reliable | ReliableOrdered | Unreliable => false,
+        }
+    }
+
+    /// Weather this guarantee is not ordered or newest.
+    pub fn no_ordering(&self) -> bool {
+        use Guarantees::*;
+        match self {
+            Reliable | Unreliable => true,
+            ReliableOrdered | ReliableNewest | UnreliableNewest => false,
+        }
+    }
 }
 
 /// A registration in the [`MsgTableBuilder`].
@@ -41,7 +94,7 @@ pub struct MsgTableBuilder {
 ///
 /// You can build this by registering your types with a [`MsgTableBuilder`] or [`SortedMsgTableBuilder`], then building it with
 /// [`MsgTableBuilder::build()`] or [`SortedMsgTableBuilder::build()`].
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct MsgTable {
     /// The mapping from TypeId to MessageId.
@@ -171,8 +224,9 @@ impl MsgTableBuilder {
                     io::Error::new(io::ErrorKind::InvalidData, format!("Deser Error: {}", o))
                 })
         };
-        let ser: SerFn = |m: &(dyn Any + Send + Sync)| {
-            bincode::serialize(
+        let ser: SerFn = |m: &(dyn Any + Send + Sync), buf| {
+            bincode::serialize_into(
+                buf,
                 m.downcast_ref::<T>()
                     .expect("wrong type passed to the message serialization function"),
             )
@@ -216,6 +270,8 @@ impl MsgTableBuilder {
     ///  - `D` is the disconnect message type.
     ///
     /// The generic parameters should **not** be registered before hand.
+    ///
+    /// This fails iff the generic parameters have already been registered.
     pub fn build<C, R, D>(mut self) -> Result<MsgTable, MsgRegError>
     where
         C: Any + Send + Sync + DeserializeOwned + Serialize,

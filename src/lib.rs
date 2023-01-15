@@ -16,17 +16,17 @@
 //! on the GitHub repo.
 
 pub mod net;
-pub mod udp;
+// pub mod udp;
 
 mod client;
-mod header;
+mod connection;
 mod message_table;
 mod server;
 mod time;
+mod transport;
 mod util;
 
 pub use client::{Client, OptionPendingClient, PendingClient};
-pub use header::TcpHeader;
-pub use message_table::{MsgRegError, MsgTable, MsgTableParts, SortedMsgTable};
+pub use message_table::{MsgRegError, MsgTable, MsgTableBuilder};
 pub use net::{CId, MId, Transport};
 pub use server::Server;

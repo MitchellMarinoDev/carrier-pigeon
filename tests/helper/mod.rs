@@ -2,7 +2,7 @@
 //! Helper functions and types to make setting up the tests easier.
 
 use crate::helper::test_messages::{get_table_parts, Connection, Disconnect, Response};
-use carrier_pigeon::net::Config;
+use carrier_pigeon::net::NetConfig;
 use carrier_pigeon::{Client, Server};
 use log::debug;
 
@@ -16,13 +16,13 @@ pub fn create_client_server_pair() -> (Client, Server) {
     let parts = get_table_parts();
 
     debug!("Creating server.");
-    let mut server = Server::new(ADDR_LOCAL, parts.clone(), Config::default()).unwrap();
+    let mut server = Server::new(ADDR_LOCAL, parts.clone(), NetConfig::default()).unwrap();
     let addr = server.listen_addr();
     debug!("Server created on addr: {}", addr);
 
     debug!("Creating client.");
     // Start client connection.
-    let client = Client::new(addr, parts, Config::default(), Connection::new("John"));
+    let client = Client::new(addr, parts, NetConfig::default(), Connection::new("John"));
 
     // Spin until the connection is handled.
     // Normally this would be done in the game loop

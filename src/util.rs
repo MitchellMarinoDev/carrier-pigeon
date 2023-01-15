@@ -40,10 +40,12 @@ impl<K: Clone + Hash + Eq, V: Clone + Hash + Eq> DoubleHashMap<K, V> {
     }
 
     /// Inserts a key value pair into the map.
-    pub fn insert(&mut self, key: K, value: V) -> Result<(), DoubleHashMapError>{
+    pub fn insert(&mut self, key: K, value: V) -> Result<(), DoubleHashMapError> {
         let old_key = self.backward.get(&value);
         let old_value = self.forward.get(&key);
-        if (old_key == None && old_value == None) || (old_key == Some(&key) && old_value == Some(&value)) {
+        if (old_key == None && old_value == None)
+            || (old_key == Some(&key) && old_value == Some(&value))
+        {
             self.forward.insert(key.clone(), value.clone());
             self.backward.insert(value, key);
             Ok(())

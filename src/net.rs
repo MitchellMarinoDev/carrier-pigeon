@@ -1,10 +1,8 @@
 //! Networking things that are not specific to either transport.
 
-pub use crate::header::TcpHeader;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::fmt::{Debug, Display, Formatter};
-use std::io;
 use std::io::Error;
 use std::ops::Deref;
 use std::time::Duration;
@@ -12,10 +10,65 @@ use std::time::Duration;
 /// The maximum safe message size that can be sent on udp,
 /// after taking off the possible overheads from the transport.
 ///
-/// The data must be `MAX_SAFE_MESSAGE_SIZE` or less to be guaranteed to
+/// The data must be [`MAX_SAFE_MESSAGE_SIZE`] or less to be guaranteed to
 /// be deliverable on udp.
 /// [source](https://newbedev.com/what-is-the-largest-safe-udp-packet-size-on-the-internet/)
-pub const MAX_SAFE_MESSAGE_SIZE: usize = 504;
+pub const MAX_SAFE_MESSAGE_SIZE: usize = 508 - HEADER_SIZE;
+
+/// The absolute maximum size that udp supports.
+///
+/// The data must be less than [`MAX_MESSAGE_SIZE`] or it will be dropped.
+pub const MAX_MESSAGE_SIZE: usize = 65507 - HEADER_SIZE;
+
+/// The size of carrier-pigeon's header.
+pub const HEADER_SIZE: usize = 6;
+
+/// A header to be sent before the payload on TCP.
+///
+/// `len` and `mid` are sent as big endian u16s.
+/// This means they have a max value of **`65535`**.
+/// This shouldn't pose any real issues.
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
+pub struct MsgHeader {
+    /// The message id of this message.
+    pub mid: MId,
+    /// An incrementing integer unique to this message.
+    pub ack_num: u32,
+}
+
+impl MsgHeader {
+    /// Creates a [`MsgHeader`] with the given [`MId`] and `ack_number`.
+    pub fn new(mid: MId, ack_num: u32) -> Self {
+        MsgHeader { mid, ack_num }
+    }
+
+    /// Converts the [`MsgHeader`] to big endian bytes to be sent over the internet.
+    pub fn to_be_bytes(&self) -> [u8; HEADER_SIZE] {
+        let mid_b = (self.mid as u16).to_be_bytes();
+        let ack_num_b = (self.ack_num as u32).to_be_bytes();
+
+        [
+            mid_b[0],
+            mid_b[1],
+            ack_num_b[0],
+            ack_num_b[1],
+            ack_num_b[2],
+            ack_num_b[3],
+        ]
+    }
+
+    /// Converts the big endian bytes back into a [`MsgHeader`].
+    ///
+    /// You **must** pass in a slice that is [`HEADER_LEN`] long.
+    pub fn from_be_bytes(bytes: &[u8]) -> Self {
+        assert_eq!(bytes.len(), HEADER_SIZE);
+
+        let mid = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
+        let ack_num = u32::from_be_bytes(bytes[2..].try_into().unwrap());
+
+        MsgHeader { mid, ack_num }
+    }
+}
 
 /// An enum representing the 2 possible transports.
 ///
@@ -30,11 +83,11 @@ pub enum Transport {
 /// The function used to deserialize a message.
 ///
 /// fn(&[u8]) -> Result<Box<dyn Any + Send + Sync>, io::Error>
-pub type DeserFn = fn(&[u8]) -> Result<Box<dyn Any + Send + Sync>, io::Error>;
+pub type DeserFn = fn(&[u8]) -> Result<Box<dyn Any + Send + Sync>, Error>;
 /// The function used to serialize a message.
 ///
-/// fn(&(dyn Any + Send + Sync)) -> Result<Vec<u8>, io::Error>
-pub type SerFn = fn(&(dyn Any + Send + Sync)) -> Result<Vec<u8>, io::Error>;
+/// fn(&(dyn Any + Send + Sync), &mut Vec<u8>) -> Result<(), Error>
+pub type SerFn = fn(&(dyn Any + Send + Sync), &mut Vec<u8>) -> Result<(), Error>;
 
 #[derive(Debug)]
 /// An enum for the possible states of a connection.
@@ -155,7 +208,7 @@ impl CIdSpec {
 ///
 /// Contains all configurable information about the server.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
-pub struct Config {
+pub struct NetConfig {
     /// The timeout for handling new connections. The time to wait for a connection message
     /// after establishing a tcp connection.
     pub timeout: Duration,
@@ -167,10 +220,10 @@ pub struct Config {
     pub max_msg_size: usize,
 }
 
-impl Config {
+impl NetConfig {
     /// Creates a new Server configuration.
     pub fn new(timeout: Duration, max_con_handle: usize, max_msg_size: usize) -> Self {
-        Config {
+        NetConfig {
             timeout,
             max_con_handle,
             max_msg_size,
@@ -178,9 +231,9 @@ impl Config {
     }
 }
 
-impl Default for Config {
+impl Default for NetConfig {
     fn default() -> Self {
-        Config {
+        NetConfig {
             timeout: Duration::from_millis(5_000),
             max_con_handle: 4,
             max_msg_size: 2048,

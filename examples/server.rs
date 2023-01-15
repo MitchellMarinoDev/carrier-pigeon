@@ -12,7 +12,7 @@
 //! not be broadcast to the other clients.
 
 use crate::shared::{Connection, Disconnect, Msg, Response, ADDR_LOCAL};
-use carrier_pigeon::net::{CIdSpec, Config};
+use carrier_pigeon::net::{CIdSpec, NetConfig};
 use carrier_pigeon::{MsgTable, Server, Transport};
 use log::LevelFilter;
 use simple_logger::SimpleLogger;
@@ -40,7 +40,8 @@ fn main() {
     let parts = table.build::<Connection, Response, Disconnect>().unwrap();
 
     // Start the server.
-    let mut server = Server::new(addr, parts, Config::default()).expect("Failed to create server.");
+    let mut server =
+        Server::new(addr, parts, NetConfig::default()).expect("Failed to create server.");
 
     let blacklisted_users = vec!["john", "jane"];
 
