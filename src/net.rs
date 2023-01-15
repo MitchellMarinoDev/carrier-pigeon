@@ -154,10 +154,20 @@ impl Status {
 }
 
 /// Message ID.
+///
+/// This is an integer unique to each type of message.
 pub type MId = usize;
 
 /// Connection ID.
+///
+/// This is an integer incremented for every connection made to the server, so connections can
+/// be uniquely identified.
 pub type CId = u32;
+
+/// Message Number.
+///
+/// This is an integer incremented for every message sent, so messages can be uniquely identified.
+pub type MNum = u32;
 
 /// A way to specify the valid [`CId`]s for an operation.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
@@ -246,21 +256,20 @@ impl Default for NetConfig {
 pub(crate) struct ErasedNetMsg {
     /// The [`CId`] that the message was sent from.
     pub(crate) cid: CId,
-    /// The timestamp that the message was sent in unix millis.
-    ///
-    /// This is always `Some` if the message was sent with UDP, and always `None` if sent with TCP.
-    pub(crate) time: Option<u32>,
-    /// The actual message.
+    /// The message.
     pub(crate) msg: Box<dyn Any + Send + Sync>,
 }
 
 impl ErasedNetMsg {
+    pub(crate) fn new(cid: CId, msg: Box<dyn Any + Send + Sync>) -> Self {
+        Self { cid, msg }
+    }
+
     /// Converts this to NetMsg, borrowed from this.
     pub(crate) fn to_typed<T: Any + Send + Sync>(&self) -> Option<NetMsg<T>> {
         let msg = self.msg.downcast_ref()?;
         Some(NetMsg {
             cid: self.cid,
-            time: self.time,
             m: msg,
         })
     }
@@ -271,10 +280,6 @@ impl ErasedNetMsg {
 pub struct NetMsg<'n, T: Any + Send + Sync> {
     /// The [`CId`] that the message was sent from.
     pub cid: CId,
-    /// The timestamp that the message was sent in unix millis.
-    ///
-    /// This is always `Some` if the message was sent with UDP, and always `None` if sent with TCP.
-    pub time: Option<u32>,
     /// The actual message.
     ///
     /// Borrowed from the client or server.

@@ -10,6 +10,7 @@ use std::io::ErrorKind::WouldBlock;
 use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
 use std::time::{Duration, Instant};
+use crate::transport::std_udp::UdpClientTransport;
 
 /// A server.
 ///
@@ -32,7 +33,7 @@ pub struct Server {
     /// Disconnected connections.
     disconnected: VecDeque<(CId, Status)>,
     /// The UDP connection for this client.
-    udp: UdpCon,
+    connection: ServerConnection<UdpClientTransport>,
 
     /// The map from CId to SocketAddr for the UDP messages to be sent to.
     ///

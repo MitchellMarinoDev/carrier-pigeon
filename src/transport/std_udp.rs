@@ -1,25 +1,39 @@
-use crate::net::{MAX_MESSAGE_SIZE, MAX_SAFE_MESSAGE_SIZE};
-use crate::MId;
-use log::{debug, error, trace};
+use crate::net::{MsgHeader, HEADER_SIZE, MAX_MESSAGE_SIZE, MAX_SAFE_MESSAGE_SIZE};
+use crate::transport::ClientTransport;
+use crate::{MId, MsgTable};
+use log::{debug, error, trace, warn};
+use std::any::Any;
 use std::io;
+use std::io::ErrorKind::InvalidData;
 use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::sync::Arc;
-use crate::transport::ClientTransport;
 
-pub struct UdpTransport {
+pub struct UdpClientTransport {
     socket: UdpSocket,
+    buf: [u8; MAX_MESSAGE_SIZE],
+    msg_table: MsgTable,
 }
 
-impl ClientTransport for UdpTransport {
-    fn new(local: impl ToSocketAddrs, remote: impl ToSocketAddrs) -> io::Result<UdpTransport> {
+impl ClientTransport for UdpClientTransport {
+    fn new(
+        local: impl ToSocketAddrs,
+        remote: impl ToSocketAddrs,
+        msg_table: MsgTable,
+    ) -> io::Result<UdpClientTransport> {
         let socket = UdpSocket::bind(local)?;
         socket.connect(remote)?;
 
         // TODO: should this be non blocking?
         socket.set_nonblocking(true)?;
 
-        Ok(UdpTransport { socket })
+        let buf = [0; MAX_MESSAGE_SIZE];
+
+        Ok(UdpClientTransport {
+            socket,
+            buf,
+            msg_table,
+        })
     }
 
     fn send(&self, mid: MId, payload: Arc<Vec<u8>>) -> io::Result<()> {
@@ -29,9 +43,7 @@ impl ClientTransport for UdpTransport {
             let e_msg = format!(
                 "UDP: Outgoing message size is greater than the maximum message size ({}). \
                 MId: {}, size: {}. Discarding message.",
-                MAX_MESSAGE_SIZE,
-                mid,
-                payload_len
+                MAX_MESSAGE_SIZE, mid, payload_len
             );
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
@@ -45,7 +57,11 @@ impl ClientTransport for UdpTransport {
         }
         // Message can be sent!
 
-        trace!("UDP: Sending message with MId: {}, len: {}.", mid, payload_len);
+        trace!(
+            "UDP: Sending message with MId: {}, len: {}.",
+            mid,
+            payload_len
+        );
         let n = self.socket.send(&payload)?;
 
         // Make sure it sent correctly.
@@ -58,6 +74,41 @@ impl ClientTransport for UdpTransport {
             );
         }
         Ok(())
+    }
+
+    fn recv(&mut self) -> io::Result<(MsgHeader, Box<dyn Any + Send + Sync>)> {
+        let n = self.socket.recv(&mut self.buf)?;
+
+        if n < HEADER_SIZE {
+            warn!(
+                "Received a packet of length {} \
+                 which is not big enough to be a carrier pigeon message",
+                n
+            );
+        }
+
+        let header = MsgHeader::from_be_bytes(&self.buf[0..HEADER_SIZE]);
+
+        if !self.msg_table.valid_mid(header.mid) {
+            return Err(Error::new(
+                InvalidData,
+                format!(
+                    "Got a message specifying MId {}, but the maximum MId is {}.",
+                    header.mid,
+                    self.msg_table.mid_count()
+                ),
+            ));
+        }
+
+        let deser_fn = self.msg_table.deser[header.mid];
+        deser_fn(&self.buf[HEADER_SIZE..n]).map(|msg| (header, msg))
+    }
+
+    fn recv_blocking(&mut self) -> io::Result<(MsgHeader, Box<dyn Any + Send + Sync>)> {
+        self.socket.set_nonblocking(false)?;
+        let result = self.recv();
+        self.socket.set_nonblocking(true)?;
+        return result;
     }
 
     fn local_addr(&self) -> io::Result<SocketAddr> {
