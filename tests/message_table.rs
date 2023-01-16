@@ -1,8 +1,7 @@
 //! Tests for testing the functionality of the [`MsgTable`] and [`SortedMsgTable`].
 use crate::helper::test_messages::{Connection, Disconnect, ReliableMsg, Response, UnreliableMsg};
 use carrier_pigeon::MsgRegError::{NonUniqueIdentifier, TypeAlreadyRegistered};
-use carrier_pigeon::Transport::{TCP, UDP};
-use carrier_pigeon::{Guarantees, MsgRegError, MsgTable, MsgTableBuilder};
+use carrier_pigeon::{Guarantees, MsgTableBuilder};
 use hashbrown::HashMap;
 use std::any::TypeId;
 

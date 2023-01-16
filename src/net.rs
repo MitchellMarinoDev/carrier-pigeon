@@ -70,16 +70,6 @@ impl MsgHeader {
     }
 }
 
-/// An enum representing the 2 possible transports.
-///
-/// - TCP is reliable but slower.
-/// - UDP is unreliable but quicker.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Transport {
-    TCP,
-    UDP,
-}
-
 /// The function used to deserialize a message.
 ///
 /// fn(&[u8]) -> Result<Box<dyn Any + Send + Sync>, io::Error>

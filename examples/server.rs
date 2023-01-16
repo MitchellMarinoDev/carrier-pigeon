@@ -11,9 +11,9 @@
 //! they will be disconnected, and their message will
 //! not be broadcast to the other clients.
 
-use crate::shared::{Connection, Disconnect, Msg, Response, CLIENT_ADDR_LOCAL, SERVER_ADDR_LOCAL};
+use crate::shared::{Connection, Disconnect, Msg, Response, SERVER_ADDR_LOCAL};
 use carrier_pigeon::net::{CIdSpec, NetConfig};
-use carrier_pigeon::{Guarantees, MsgTable, MsgTableBuilder, Server, Transport};
+use carrier_pigeon::{Guarantees, MsgTableBuilder, Server};
 use log::LevelFilter;
 use simple_logger::SimpleLogger;
 use std::env;

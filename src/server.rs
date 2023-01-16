@@ -82,7 +82,7 @@ impl Server {
     /// that you passed into [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
     pub fn handle_new_cons<C: Any + Send + Sync, R: Any + Send + Sync>(
         &mut self,
-        mut hook: impl FnMut(CId, SocketAddr, C) -> (bool, R),
+        hook: impl FnMut(CId, SocketAddr, C) -> (bool, R),
     ) -> u32 {
         // verify that `C` and `R` are the right type.
         let c_tid = TypeId::of::<C>();

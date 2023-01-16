@@ -1,7 +1,7 @@
 #![allow(unused)]
 //! Test messages for use in tests.
 
-use carrier_pigeon::{Guarantees, MsgTable, MsgTableBuilder, Transport};
+use carrier_pigeon::{Guarantees, MsgTable, MsgTableBuilder};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]

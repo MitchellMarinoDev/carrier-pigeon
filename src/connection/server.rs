@@ -170,7 +170,7 @@ impl<T: ServerTransport> ServerConnection<T> {
             count += 1;
             let (accept, response) = hook(cid, addr, msg);
             if accept {
-                self.connection_list.new_connection(cid, addr).expect(
+                self.new_connection(cid, addr).expect(
                     "cid and address should be valid, as they came from the connection list",
                 );
                 // TODO: in the future, send_to should not return an error.
@@ -180,8 +180,23 @@ impl<T: ServerTransport> ServerConnection<T> {
         Ok(count)
     }
 
+    fn new_connection(&mut self, cid: CId, addr: SocketAddr) -> Result<(), ConnectionListError> {
+        self.connection_list.new_connection(cid, addr)?;
+        let mid_count = self.msg_table.mid_count();
+
+        self.missing_msg.insert(cid, (0..mid_count).map(|_| vec![]).collect());
+        self.msg_counter.insert(cid, (0..mid_count).map(|_| AtomicU32::new(0)).collect());
+        self.non_acked.insert(cid, (0..mid_count).map(|_| Mutex::new(NonAckedMsgs::new())).collect());
+        Ok(())
+    }
+
     pub fn remove_connection(&mut self, cid: CId) -> Result<(), ConnectionListError> {
-        self.connection_list.remove_connection(cid)
+        self.connection_list.remove_connection(cid)?;
+
+        self.missing_msg.remove(&cid);
+        self.msg_counter.remove(&cid);
+        self.non_acked.remove(&cid);
+        Ok(())
     }
 
     pub fn listen_addr(&self) -> io::Result<SocketAddr> {
