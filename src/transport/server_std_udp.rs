@@ -79,7 +79,7 @@ impl ServerTransport for UdpServerTransport {
     }
 
     fn recv_from(&mut self) -> io::Result<(SocketAddr, MsgHeader, Box<dyn Any + Send + Sync>)> {
-        let (n, from) = self.recv_next()?;
+        let (n, header, from) = self.recv_next()?;
 
         self.msg_table.check_mid(header.mid)?;
 
@@ -96,10 +96,9 @@ impl UdpServerTransport {
     /// Gets the next udp packet and reads it into the buffer.
     ///
     /// This discards any packets that come from an address that is not in `self.connected_addrs`.
-    fn recv_next(&mut self) -> io::Result<(usize, SocketAddr)> {
+    fn recv_next(&mut self) -> io::Result<(usize, MsgHeader, SocketAddr)> {
         loop {
             let (n, from) = self.socket.recv_from(&mut self.buf)?;
-            {
                 if n < HEADER_SIZE {
                     warn!(
                         "Received a packet of length {} which is not big enough \
@@ -116,8 +115,16 @@ impl UdpServerTransport {
                     n,
                 );
 
+            // If we get a message that is a type other than the connection type message ID,
+            // make sure it is from a connected address
+            // TODO: This is done to prevent un-needed deserialization work being done on
+            //      potentially malicious packets. However, this requires us to have
+            //      shared state (self.connected_addrs) between the Connection and the Transport.
+            //      This might not be worth it since attackers can just send connection messages
+            //      instead.
+            if header.mid != CONNECTION_TYPE_MID {
                 let connected_addrs = self.connected_addrs.lock().expect("failed to acquire lock");
-                if header.mid != CONNECTION_TYPE_MID && !connected_addrs.contains(&from) {
+                if !connected_addrs.contains(&from) {
                     trace!(
                         "Got packet from {} which is not a connected client. Discarding",
                         from
@@ -125,7 +132,7 @@ impl UdpServerTransport {
                     continue;
                 }
             }
-            return Ok((n, from));
+            return Ok((n, header, from));
         }
     }
 }
