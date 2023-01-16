@@ -52,7 +52,7 @@ impl<T: ClientTransport> ClientConnection<T> {
         })
     }
 
-    pub fn send<M: Any + Send + Sync>(&self, msg: M) -> io::Result<()> {
+    pub fn send<M: Any + Send + Sync>(&mut self, msg: M) -> io::Result<()> {
         // verify type is valid
         self.msg_table.check_type::<M>()?;
         let tid = TypeId::of::<M>();
@@ -80,10 +80,13 @@ impl<T: ClientTransport> ClientConnection<T> {
         }
     }
 
-    fn send_reliable(&self, mid: MId, ack_num: u32, payload: Arc<Vec<u8>>) -> io::Result<()> {
+    fn send_reliable(&mut self, mid: MId, ack_num: u32, payload: Arc<Vec<u8>>) -> io::Result<()> {
         self.transport.send(mid, payload.clone())?;
         // add the payload to the list of non-acked messages
-        self.non_acked[mid].insert(ack_num, SavedMsg::new(payload));
+        self.non_acked
+            .get_mut(mid)
+            .expect("mid should exist")
+            .insert(ack_num, SavedMsg::new(payload));
         Ok(())
     }
 

@@ -1,7 +1,7 @@
 use crate::connection::server::ServerConnection;
-use crate::message_table::{MsgTable, CONNECTION_TYPE_MID};
+use crate::message_table::{MsgTable, CONNECTION_TYPE_MID, RESPONSE_TYPE_MID};
 use crate::net::{CId, CIdSpec, ErasedNetMsg, NetConfig, NetMsg, Status};
-use crate::transport::std_udp::UdpServerTransport;
+use crate::transport::server_std_udp::UdpServerTransport;
 use log::*;
 use std::any::{Any, TypeId};
 use std::collections::VecDeque;
@@ -16,8 +16,6 @@ use std::net::{SocketAddr, ToSocketAddrs};
 /// be given a connection ID ([`CId`]) starting at `1` that is unique for the session.
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct Server {
-    /// The current [`CId`]. incremented then assigned to new connections.
-    current_cid: CId,
     /// The configuration of the server.
     config: NetConfig,
     /// The received message buffer.
@@ -47,7 +45,6 @@ impl Server {
         let msg_buf = (0..mid_count).map(|_| vec![]).collect();
 
         Ok(Server {
-            current_cid: 0,
             config,
             msg_buf,
             disconnected: VecDeque::new(),
@@ -74,83 +71,6 @@ impl Server {
         Ok(())
     }
 
-    /// Handles a single connection attempt if there is one, calling the `hook` to handel it.
-    ///
-    /// The hook function should return `(should_accept, response_msg)`.
-    ///
-    /// Types `C` and `R` need to match the `C` and `R` types that you passed into
-    /// [`MsgTable::build()`](MsgTable::build).
-    ///
-    /// Returns whether a connection was handled.
-    pub fn handle_new_con<C: Any + Send + Sync, R: Any + Send + Sync>(
-        &mut self,
-        mut hook: impl FnMut(CId, C) -> (bool, R),
-    ) -> bool {
-        // If we have no active connections, we don't have to continue.
-        // TODO: add the handeling of new connections.
-
-        // Handle the new connections.
-        let deser_fn = self.msg_table.deser[CONNECTION_TYPE_MID];
-
-        // List of accepted connections.
-        let mut accepted = vec![];
-        // List of rejected connections.
-        let mut rejected = vec![];
-        // List of connections that errored out.
-        let mut dead = vec![];
-
-        // TODO: impl
-        for (idx, (con, cid, time)) in self.new_cons.iter_mut().enumerate() {
-            match Self::handle_con_helper::<C>(deser_fn, con, self.config.timeout, time) {
-                // Done connecting.
-                Ok(c) => {
-                    // Call hook
-                    let (acc, resp) = hook(*cid, c);
-                    if acc {
-                        accepted.push((idx, resp));
-                    } else {
-                        rejected.push((idx, resp));
-                    }
-                    break; // Only handle 1 connection max.
-                }
-                // Not done yet.
-                Err(e) if e.kind() == WouldBlock => {}
-                // Error in connecting.
-                Err(e) => {
-                    error!(
-                        "IO error occurred while handling a pending connection. {}",
-                        e
-                    );
-                    dead.push(idx);
-                }
-            }
-        }
-
-        // TODO; impl
-        // Dead connections do not count as handled; they do not call the hook.
-        let handled = !(accepted.is_empty() && rejected.is_empty());
-
-        // Handle accepted.
-        for (idx, resp) in accepted {
-            let (con, cid, _) = self.new_cons.remove(idx);
-            self.accept_incoming(cid, con, &resp);
-        }
-
-        // Handle rejected.
-        for (idx, resp) in rejected {
-            let (con, cid, _) = self.new_cons.remove(idx);
-            self.reject_incoming(cid, con, &resp);
-        }
-
-        // Handle dead.
-        for idx in dead {
-            self.new_cons.remove(idx);
-        }
-
-        handled
-        // todo!()
-    }
-
     /// Handles all available new connection attempts in a loop, calling the `hook` for each.
     ///
     /// The hook function should return `(should_accept, response_msg)`.
@@ -159,91 +79,43 @@ impl Server {
     /// [`MsgTable::build()`](MsgTable::build).
     ///
     /// Returns the number of handled connections.
+    ///
+    /// ### Panics
+    /// Panics if generic type parameters `C` or `R` are the wrong type.
     pub fn handle_new_cons<C: Any + Send + Sync, R: Any + Send + Sync>(
         &mut self,
-        mut hook: impl FnMut(CId, C) -> (bool, R),
-    ) -> u32 {
-        // Start handling incoming connections.
-        self.start_incoming();
-
-        // If we have no active connections, we don't have to continue.
-        if self.new_cons.is_empty() {
-            return 0;
+        mut hook: impl FnMut(SocketAddr, C) -> (bool, R),
+    ) -> io::Result<u32> {
+        // verify that `C` and `R` are the right type.
+        let c_tid = TypeId::of::<C>();
+        let r_tid = TypeId::of::<R>();
+        if self.msg_table.tid_map[&c_tid] != CONNECTION_TYPE_MID
+            || self.msg_table.tid_map[&r_tid] != RESPONSE_TYPE_MID
+        {
+            panic!("generic parameters `C` and `R` need to match the generic parameters that you passed into `MsgTableBuilder::build()`");
         }
 
-        // Handle the new connections.
-        let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
+        if self.msg_buf[CONNECTION_TYPE_MID].is_empty() {
+            return Ok(0);
+        }
 
-        // List of accepted connections.
-        let mut accepted = vec![];
-        // List of rejected connections.
-        let mut rejected = vec![];
-        // List of connections that errored out.
-        let mut dead = vec![];
-
-        for (idx, (con, cid, time)) in self.new_cons.iter_mut().enumerate() {
-            match Self::handle_con_helper::<C>(deser_fn, con, self.config.timeout, time) {
-                // Done connecting.
-                Ok(c) => {
-                    // Call hook
-                    let (acc, resp) = hook(*cid, c);
-                    if acc {
-                        accepted.push((idx, resp));
-                    } else {
-                        rejected.push((idx, resp));
-                    }
-                }
-                // Not done yet.
-                Err(e) if e.kind() == ErrorKind::WouldBlock => {}
-                // Error in connecting.
-                Err(e) => {
-                    error!(
-                        "IO error occurred while handling a pending connection. {}",
-                        e
-                    );
-                    dead.push(idx);
-                }
+        let mut count = 0;
+        while let Some((cid, addr, con_msg)) = self.connection.get_pending_connection() {
+            let con_msg = *con_msg
+                .downcast()
+                .expect("generic parameter `C` should be the right type");
+            count += 1;
+            let (accept, response) = hook(addr, con_msg);
+            self.send_to(cid, &response)?;
+            if accept {
+                // TODO: validate expect.
+                self.connection
+                    .new_connection(addr)
+                    .expect("addr to not be alive");
             }
         }
 
-        // Dead connections do not count as handled; they do not call the hook.
-        let handled = accepted.len() + rejected.len();
-
-        // Handle accepted.
-        for (idx, resp) in accepted {
-            let (con, cid, _) = self.new_cons.remove(idx);
-            self.accept_incoming(cid, con, &resp);
-        }
-
-        // Handle rejected.
-        for (idx, resp) in rejected {
-            let (con, cid, _) = self.new_cons.remove(idx);
-            self.reject_incoming(cid, con, &resp);
-        }
-
-        // Handle dead.
-        for idx in dead {
-            self.new_cons.remove(idx);
-        }
-
-        handled as u32
-    }
-
-    // TODO: add logic for handling new connections.
-
-    /// Handles a single disconnect if there is one available.
-    ///
-    /// If there is no disconnects to handle, `hook` will not be called.
-    ///
-    /// Returns weather it handled a disconnect.
-    pub fn handle_disconnect(&mut self, mut hook: impl FnMut(CId, Status)) -> bool {
-        while let Some((cid, status)) = self.disconnected.pop_front() {
-            hook(cid, status);
-            debug!("Removing CId {}", cid);
-            self.rm_tcp_con(cid).unwrap();
-            return true;
-        }
-        false
+        Ok(count)
     }
 
     /// Handles all remaining disconnects.
@@ -251,40 +123,40 @@ impl Server {
     /// Returns the number of disconnects handled.
     pub fn handle_disconnects(&mut self, mut hook: impl FnMut(CId, Status)) -> u32 {
         // disconnect counts.
-        let mut i = 0;
+        let mut count = 0;
 
         while let Some((cid, status)) = self.disconnected.pop_front() {
-            // If the disconnect is a live connection
-            if !self.alive(cid) {
-                continue;
-            }
-
-            // call hook.
             hook(cid, status);
             debug!("Removing CId {}", cid);
-            self.rm_tcp_con(cid).unwrap();
-            i += 1;
+            // TODO: validate expect
+            self.connection
+                .remove_connection(cid)
+                .expect("cid to be connected");
+            count += 1;
         }
-
-        i
+        count
     }
 
     /// Sends a message to the [`CId`] `cid`.
-    pub fn send_to<M: Any + Send + Sync>(&self, cid: CId, msg: &M) -> io::Result<()> {
+    pub fn send_to<M: Any + Send + Sync>(&mut self, cid: CId, msg: &M) -> io::Result<()> {
         self.connection.send_to(cid, msg)
     }
 
     /// Broadcasts a message to all connected clients.
-    pub fn broadcast<T: Any + Send + Sync>(&self, msg: &T) -> io::Result<()> {
-        for cid in self.cids() {
-            self.send_to(cid, msg)?;
+    pub fn broadcast<T: Any + Send + Sync>(&mut self, msg: &T) -> io::Result<()> {
+        for cid in self.cids().collect::<Vec<_>>() {
+            self.connection.send_to(cid, msg)?;
         }
         Ok(())
     }
 
     /// Sends a message to all [`CId`]s that match `spec`.
-    pub fn send_spec<T: Any + Send + Sync>(&self, spec: CIdSpec, msg: &T) -> io::Result<()> {
-        for cid in self.cids().filter(|cid| spec.matches(*cid)) {
+    pub fn send_spec<T: Any + Send + Sync>(&mut self, spec: CIdSpec, msg: &T) -> io::Result<()> {
+        for cid in self
+            .cids()
+            .filter(|cid| spec.matches(*cid))
+            .collect::<Vec<_>>()
+        {
             self.send_to(cid, msg)?;
         }
         Ok(())
@@ -305,7 +177,9 @@ impl Server {
         let tid = TypeId::of::<M>();
         let mid = self.msg_table.tid_map[&tid];
 
-        self.msg_buf[mid].iter().map(|m| m.to_typed::<M>().unwrap())
+        self.msg_buf[mid]
+            .iter()
+            .map(|m| m.get_typed::<M>().unwrap())
     }
 
     /// Gets an iterator for the messages of type `M`.
@@ -317,7 +191,11 @@ impl Server {
         let tid = TypeId::of::<M>();
         let mid = *self.msg_table.tid_map.get(&tid)?;
 
-        Some(self.msg_buf[mid].iter().map(|m| m.to_typed::<M>().unwrap()))
+        Some(
+            self.msg_buf[mid]
+                .iter()
+                .map(|m| m.get_typed::<M>().unwrap()),
+        )
     }
 
     /// Gets an iterator for the messages of type `M` that have been received from [`CId`]s that
@@ -342,7 +220,7 @@ impl Server {
         self.msg_buf[mid]
             .iter()
             .filter(move |net_msg| spec.matches(net_msg.cid))
-            .map(|net_msg| net_msg.to_typed().unwrap())
+            .map(|net_msg| net_msg.get_typed().unwrap())
     }
 
     /// Gets an iterator for the messages of type `M` that have been received from [`CId`]s that
@@ -362,7 +240,7 @@ impl Server {
             self.msg_buf[mid]
                 .iter()
                 .filter(move |net_msg| spec.matches(net_msg.cid))
-                .map(|net_msg| net_msg.to_typed().unwrap()),
+                .map(|net_msg| net_msg.get_typed().unwrap()),
         )
     }
 
@@ -430,10 +308,5 @@ impl Server {
     /// Gets the address of the given [`CId`].
     pub fn cid_of(&self, addr: SocketAddr) -> Option<CId> {
         self.connection.cid_of(addr)
-    }
-
-    fn new_cid(&mut self) -> CId {
-        self.current_cid += 1;
-        self.current_cid
     }
 }

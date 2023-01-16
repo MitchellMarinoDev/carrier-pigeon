@@ -15,13 +15,14 @@
 //! [`examples/` directory](https://github.com/MitchellMarinoDev/carrier-pigeon/blob/main/examples)
 //! on the GitHub repo.
 
+extern crate core;
+
 pub mod net;
 
 mod client;
 mod connection;
 mod message_table;
 mod server;
-mod time;
 mod transport;
 mod util;
 

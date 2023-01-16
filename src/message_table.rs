@@ -71,7 +71,7 @@ impl Guarantees {
 }
 
 /// A registration in the [`MsgTableBuilder`].
-#[derive(Copy, Clone, Debug, Hash)]
+#[derive(Copy, Clone)]
 struct Registration {
     tid: TypeId,
     guarantees: Guarantees,
@@ -95,7 +95,7 @@ pub struct MsgTableBuilder {
 ///
 /// You can build this by registering your types with a [`MsgTableBuilder`] or [`SortedMsgTableBuilder`], then building it with
 /// [`MsgTableBuilder::build()`] or [`SortedMsgTableBuilder::build()`].
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct MsgTable {
     /// The mapping from TypeId to MessageId.
@@ -354,7 +354,7 @@ impl MsgTable {
     }
 
     /// Checks if the type `T` is registered. If it is not, it returns an error.
-    pub fn check_type<T>(&self) -> io::Result<()> {
+    pub fn check_type<T: Any + Send + Sync>(&self) -> io::Result<()> {
         let tid = TypeId::of::<T>();
         if !self.valid_tid(tid) {
             return Err(Error::new(

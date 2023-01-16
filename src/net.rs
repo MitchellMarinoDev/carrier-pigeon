@@ -266,7 +266,7 @@ impl ErasedNetMsg {
     }
 
     /// Converts this to NetMsg, borrowed from this.
-    pub(crate) fn to_typed<T: Any + Send + Sync>(&self) -> Option<NetMsg<T>> {
+    pub(crate) fn get_typed<T: Any + Send + Sync>(&self) -> Option<NetMsg<T>> {
         let msg = self.msg.downcast_ref()?;
         Some(NetMsg {
             cid: self.cid,

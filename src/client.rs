@@ -1,7 +1,7 @@
 use crate::connection::client::ClientConnection;
 use crate::message_table::{MsgTable, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID};
 use crate::net::{ErasedNetMsg, NetConfig, NetMsg, Status};
-use crate::transport::std_udp::UdpClientTransport;
+use crate::transport::client_std_udp::UdpClientTransport;
 use crossbeam_channel::internal::SelectHandle;
 use crossbeam_channel::Receiver;
 use log::{debug, error, trace};
@@ -44,8 +44,8 @@ impl Client {
     /// message, and for the server to send back the response message.
     #[allow(clippy::new_ret_no_self)]
     pub fn new<C: Any + Send + Sync>(
-        local: impl ToSocketAddrs + Send,
-        peer: impl ToSocketAddrs + Send,
+        local: impl ToSocketAddrs + Send + 'static,
+        peer: impl ToSocketAddrs + Send + 'static,
         msg_table: MsgTable,
         config: NetConfig,
         con_msg: C,
@@ -103,7 +103,7 @@ impl Client {
         };
 
         // Send connection message
-        client.send(&con_msg)?;
+        client.send(con_msg)?;
         trace!("Client connection message sent. Awaiting response...");
 
         // Get response message.
@@ -151,7 +151,7 @@ impl Client {
     /// method before dropping the client to let the server know that
     /// you intentionally disconnected. The `discon_msg` allows you to
     /// give a reason for the disconnect.
-    pub fn disconnect<D: Any + Send + Sync>(&mut self, discon_msg: &D) -> io::Result<()> {
+    pub fn disconnect<D: Any + Send + Sync>(&mut self, discon_msg: D) -> io::Result<()> {
         let tid = TypeId::of::<D>();
         if self.msg_table.tid_map[&tid] != DISCONNECT_TYPE_MID {
             return Err(Error::new(
@@ -198,7 +198,7 @@ impl Client {
         let tid = TypeId::of::<T>();
         let mid = self.msg_table.tid_map[&tid];
 
-        self.msg_buff[mid].iter().map(|m| m.to_typed().unwrap())
+        self.msg_buff[mid].iter().map(|m| m.get_typed().unwrap())
     }
 
     /// Gets an iterator for the messages of type `T`.
@@ -210,7 +210,7 @@ impl Client {
         let tid = TypeId::of::<T>();
         let mid = *self.msg_table.tid_map.get(&tid)?;
 
-        Some(self.msg_buff[mid].iter().map(|m| m.to_typed().unwrap()))
+        Some(self.msg_buff[mid].iter().map(|m| m.get_typed().unwrap()))
     }
 
     /// Receives the messages from the connections.

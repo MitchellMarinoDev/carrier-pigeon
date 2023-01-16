@@ -6,7 +6,8 @@ use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 
-pub mod std_udp;
+pub mod client_std_udp;
+pub mod server_std_udp;
 
 pub trait ClientTransport {
     fn new(
