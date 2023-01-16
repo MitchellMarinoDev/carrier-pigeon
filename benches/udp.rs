@@ -16,7 +16,7 @@ fn single_udp_big(b: &mut Bencher) {
     b.iter(|| {
         server.clear_msgs();
         client.send(&s_msg).unwrap();
-        while server.recv_msgs() == 0 {}
+        while server.get_msgs() == 0 {}
         let msg = server.recv::<UdpMsg>().next().unwrap();
         assert_eq!(msg.m, &s_msg);
     })
@@ -32,7 +32,7 @@ fn single_udp_small(b: &mut Bencher) {
     b.iter(|| {
         server.clear_msgs();
         client.send(&s_msg).unwrap();
-        while server.recv_msgs() == 0 {}
+        while server.get_msgs() == 0 {}
         let msg = server.recv::<UdpMsg>().next().unwrap();
         assert_eq!(msg.m, &s_msg);
     })
@@ -52,7 +52,7 @@ fn many_udp_big(b: &mut Bencher) {
         }
         let mut n = 0;
         while n < 100 {
-            n += server.recv_msgs();
+            n += server.get_msgs();
         }
         assert_eq!(server.recv::<UdpMsg>().count(), 100);
     })
@@ -72,7 +72,7 @@ fn many_udp_small(b: &mut Bencher) {
         }
         let mut n = 0;
         while n < 100 {
-            n += server.recv_msgs();
+            n += server.get_msgs();
         }
         assert_eq!(server.recv::<UdpMsg>().count(), 100);
     })

@@ -16,7 +16,6 @@
 //! on the GitHub repo.
 
 pub mod net;
-// pub mod udp;
 
 mod client;
 mod connection;

@@ -161,7 +161,7 @@ impl UdpCon {
         self.udp.set_nonblocking(nonblocking)
     }
 
-    /// Returns the socket address of the remote peer of this UDP connection.
+    /// Returns the socket address of the peer of this UDP connection.
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.udp.peer_addr()
     }

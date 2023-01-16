@@ -4,9 +4,10 @@ use crate::MId;
 use hashbrown::HashMap;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::any::{Any, TypeId};
+use std::any::{type_name, Any, TypeId};
 use std::fmt::{Display, Formatter};
 use std::io;
+use std::io::{Error, ErrorKind};
 use MsgRegError::NonUniqueIdentifier;
 
 /// Delivery guarantees.
@@ -336,6 +337,46 @@ impl MsgTable {
     #[inline]
     pub fn valid_tid(&self, tid: TypeId) -> bool {
         self.tid_map.contains_key(&tid)
+    }
+
+    /// Checks if the [`TypeId`] `tid` is registered. If it is not, it returns an error.
+    ///
+    /// If you have the type as a generic, use [`check_type`](Self::check_type) instead. It gives
+    /// a better error message.
+    pub fn check_tid(&self, tid: TypeId) -> io::Result<()> {
+        if !self.valid_tid(tid) {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("Type ({:?}) not registered as a message.", tid),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Checks if the type `T` is registered. If it is not, it returns an error.
+    pub fn check_type<T>(&self) -> io::Result<()> {
+        let tid = TypeId::of::<T>();
+        if !self.valid_tid(tid) {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("Type ({}) not registered as a message.", type_name::<T>()),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn check_mid(&self, mid: MId) -> io::Result<()> {
+        if !self.valid_mid(mid) {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "Message specified MId {}, but the maximum MId is {}.",
+                    mid,
+                    self.mid_count()
+                ),
+            ));
+        }
+        Ok(())
     }
 }
 

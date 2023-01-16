@@ -51,7 +51,7 @@ fn main() {
         // This clears the message buffer so that messages from last frame are not carried over.
         server.clear_msgs();
         // Then get the new messages that came in since the last call to this function.
-        server.recv_msgs();
+        server.get_msgs();
 
         // This should be called every once in a while to clean up so that the
         // server doesn't send messages to disconnected clients.

@@ -33,7 +33,7 @@ fn send_recv() {
     // Give the client enough time to send the messages.
     std::thread::sleep(Duration::from_millis(100));
 
-    assert_eq!(server.recv_msgs(), 20);
+    assert_eq!(server.get_msgs(), 20);
 
     let tcp_msgs: Vec<_> = server.recv::<TcpMsg>().collect();
     assert_eq!(tcp_msgs.len(), 10); // Make sure all 10 tcp messages went through.

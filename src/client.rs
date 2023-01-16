@@ -1,12 +1,11 @@
-use crate::connection::ClientConnection;
+use crate::connection::client::ClientConnection;
 use crate::message_table::{MsgTable, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID};
 use crate::net::{ErasedNetMsg, NetConfig, NetMsg, Status};
 use crate::transport::std_udp::UdpClientTransport;
-use crate::transport::ClientTransport;
 use crossbeam_channel::internal::SelectHandle;
 use crossbeam_channel::Receiver;
 use log::{debug, error, trace};
-use std::any::{type_name, Any, TypeId};
+use std::any::{Any, TypeId};
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::ErrorKind::InvalidData;
@@ -91,19 +90,7 @@ impl Client {
         }?;
 
         debug!("Attempting to create a client connection.");
-        let transport = UdpClientTransport::new(local, peer, msg_table.clone())?;
-        trace!(
-            "UdpSocket connected from {} to {}",
-            transport
-                .local_addr()
-                .map(|addr| addr.to_string())
-                .unwrap_or("UNKNOWN".to_owned()),
-            transport
-                .peer_addr()
-                .map(|addr| addr.to_string())
-                .unwrap_or("UNKNOWN".to_owned()),
-        );
-        let connection = ClientConnection::new(msg_table.clone(), transport);
+        let connection = ClientConnection::new(msg_table.clone(), local, peer)?;
 
         let msg_buff = (0..msg_table.mid_count()).map(|_| vec![]).collect();
 
@@ -191,7 +178,7 @@ impl Client {
         self.status().connected()
     }
 
-    /// Sends a message to the remote.
+    /// Sends a message to the peer.
     ///
     /// `T` must be registered in the [`MsgTable`].
     pub fn send<T: Any + Send + Sync>(&mut self, msg: T) -> io::Result<()> {
@@ -204,10 +191,11 @@ impl Client {
     /// Panics if the type `T` was not registered.
     /// For a non-panicking version, see [try_get_msgs()](Self::try_get_msgs).
     pub fn get_msgs<T: Any + Send + Sync>(&self) -> impl Iterator<Item = NetMsg<T>> + '_ {
+        self.msg_table.check_type::<T>().expect(
+            "`get_msgs` panics if generic type `T` is not registered in the MsgTable. \
+            For a non panicking version, use `try_get_msgs`",
+        );
         let tid = TypeId::of::<T>();
-        if !self.msg_table.valid_tid(tid) {
-            panic!("Type ({}) not registered.", type_name::<T>());
-        }
         let mid = self.msg_table.tid_map[&tid];
 
         self.msg_buff[mid].iter().map(|m| m.to_typed().unwrap())
@@ -228,7 +216,7 @@ impl Client {
     /// Receives the messages from the connections.
     /// This should be done before calling `recv<T>()`.
     ///
-    /// When done in a game loop, you should call `clear_msgs()`, then `recv_msgs()`
+    /// When done in a game loop, you should call `clear_msgs()`, then `get_msgs()`
     /// before default time. This will clear the messages between frames.
     pub fn recv_msgs(&mut self) -> u32 {
         let mut i = 0;
@@ -270,7 +258,7 @@ impl Client {
         self.connection.local_addr()
     }
 
-    /// Gets the address of the remote.
+    /// Gets the address of the peer.
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.connection.peer_addr()
     }
