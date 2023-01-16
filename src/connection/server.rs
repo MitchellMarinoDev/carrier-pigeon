@@ -1,5 +1,5 @@
 use crate::connection::{ConnectionList, ConnectionListError, NonAckedMsgs, SavedMsg};
-use crate::net::{MNum, MsgHeader};
+use crate::net::MsgHeader;
 use crate::transport::ServerTransport;
 use crate::{CId, MId, MsgTable};
 use hashbrown::HashMap;
@@ -9,7 +9,8 @@ use std::collections::VecDeque;
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 
 /// A wrapper around the the [`ServerTransport`] that adds the reliability and ordering.
 pub struct ServerConnection<T: ServerTransport> {
@@ -19,8 +20,8 @@ pub struct ServerConnection<T: ServerTransport> {
     connection_list: ConnectionList,
     pending_connections: VecDeque<(CId, SocketAddr, Box<dyn Any + Send + Sync>)>,
 
-    msg_counter: HashMap<CId, Vec<MNum>>,
-    non_acked: HashMap<CId, Vec<NonAckedMsgs>>,
+    msg_counter: HashMap<CId, Vec<AtomicU32>>,
+    non_acked: HashMap<CId, Vec<Mutex<NonAckedMsgs>>>,
 
     missing_msg: HashMap<CId, Vec<Vec<u32>>>,
 }
@@ -52,7 +53,7 @@ impl<T: ServerTransport> ServerConnection<T> {
         })
     }
 
-    pub fn send_to<M: Any + Send + Sync>(&mut self, cid: CId, msg: &M) -> io::Result<()> {
+    pub fn send_to<M: Any + Send + Sync>(&self, cid: CId, msg: &M) -> io::Result<()> {
         // verify type is valid
         self.msg_table.check_type::<M>()?;
         let addr = self
@@ -64,13 +65,7 @@ impl<T: ServerTransport> ServerConnection<T> {
 
         // create the message header
         let mid = self.msg_table.tid_map[&tid];
-        let ack_num = self.msg_counter[&cid][mid];
-        *self
-            .msg_counter
-            .get_mut(&cid)
-            .expect("cid should be valid")
-            .get_mut(mid)
-            .expect("mid should be valid") += 1;
+        let ack_num = self.msg_counter[&cid][mid].fetch_add(1, Ordering::AcqRel);
         let msg_header = MsgHeader::new(mid, ack_num);
 
         // build the payload using the header and the message
@@ -91,7 +86,7 @@ impl<T: ServerTransport> ServerConnection<T> {
     }
 
     fn send_reliable(
-        &mut self,
+        &self,
         cid: CId,
         addr: SocketAddr,
         mid: MId,
@@ -99,13 +94,13 @@ impl<T: ServerTransport> ServerConnection<T> {
         payload: Arc<Vec<u8>>,
     ) -> io::Result<()> {
         self.transport.send_to(addr, mid, payload.clone())?;
-        // add the payload to the list of non-acked messages
-        self.non_acked
-            .get_mut(&cid)
-            .expect("cid should be valid")
-            .get_mut(mid)
-            .expect("mid should be valid")
-            .insert(ack_num, SavedMsg::new(payload));
+        {
+            // add the payload to the list of non-acked messages
+            let mut non_acked = self.non_acked[&cid][mid]
+                .lock()
+                .expect("should be able to obtain lock");
+            non_acked.insert(ack_num, SavedMsg::new(payload));
+        }
         Ok(())
     }
 

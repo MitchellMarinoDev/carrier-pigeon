@@ -103,7 +103,7 @@ impl Client {
         };
 
         // Send connection message
-        client.send(con_msg)?;
+        client.send(&con_msg)?;
         trace!("Client connection message sent. Awaiting response...");
 
         // Get response message.
@@ -151,7 +151,7 @@ impl Client {
     /// method before dropping the client to let the server know that
     /// you intentionally disconnected. The `discon_msg` allows you to
     /// give a reason for the disconnect.
-    pub fn disconnect<D: Any + Send + Sync>(&mut self, discon_msg: D) -> io::Result<()> {
+    pub fn disconnect<D: Any + Send + Sync>(&mut self, discon_msg: &D) -> io::Result<()> {
         let tid = TypeId::of::<D>();
         if self.msg_table.tid_map[&tid] != DISCONNECT_TYPE_MID {
             return Err(Error::new(
@@ -181,7 +181,7 @@ impl Client {
     /// Sends a message to the peer.
     ///
     /// `T` must be registered in the [`MsgTable`].
-    pub fn send<T: Any + Send + Sync>(&mut self, msg: T) -> io::Result<()> {
+    pub fn send<T: Any + Send + Sync>(&mut self, msg: &T) -> io::Result<()> {
         self.connection.send(msg)
     }
 
@@ -190,7 +190,7 @@ impl Client {
     /// ### Panics
     /// Panics if the type `T` was not registered.
     /// For a non-panicking version, see [try_get_msgs()](Self::try_get_msgs).
-    pub fn get_msgs<T: Any + Send + Sync>(&self) -> impl Iterator<Item = NetMsg<T>> + '_ {
+    pub fn recv<T: Any + Send + Sync>(&self) -> impl Iterator<Item = NetMsg<T>> + '_ {
         self.msg_table.check_type::<T>().expect(
             "`get_msgs` panics if generic type `T` is not registered in the MsgTable. \
             For a non panicking version, use `try_get_msgs`",
@@ -204,9 +204,7 @@ impl Client {
     /// Gets an iterator for the messages of type `T`.
     ///
     /// Returns `None` if the type `T` was not registered.
-    pub fn try_get_msgs<T: Any + Send + Sync>(
-        &self,
-    ) -> Option<impl Iterator<Item = NetMsg<T>> + '_> {
+    pub fn try_recv<T: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = NetMsg<T>> + '_> {
         let tid = TypeId::of::<T>();
         let mid = *self.msg_table.tid_map.get(&tid)?;
 
@@ -218,7 +216,7 @@ impl Client {
     ///
     /// When done in a game loop, you should call `clear_msgs()`, then `get_msgs()`
     /// before default time. This will clear the messages between frames.
-    pub fn recv_msgs(&mut self) -> u32 {
+    pub fn get_msgs(&mut self) -> u32 {
         let mut i = 0;
 
         // UDP

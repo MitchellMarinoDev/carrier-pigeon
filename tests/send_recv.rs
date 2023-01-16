@@ -1,6 +1,6 @@
 //! Simple send/receive tests.
 use crate::helper::create_client_server_pair;
-use crate::helper::test_messages::{TcpMsg, UdpMsg};
+use crate::helper::test_messages::{ReliableMsg, UnreliableMsg};
 use simple_logger::SimpleLogger;
 use std::time::Duration;
 
@@ -19,14 +19,14 @@ fn send_recv() {
     // Send 10 tcp messages.
     for i in 0..10 {
         client
-            .send(&TcpMsg::new(format!("Test TCP Msg {}", i)))
+            .send(&ReliableMsg::new(format!("Test TCP Msg {}", i)))
             .unwrap();
     }
 
     // Send 10 udp messages.
     for i in 0..10 {
         client
-            .send(&UdpMsg::new(format!("Test UDP Msg {}", i)))
+            .send(&UnreliableMsg::new(format!("Test UDP Msg {}", i)))
             .unwrap();
     }
 
@@ -35,7 +35,7 @@ fn send_recv() {
 
     assert_eq!(server.get_msgs(), 20);
 
-    let tcp_msgs: Vec<_> = server.recv::<TcpMsg>().collect();
+    let tcp_msgs: Vec<_> = server.recv::<ReliableMsg>().collect();
     assert_eq!(tcp_msgs.len(), 10); // Make sure all 10 tcp messages went through.
 
     for (i, msg) in tcp_msgs.into_iter().enumerate() {
@@ -45,13 +45,13 @@ fn send_recv() {
 
     // Despite UDP being unreliable, we are sending the messages through localhost
     // so none should get lost.
-    let udp_msgs: Vec<_> = server.recv::<UdpMsg>().map(|m| m.m).collect();
+    let udp_msgs: Vec<_> = server.recv::<UnreliableMsg>().map(|m| m.m).collect();
     assert_eq!(udp_msgs.len(), 10); // Make sure all 10 udp messages went through.
 
     // Udp is unreliable unordered. Assert that all messages arrive.
     for i in 0..10 {
         let msg = format!("Test UDP Msg {}", i);
-        assert!(udp_msgs.contains(&&UdpMsg::new(msg)));
+        assert!(udp_msgs.contains(&&UnreliableMsg::new(msg)));
     }
 
     // SERVER TO CLIENT
@@ -60,23 +60,23 @@ fn send_recv() {
     // Send 10 tcp messages.
     for i in 0..10 {
         server
-            .send_to(1, &TcpMsg::new(format!("Test TCP message {}", i)))
+            .send_to(1, &ReliableMsg::new(format!("Test TCP message {}", i)))
             .unwrap();
     }
 
     // Send 10 udp messages.
     for i in 0..10 {
         server
-            .send_to(1, &UdpMsg::new(format!("Test UDP message {}", i)))
+            .send_to(1, &UnreliableMsg::new(format!("Test UDP message {}", i)))
             .unwrap();
     }
 
     // Give the client enough time to send the messages.
     std::thread::sleep(Duration::from_millis(100));
 
-    assert_eq!(client.recv_msgs(), 20);
+    assert_eq!(client.get_msgs(), 20);
 
-    let tcp_msgs: Vec<_> = client.get_messages::<TcpMsg>().collect();
+    let tcp_msgs: Vec<_> = client.recv::<ReliableMsg>().collect();
     assert_eq!(tcp_msgs.len(), 10); // Make sure all 10 tcp messages went through.
 
     for (i, p) in tcp_msgs.into_iter().enumerate() {
@@ -86,12 +86,15 @@ fn send_recv() {
 
     // Despite UDP being unreliable, we are sending the messages through localhost
     // so none should get lost.
-    let udp_msgs: Vec<_> = client.get_messages::<UdpMsg>().map(|msg| msg.m).collect();
+    let udp_msgs: Vec<_> = client
+        .recv::<UnreliableMsg>()
+        .map(|msg| msg.m)
+        .collect();
     assert_eq!(udp_msgs.len(), 10); // Make sure all 10 udp messages went through.
 
     // Udp is unreliable unordered. Assert that all messages arrive.
     for i in 0..10 {
         let msg = format!("Test UDP message {}", i);
-        assert!(udp_msgs.contains(&&UdpMsg::new(msg)));
+        assert!(udp_msgs.contains(&&UnreliableMsg::new(msg)));
     }
 }

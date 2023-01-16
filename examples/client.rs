@@ -13,9 +13,9 @@
 //! You may request the server to disconnect you by writing
 //! `disconnect-me`.
 
-use crate::shared::{Connection, Disconnect, Msg, Response, ADDR_LOCAL};
+use crate::shared::{Connection, Disconnect, Msg, Response, CLIENT_ADDR_LOCAL, SERVER_ADDR_LOCAL};
 use carrier_pigeon::net::NetConfig;
-use carrier_pigeon::{Client, MsgTable, Transport};
+use carrier_pigeon::{Client, Guarantees, MsgTableBuilder};
 use log::LevelFilter;
 use simple_logger::SimpleLogger;
 use std::io::stdin;
@@ -34,22 +34,25 @@ fn main() {
 
     let mut args = env::args().skip(1);
     // Get the address from the command line args, or use loopback on port 7799.
-    let addr = args.next().unwrap_or(ADDR_LOCAL.to_owned());
+    let local = args.next().unwrap_or(CLIENT_ADDR_LOCAL.to_owned());
+    let peer = args.next().unwrap_or(SERVER_ADDR_LOCAL.to_owned());
 
     let username = args.next().unwrap_or("MyUser".to_owned());
 
     // Create the message table.
     // This should be the same on the client and server.
-    let mut table = MsgTable::new();
-    table.register::<Msg>(Transport::UDP).unwrap();
-    let parts = table.build::<Connection, Response, Disconnect>().unwrap();
+    let mut builder = MsgTableBuilder::new();
+    builder
+        .register_ordered::<Msg>(Guarantees::Unreliable)
+        .unwrap();
+    let table = builder.build::<Connection, Response, Disconnect>().unwrap();
 
     let con_msg = Connection {
         user: username.clone(),
     };
 
     // Start the connection to the server.
-    let client = Client::new(addr, parts, NetConfig::default(), con_msg);
+    let client = Client::new(local, peer, table, NetConfig::default(), con_msg);
 
     // Block until the connection is made.
     let (mut client, resp) = client.block().expect("Failed to connect to server.");
@@ -77,7 +80,7 @@ fn main() {
         // This clears the message buffer so that messages from last frame are not carried over.
         client.clear_msgs();
         // Then get the new messages that came in since the last call to this function.
-        client.recv_msgs();
+        client.get_msgs();
 
         // Get messages from the console, and send it to the server.
         while let Ok(text) = receiver.try_recv() {
@@ -108,7 +111,7 @@ fn main() {
         }
 
         // receive messages from the server.
-        for msg in client.get_messages::<Msg>() {
+        for msg in client.recv::<Msg>() {
             println!("{}: \"{}\"", msg.from, msg.text);
         }
 

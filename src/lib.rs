@@ -27,6 +27,6 @@ mod transport;
 mod util;
 
 pub use client::{Client, OptionPendingClient, PendingClient};
-pub use message_table::{MsgRegError, MsgTable, MsgTableBuilder};
+pub use message_table::{Guarantees, MsgRegError, MsgTable, MsgTableBuilder};
 pub use net::{CId, MId, Transport};
 pub use server::Server;

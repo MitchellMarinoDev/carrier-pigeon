@@ -138,20 +138,20 @@ impl Server {
     }
 
     /// Sends a message to the [`CId`] `cid`.
-    pub fn send_to<M: Any + Send + Sync>(&mut self, cid: CId, msg: &M) -> io::Result<()> {
+    pub fn send_to<M: Any + Send + Sync>(&self, cid: CId, msg: &M) -> io::Result<()> {
         self.connection.send_to(cid, msg)
     }
 
     /// Broadcasts a message to all connected clients.
-    pub fn broadcast<T: Any + Send + Sync>(&mut self, msg: &T) -> io::Result<()> {
+    pub fn broadcast<T: Any + Send + Sync>(&self, msg: &T) -> io::Result<()> {
         for cid in self.cids().collect::<Vec<_>>() {
-            self.connection.send_to(cid, msg)?;
+            self.send_to(cid, msg)?;
         }
         Ok(())
     }
 
     /// Sends a message to all [`CId`]s that match `spec`.
-    pub fn send_spec<T: Any + Send + Sync>(&mut self, spec: CIdSpec, msg: &T) -> io::Result<()> {
+    pub fn send_spec<T: Any + Send + Sync>(&self, spec: CIdSpec, msg: &T) -> io::Result<()> {
         for cid in self
             .cids()
             .filter(|cid| spec.matches(*cid))

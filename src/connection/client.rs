@@ -52,7 +52,7 @@ impl<T: ClientTransport> ClientConnection<T> {
         })
     }
 
-    pub fn send<M: Any + Send + Sync>(&mut self, msg: M) -> io::Result<()> {
+    pub fn send<M: Any + Send + Sync>(&mut self, msg: &M) -> io::Result<()> {
         // verify type is valid
         self.msg_table.check_type::<M>()?;
         let tid = TypeId::of::<M>();
@@ -68,7 +68,7 @@ impl<T: ClientTransport> ClientConnection<T> {
         payload.extend(msg_header.to_be_bytes());
 
         let ser_fn = self.msg_table.ser[mid];
-        ser_fn(&msg, &mut payload).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+        ser_fn(msg, &mut payload).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
         let payload = Arc::new(payload);
 
         // send the payload based on the guarantees

@@ -49,7 +49,7 @@ fn graceful_disconnect() {
         // Give the server enough time to send the disconnect message.
         std::thread::sleep(Duration::from_millis(100));
 
-        let count = client.recv_msgs();
+        let count = client.get_msgs();
         assert_eq!(count, 1);
         assert_eq!(
             client.status().disconnected::<Disconnect>().unwrap(),
@@ -73,7 +73,7 @@ fn drop_test() {
         // Give the server enough time for the connection to sever.
         std::thread::sleep(Duration::from_millis(100));
 
-        client.recv_msgs();
+        client.get_msgs();
         // Make sure the client is dropped abruptly
         assert!(client.status().dropped().is_some());
     }

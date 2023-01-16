@@ -164,10 +164,11 @@ pub type MId = usize;
 /// be uniquely identified.
 pub type CId = u32;
 
-/// Message Number.
+/// Acknowledgement Number.
 ///
 /// This is an integer incremented for every message sent, so messages can be uniquely identified.
-pub type MNum = u32;
+/// This is used as a way to acknowledge reliable messages, and order the messages as they come in.
+pub type AckNum = u32;
 
 /// A way to specify the valid [`CId`]s for an operation.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]

@@ -1,7 +1,7 @@
 pub mod client;
 pub mod server;
 
-use crate::net::MNum;
+use crate::net::AckNum;
 use crate::util::DoubleHashMap;
 use crate::CId;
 use hashbrown::HashMap;
@@ -137,7 +137,7 @@ impl SavedMsg {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct NonAckedMsgs(HashMap<MNum, SavedMsg>);
+struct NonAckedMsgs(HashMap<AckNum, SavedMsg>);
 
 impl NonAckedMsgs {
     fn new() -> Self {
@@ -146,7 +146,7 @@ impl NonAckedMsgs {
 }
 
 impl Deref for NonAckedMsgs {
-    type Target = HashMap<MNum, SavedMsg>;
+    type Target = HashMap<AckNum, SavedMsg>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

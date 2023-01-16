@@ -11,9 +11,9 @@
 //! they will be disconnected, and their message will
 //! not be broadcast to the other clients.
 
-use crate::shared::{Connection, Disconnect, Msg, Response, ADDR_LOCAL};
+use crate::shared::{Connection, Disconnect, Msg, Response, CLIENT_ADDR_LOCAL, SERVER_ADDR_LOCAL};
 use carrier_pigeon::net::{CIdSpec, NetConfig};
-use carrier_pigeon::{MsgTable, Server, Transport};
+use carrier_pigeon::{Guarantees, MsgTable, MsgTableBuilder, Server, Transport};
 use log::LevelFilter;
 use simple_logger::SimpleLogger;
 use std::env;
@@ -30,18 +30,20 @@ fn main() {
 
     let mut args = env::args().skip(1);
     // Get the address from the command line args, or use loopback on port 7799.
-    let addr = args.next().unwrap_or(ADDR_LOCAL.to_owned());
+    let listen = args.next().unwrap_or(SERVER_ADDR_LOCAL.to_owned());
 
     // Create the message table.
     // This should be the same on the client and server.
-    let mut table = MsgTable::new();
-    table.register::<Msg>(Transport::UDP).unwrap();
+    let mut builder = MsgTableBuilder::new();
+    builder
+        .register_ordered::<Msg>(Guarantees::Unreliable)
+        .unwrap();
 
-    let parts = table.build::<Connection, Response, Disconnect>().unwrap();
+    let table = builder.build::<Connection, Response, Disconnect>().unwrap();
 
     // Start the server.
     let mut server =
-        Server::new(addr, parts, NetConfig::default()).expect("Failed to create server.");
+        Server::new(listen, table, NetConfig::default()).expect("Failed to create server.");
 
     let blacklisted_users = vec!["john", "jane"];
 

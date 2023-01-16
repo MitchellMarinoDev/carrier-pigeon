@@ -192,14 +192,14 @@ impl MsgTableBuilder {
     /// requires constant registration order, but does not require a unique string identifier.
     pub fn register_sorted<T>(
         &mut self,
-        identifier: String,
         guarantees: Guarantees,
+        identifier: impl ToString,
     ) -> Result<(), MsgRegError>
     where
         T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
         self.sorted
-            .push(self.get_sorted_registration::<T>(identifier, guarantees)?);
+            .push(self.get_sorted_registration::<T>(guarantees, identifier)?);
         Ok(())
     }
 
@@ -245,12 +245,13 @@ impl MsgTableBuilder {
     /// Builds the things needed for a sorted registration.
     fn get_sorted_registration<T>(
         &self,
-        identifier: String,
         guarantees: Guarantees,
+        identifier: impl ToString,
     ) -> Result<(String, Registration), MsgRegError>
     where
         T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
+        let identifier = identifier.to_string();
         // Check if the identifier has been registered already.
         if self.identifier_registered(&identifier) {
             return Err(NonUniqueIdentifier(identifier));

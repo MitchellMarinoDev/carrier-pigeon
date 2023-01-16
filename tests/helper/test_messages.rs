@@ -1,28 +1,28 @@
 #![allow(unused)]
 //! Test messages for use in tests.
 
-use carrier_pigeon::{MsgTable, MsgTableParts, Transport};
+use carrier_pigeon::{Guarantees, MsgTable, MsgTableBuilder, Transport};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
-/// A test message for TCP.
-pub struct TcpMsg {
+/// A reliable test message.
+pub struct ReliableMsg {
     pub msg: String,
 }
-impl TcpMsg {
+impl ReliableMsg {
     pub fn new<A: Into<String>>(msg: A) -> Self {
-        TcpMsg { msg: msg.into() }
+        ReliableMsg { msg: msg.into() }
     }
 }
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
-/// A test message for UDP.
-pub struct UdpMsg {
+/// An unreliable test message.
+pub struct UnreliableMsg {
     pub msg: String,
 }
-impl UdpMsg {
+impl UnreliableMsg {
     pub fn new<A: Into<String>>(msg: A) -> Self {
-        UdpMsg { msg: msg.into() }
+        UnreliableMsg { msg: msg.into() }
     }
 }
 
@@ -66,9 +66,13 @@ impl Response {
 }
 
 /// Builds a table with all these test messages and returns it's parts.
-pub fn get_table_parts() -> MsgTableParts {
-    let mut table = MsgTable::new();
-    table.register::<TcpMsg>(Transport::TCP).unwrap();
-    table.register::<UdpMsg>(Transport::UDP).unwrap();
-    table.build::<Connection, Response, Disconnect>().unwrap()
+pub fn get_msg_table() -> MsgTable {
+    let mut builder = MsgTableBuilder::new();
+    builder
+        .register_ordered::<ReliableMsg>(Guarantees::Reliable)
+        .unwrap();
+    builder
+        .register_ordered::<UnreliableMsg>(Guarantees::Unreliable)
+        .unwrap();
+    builder.build::<Connection, Response, Disconnect>().unwrap()
 }
