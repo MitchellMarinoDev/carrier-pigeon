@@ -59,7 +59,7 @@ impl ServerTransport for UdpServerTransport {
         // Message can be sent!
 
         trace!(
-            "UDP: Sending message with MId: {}, len: {}.",
+            "Server: Sending message with MId: {}, len: {}.",
             mid,
             payload_len
         );
@@ -89,6 +89,11 @@ impl ServerTransport for UdpServerTransport {
         }
 
         let header = MsgHeader::from_be_bytes(&self.buf[0..HEADER_SIZE]);
+        trace!(
+            "Server: received message with MId: {}, len: {}.",
+            header.mid,
+            n,
+        );
 
         self.msg_table.check_mid(header.mid)?;
 
@@ -111,6 +116,7 @@ impl UdpServerTransport {
             {
                 let connected_addrs = self.connected_addrs.lock().expect("failed to acquire lock");
                 if !connected_addrs.contains(&from) {
+                    trace!("Got packet from {} which is not a connected client. Discarding", from);
                     continue;
                 }
             }

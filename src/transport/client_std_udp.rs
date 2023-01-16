@@ -57,7 +57,7 @@ impl ClientTransport for UdpClientTransport {
         // Message can be sent!
 
         trace!(
-            "UDP: Sending message with MId: {}, len: {}.",
+            "Client: Sending message with MId: {}, len: {}.",
             mid,
             payload_len
         );
@@ -87,6 +87,11 @@ impl ClientTransport for UdpClientTransport {
         }
 
         let header = MsgHeader::from_be_bytes(&self.buf[0..HEADER_SIZE]);
+        trace!(
+            "Client: received message with MId: {}, len: {}.",
+            header.mid,
+            n,
+        );
 
         self.msg_table.check_mid(header.mid)?;
 

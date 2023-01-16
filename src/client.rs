@@ -89,7 +89,7 @@ impl Client {
             )),
         }?;
 
-        debug!("Attempting to create a client connection.");
+        debug!("Attempting to create a client connection");
         let connection = ClientConnection::new(msg_table.clone(), local, peer)?;
 
         let msg_buff = (0..msg_table.mid_count()).map(|_| vec![]).collect();
