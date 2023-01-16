@@ -37,8 +37,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
     // and there would be other things to do.
     while 0
         == server
-            .handle_new_cons(|_cid, _con_msg: Connection| (true, Response::Accepted))
-            .unwrap()
+            .handle_new_cons(|_cid, _addr, _con_msg: Connection| (true, Response::Accepted))
     {}
 
     // Finish the client connection.

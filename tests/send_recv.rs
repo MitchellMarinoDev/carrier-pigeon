@@ -86,10 +86,7 @@ fn send_recv() {
 
     // Despite UDP being unreliable, we are sending the messages through localhost
     // so none should get lost.
-    let udp_msgs: Vec<_> = client
-        .recv::<UnreliableMsg>()
-        .map(|msg| msg.m)
-        .collect();
+    let udp_msgs: Vec<_> = client.recv::<UnreliableMsg>().map(|msg| msg.m).collect();
     assert_eq!(udp_msgs.len(), 10); // Make sure all 10 udp messages went through.
 
     // Udp is unreliable unordered. Assert that all messages arrive.

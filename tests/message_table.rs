@@ -231,7 +231,10 @@ fn join_error() {
         .register_ordered::<ReliableMsg>(Guarantees::Unreliable)
         .unwrap();
 
-    assert_eq!(builder1.join(&builder2), Err(TypeAlreadyRegistered(TypeId::of::<ReliableMsg>())));
+    assert_eq!(
+        builder1.join(&builder2),
+        Err(TypeAlreadyRegistered(TypeId::of::<ReliableMsg>()))
+    );
 
     // sorted
     let mut builder1 = MsgTableBuilder::new();
@@ -243,7 +246,10 @@ fn join_error() {
         .register_sorted::<ReliableMsg>(Guarantees::Unreliable, "tests::DifferentMsg")
         .unwrap();
 
-    assert_eq!(builder1.join(&builder2), Err(TypeAlreadyRegistered(TypeId::of::<ReliableMsg>())));
+    assert_eq!(
+        builder1.join(&builder2),
+        Err(TypeAlreadyRegistered(TypeId::of::<ReliableMsg>()))
+    );
 
     // sorted
     let mut builder1 = MsgTableBuilder::new();
@@ -255,5 +261,8 @@ fn join_error() {
         .register_sorted::<UnreliableMsg>(Guarantees::Unreliable, "tests::ReliableMsg")
         .unwrap();
 
-    assert_eq!(builder1.join(&builder2).unwrap_err(), NonUniqueIdentifier("tests::ReliableMsg".to_owned()));
+    assert_eq!(
+        builder1.join(&builder2).unwrap_err(),
+        NonUniqueIdentifier("tests::ReliableMsg".to_owned())
+    );
 }

@@ -5,7 +5,8 @@ use crate::net::AckNum;
 use crate::util::DoubleHashMap;
 use crate::CId;
 use hashbrown::HashMap;
-use std::collections::BTreeSet;
+use std::any::Any;
+use std::collections::{BTreeSet, VecDeque};
 use std::net::SocketAddr;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex};
@@ -23,7 +24,7 @@ pub enum ConnectionListError {
 ///
 /// Also manages a `addrs` which holds a sorted list of all the addresses that are
 /// connected.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct ConnectionList {
     /// The current [`CId`]. The id to assign to new connections (then increment).
     current_cid: CId,
@@ -35,6 +36,8 @@ struct ConnectionList {
     /// the transport doesnt waste time handling messages that arent from any of the connected
     /// clients.
     addrs: Arc<Mutex<BTreeSet<SocketAddr>>>,
+    /// A que that keeps track of new unhandled connections.
+    pending_connections: VecDeque<(CId, SocketAddr, Box<dyn Any + Send + Sync>)>,
 }
 
 impl ConnectionList {
@@ -43,20 +46,54 @@ impl ConnectionList {
             current_cid: 1,
             cid_addr: DoubleHashMap::new(),
             addrs: Arc::new(Mutex::new(BTreeSet::new())),
+            pending_connections: VecDeque::new(),
         }
     }
 
-    pub fn new_connection(&mut self, addr: SocketAddr) -> Result<(), ConnectionListError> {
-        if !self.addr_connected(addr) {
-            return Err(ConnectionListError::AlreadyConnected);
-        }
+    /// Adds a new pending connection.
+    ///
+    /// This assigns the address a [`CId`], but does not consider it a connected client.
+    /// Therefore, calling [`cid_connected`](Self::cid_connected) and
+    /// [`addr_connected`](Self::addr_connected) will return false.
+    ///
+    /// Returns the [`CId`] that was assigned.
+    ///
+    /// Returns an error if the address is already connected.
+    pub fn new_pending(
+        &mut self,
+        addr: SocketAddr,
+        connection_msg: Box<dyn Any + Send + Sync>,
+    ) -> Result<CId, ConnectionListError> {
         let cid = self.current_cid;
         self.current_cid += 1;
-        self.cid_addr.insert(cid, addr).expect("cid ");
-        {
-            let mut addrs = self.addrs.lock().expect("failed to obtain lock");
-            addrs.insert(addr);
-        }
+        self.pending_connections
+            .push_back((cid, addr, connection_msg));
+        Ok(cid)
+    }
+
+    /// Gets the next pending connection if there is one.
+    pub fn get_pending(&mut self) -> Option<(CId, SocketAddr, Box<dyn Any + Send + Sync>)> {
+        self.pending_connections.pop_front()
+    }
+
+    /// Handles adding a new connection.
+    ///
+    /// ### Errors
+    /// Returns an error if `cid`, or `addr` are already connected.
+    fn new_connection(&mut self, cid: CId, addr: SocketAddr) -> Result<(), ConnectionListError> {
+        self.cid_addr
+            .insert(cid, addr)
+            .map_err(|_| ConnectionListError::AlreadyConnected)?;
+        let inserted = {
+            self.addrs
+                .lock()
+                .expect("failed to obtain lock")
+                .insert(addr)
+        };
+        debug_assert!(
+            inserted,
+            "The address was not added to the BTree address set"
+        );
         Ok(())
     }
 

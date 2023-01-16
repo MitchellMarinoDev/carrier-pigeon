@@ -62,7 +62,7 @@ fn main() {
         });
 
         // This handles the new connections with whatever logic you want.
-        server.handle_new_cons(|_cid, con_msg: Connection| {
+        server.handle_new_cons(|_cid, _addr, con_msg: Connection| {
             // You can capture variables from the context to decide if you want
             // to accept or reject the connection request.
             let blacklisted = blacklisted_users.contains(&&*con_msg.user.to_lowercase());

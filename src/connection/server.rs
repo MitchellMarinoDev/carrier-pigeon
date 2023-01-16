@@ -1,11 +1,11 @@
 use crate::connection::{ConnectionList, ConnectionListError, NonAckedMsgs, SavedMsg};
+use crate::message_table::{CONNECTION_TYPE_MID, RESPONSE_TYPE_MID};
 use crate::net::MsgHeader;
 use crate::transport::ServerTransport;
 use crate::{CId, MId, MsgTable};
 use hashbrown::HashMap;
 use log::trace;
 use std::any::{type_name, Any, TypeId};
-use std::collections::VecDeque;
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -18,7 +18,6 @@ pub struct ServerConnection<T: ServerTransport> {
     transport: T,
 
     connection_list: ConnectionList,
-    pending_connections: VecDeque<(CId, SocketAddr, Box<dyn Any + Send + Sync>)>,
 
     msg_counter: HashMap<CId, Vec<AtomicU32>>,
     non_acked: HashMap<CId, Vec<Mutex<NonAckedMsgs>>>,
@@ -45,7 +44,6 @@ impl<T: ServerTransport> ServerConnection<T> {
         Ok(Self {
             msg_table,
             transport,
-            pending_connections: VecDeque::new(),
             connection_list,
             msg_counter: HashMap::new(),
             non_acked: HashMap::new(),
@@ -113,21 +111,73 @@ impl<T: ServerTransport> ServerConnection<T> {
         loop {
             let (addr, header, msg) = self.transport.recv_from()?;
             let cid = match self.connection_list.cid_of(addr) {
-                None => continue,
+                // the message received was not from a connected client
+                None => {
+                    // ignore messages from not connected clients,
+                    // unless it is a connection type message
+                    if header.mid != CONNECTION_TYPE_MID {
+                        continue;
+                    }
+                    // create a new connection
+                    let _ = self.connection_list.new_pending(addr, msg);
+                    continue;
+                }
                 Some(cid) => cid,
             };
             return Ok((cid, header, msg));
         }
     }
 
-    pub fn get_pending_connection(
+    /// Handles all outstanding pending connections
+    /// by calling `hook` with the `CId`, `SocketAddr` and the connection message.
+    ///
+    /// ### Errors
+    /// Returns an error iff generic parameters `C` and `R` are not the same `C` and `R`
+    /// that you passed into [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
+    pub fn handle_pending<C: Any + Send + Sync, R: Any + Send + Sync>(
         &mut self,
-    ) -> Option<(CId, SocketAddr, Box<dyn Any + Send + Sync>)> {
-        self.pending_connections.pop_front()
-    }
+        mut hook: impl FnMut(CId, SocketAddr, C) -> (bool, R),
+    ) -> io::Result<u32> {
+        let c_tid = TypeId::of::<C>();
+        let r_tid = TypeId::of::<R>();
+        if self.msg_table.tid_map.get(&c_tid) != Some(&CONNECTION_TYPE_MID) {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "generic type `C` needs to the same `C` \
+                    that you passed into `MsgTableBuilder::build`"
+                ),
+            ));
+        }
+        if self.msg_table.tid_map.get(&r_tid) != Some(&RESPONSE_TYPE_MID) {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "generic type `R` needs to the same `R` \
+                    that you passed into `MsgTableBuilder::build`"
+                ),
+            ));
+        }
 
-    pub fn new_connection(&mut self, addr: SocketAddr) -> Result<(), ConnectionListError> {
-        self.connection_list.new_connection(addr)
+        let mut count = 0;
+        while let Some((cid, addr, msg)) = self.connection_list.get_pending() {
+            if self.connection_list.addr_connected(addr) {
+                // address is already connected; ignore the connection request
+                continue;
+            }
+
+            let msg = *msg.downcast().expect("type `C` should be the correct type");
+            count += 1;
+            let (accept, response) = hook(cid, addr, msg);
+            if accept {
+                self.connection_list.new_connection(cid, addr).expect(
+                    "cid and address should be valid, as they came from the connection list",
+                );
+                // TODO: in the future, send_to should not return an error.
+                let _ = self.send_to(cid, &response);
+            }
+        }
+        Ok(count)
     }
 
     pub fn remove_connection(&mut self, cid: CId) -> Result<(), ConnectionListError> {

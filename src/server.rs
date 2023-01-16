@@ -75,47 +75,30 @@ impl Server {
     ///
     /// The hook function should return `(should_accept, response_msg)`.
     ///
-    /// Types `C` and `R` need to match the `C` and `R` types that you passed into
-    /// [`MsgTable::build()`](MsgTable::build).
-    ///
     /// Returns the number of handled connections.
     ///
     /// ### Panics
-    /// Panics if generic type parameters `C` or `R` are the wrong type.
+    /// Panics if the generic parameters `C` and `R` are not the same `C` and `R`
+    /// that you passed into [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
     pub fn handle_new_cons<C: Any + Send + Sync, R: Any + Send + Sync>(
         &mut self,
-        mut hook: impl FnMut(SocketAddr, C) -> (bool, R),
-    ) -> io::Result<u32> {
+        mut hook: impl FnMut(CId, SocketAddr, C) -> (bool, R),
+    ) -> u32 {
         // verify that `C` and `R` are the right type.
         let c_tid = TypeId::of::<C>();
         let r_tid = TypeId::of::<R>();
-        if self.msg_table.tid_map[&c_tid] != CONNECTION_TYPE_MID
-            || self.msg_table.tid_map[&r_tid] != RESPONSE_TYPE_MID
+        if self.msg_table.tid_map.get(&c_tid) != Some(&CONNECTION_TYPE_MID)
+            || self.msg_table.tid_map.get(&r_tid) != Some(&RESPONSE_TYPE_MID)
         {
-            panic!("generic parameters `C` and `R` need to match the generic parameters that you passed into `MsgTableBuilder::build()`");
+            panic!(
+                "generic parameters `C` and `R` need to match the generic parameters \
+            that you passed into `MsgTableBuilder::build()`"
+            );
         }
 
-        if self.msg_buf[CONNECTION_TYPE_MID].is_empty() {
-            return Ok(0);
-        }
-
-        let mut count = 0;
-        while let Some((cid, addr, con_msg)) = self.connection.get_pending_connection() {
-            let con_msg = *con_msg
-                .downcast()
-                .expect("generic parameter `C` should be the right type");
-            count += 1;
-            let (accept, response) = hook(addr, con_msg);
-            self.send_to(cid, &response)?;
-            if accept {
-                // TODO: validate expect.
-                self.connection
-                    .new_connection(addr)
-                    .expect("addr to not be alive");
-            }
-        }
-
-        Ok(count)
+        self.connection
+            .handle_pending(hook)
+            .expect("already checked generic parameters")
     }
 
     /// Handles all remaining disconnects.
