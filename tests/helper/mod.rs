@@ -36,9 +36,9 @@ pub fn create_client_server_pair() -> (Client, Server) {
     // Normally this would be done in the game loop
     // and there would be other things to do.
     while 0
-        == server
-            .handle_new_cons(|_cid, _addr, _con_msg: Connection| (true, Response::Accepted))
-    {}
+        == server.handle_new_cons(|_cid, _addr, _con_msg: Connection| (true, Response::Accepted))
+    {
+    }
 
     // Finish the client connection.
     let (client, response_msg) = client.block::<Response>().unwrap();

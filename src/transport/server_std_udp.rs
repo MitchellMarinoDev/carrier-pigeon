@@ -8,6 +8,7 @@ use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::sync::{Arc, Mutex};
+use crate::message_table::CONNECTION_TYPE_MID;
 
 pub struct UdpServerTransport {
     socket: UdpSocket,
@@ -80,21 +81,6 @@ impl ServerTransport for UdpServerTransport {
     fn recv_from(&mut self) -> io::Result<(SocketAddr, MsgHeader, Box<dyn Any + Send + Sync>)> {
         let (n, from) = self.recv_next()?;
 
-        if n < HEADER_SIZE {
-            warn!(
-                "Received a packet of length {} \
-                    which is not big enough to be a carrier pigeon message",
-                n
-            );
-        }
-
-        let header = MsgHeader::from_be_bytes(&self.buf[0..HEADER_SIZE]);
-        trace!(
-            "Server: received message with MId: {}, len: {}.",
-            header.mid,
-            n,
-        );
-
         self.msg_table.check_mid(header.mid)?;
 
         let deser_fn = self.msg_table.deser[header.mid];
@@ -114,9 +100,28 @@ impl UdpServerTransport {
         loop {
             let (n, from) = self.socket.recv_from(&mut self.buf)?;
             {
+                if n < HEADER_SIZE {
+                    warn!(
+                        "Received a packet of length {} which is not big enough \
+                         to be a carrier pigeon message. Discarding",
+                        n
+                    );
+                    continue;
+                }
+
+                let header = MsgHeader::from_be_bytes(&self.buf[..HEADER_SIZE]);
+                trace!(
+                    "Server: received message with MId: {}, len: {}.",
+                    header.mid,
+                    n,
+                );
+
                 let connected_addrs = self.connected_addrs.lock().expect("failed to acquire lock");
-                if !connected_addrs.contains(&from) {
-                    trace!("Got packet from {} which is not a connected client. Discarding", from);
+                if header.mid != CONNECTION_TYPE_MID && !connected_addrs.contains(&from) {
+                    trace!(
+                        "Got packet from {} which is not a connected client. Discarding",
+                        from
+                    );
                     continue;
                 }
             }
