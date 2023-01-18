@@ -17,8 +17,12 @@ pub fn create_client_server_pair() -> (Client, Server) {
     let msg_table = get_msg_table();
 
     debug!("Creating server.");
-    let mut server =
-        Server::new(SERVER_ADDR_LOCAL, msg_table.clone(), ServerConfig::default()).unwrap();
+    let mut server = Server::new(
+        SERVER_ADDR_LOCAL,
+        msg_table.clone(),
+        ServerConfig::default(),
+    )
+    .unwrap();
     let addr = server.listen_addr().unwrap();
     debug!("Server created on addr: {}", addr);
 

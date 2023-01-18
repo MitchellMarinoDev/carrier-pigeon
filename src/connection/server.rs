@@ -4,7 +4,7 @@ use crate::net::MsgHeader;
 use crate::transport::ServerTransport;
 use crate::{CId, MId, MsgTable};
 use hashbrown::HashMap;
-use log::trace;
+use log::{debug, trace};
 use std::any::{type_name, Any, TypeId};
 use std::io;
 use std::io::{Error, ErrorKind};
@@ -106,8 +106,19 @@ impl<T: ServerTransport> ServerConnection<T> {
         self.transport.send_to(addr, mid, payload)
     }
 
+
     pub fn recv_from(&mut self) -> io::Result<(CId, MsgHeader, Box<dyn Any + Send + Sync>)> {
+        let (cid, header, msg) = self.raw_recv_from()?;
         // TODO: handle any reliability stuff here.
+        Ok((cid, header, msg))
+    }
+
+    /// Receives a message from the transport.
+    ///
+    /// This function converts the address to a CId and drops any messages from not connected
+    /// clients that arent of the type [`CONNECTION_TYPE_MID`]. This also validates the MId.
+    /// This does not handle reliablility at all, just discards unneeded messages.
+    fn raw_recv_from(&mut self) -> io::Result<(CId, MsgHeader, Box<dyn Any + Send + Sync>)> {
         loop {
             let (addr, header, msg) = self.transport.recv_from()?;
             let cid = match self.connection_list.cid_of(addr) {
@@ -116,6 +127,7 @@ impl<T: ServerTransport> ServerConnection<T> {
                     // ignore messages from not connected clients,
                     // unless it is a connection type message
                     if header.mid != CONNECTION_TYPE_MID {
+                        debug!("Discarding a message that not a connection message from a non-client ({})", addr);
                         continue;
                     }
                     // create a new connection

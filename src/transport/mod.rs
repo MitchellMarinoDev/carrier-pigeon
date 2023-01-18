@@ -33,6 +33,8 @@ pub trait ServerTransport {
     where
         Self: Sized;
     fn send_to(&self, addr: SocketAddr, mid: MId, payload: Arc<Vec<u8>>) -> io::Result<()>;
+    /// Receives the next message (or error) from the transport.
     fn recv_from(&mut self) -> io::Result<(SocketAddr, MsgHeader, Box<dyn Any + Send + Sync>)>;
+    /// Returns the address that the server is listening on.
     fn listen_addr(&self) -> io::Result<SocketAddr>;
 }

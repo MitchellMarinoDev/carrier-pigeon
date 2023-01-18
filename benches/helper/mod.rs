@@ -29,7 +29,12 @@ pub fn create_client_server_pair() -> (Client, Server) {
 
     debug!("Creating client.");
     // Start client connection.
-    let client = Client::new(addr, parts, ClientConfig::default(), Connection::new("John"));
+    let client = Client::new(
+        addr,
+        parts,
+        ClientConfig::default(),
+        Connection::new("John"),
+    );
 
     // Spin until the connection is handled.
     // Normally this would be done in the game loop

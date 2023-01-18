@@ -1,6 +1,6 @@
 use crate::connection::server::ServerConnection;
 use crate::message_table::{MsgTable, CONNECTION_TYPE_MID, RESPONSE_TYPE_MID};
-use crate::net::{CId, CIdSpec, ErasedNetMsg, NetMsg, Status, ServerConfig};
+use crate::net::{CId, CIdSpec, ErasedNetMsg, NetMsg, ServerConfig, Status};
 use crate::transport::server_std_udp::UdpServerTransport;
 use log::*;
 use std::any::{Any, TypeId};
@@ -243,7 +243,11 @@ impl Server {
                 Ok((cid, header, msg)) => {
                     // TODO: handle special message types here
                     count += 1;
-                    self.msg_buf[header.mid].push(ErasedNetMsg { cid, ack_num: header.ack_num, msg });
+                    self.msg_buf[header.mid].push(ErasedNetMsg {
+                        cid,
+                        ack_num: header.ack_num,
+                        msg,
+                    });
                 }
             }
         }

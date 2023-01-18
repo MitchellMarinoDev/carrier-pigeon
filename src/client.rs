@@ -1,6 +1,6 @@
 use crate::connection::client::ClientConnection;
 use crate::message_table::{MsgTable, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID};
-use crate::net::{ErasedNetMsg, ClientConfig, NetMsg, Status};
+use crate::net::{ClientConfig, ErasedNetMsg, NetMsg, Status};
 use crate::transport::client_std_udp::UdpClientTransport;
 use crossbeam_channel::internal::SelectHandle;
 use crossbeam_channel::Receiver;

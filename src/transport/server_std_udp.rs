@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 
 pub struct UdpServerTransport {
     socket: UdpSocket,
+    // TODO: this might get removed if this responsibility is removed from the transport.
     connected_addrs: Arc<Mutex<BTreeSet<SocketAddr>>>,
     buf: [u8; MAX_MESSAGE_SIZE],
     msg_table: MsgTable,
@@ -95,7 +96,8 @@ impl ServerTransport for UdpServerTransport {
 impl UdpServerTransport {
     /// Gets the next udp packet and reads it into the buffer.
     ///
-    /// This discards any packets that come from an address that is not in `self.connected_addrs`.
+    /// This discards any packets that come from an address that is not in `self.connected_addrs`
+    /// (unless they are .
     fn recv_next(&mut self) -> io::Result<(usize, MsgHeader, SocketAddr)> {
         loop {
             let (n, from) = self.socket.recv_from(&mut self.buf)?;

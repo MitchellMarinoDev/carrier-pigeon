@@ -12,12 +12,12 @@ use std::ops::Deref;
 /// The data must be [`MAX_SAFE_MESSAGE_SIZE`] or less to be guaranteed to
 /// be deliverable on udp.
 /// [source](https://newbedev.com/what-is-the-largest-safe-udp-packet-size-on-the-internet/)
-pub const MAX_SAFE_MESSAGE_SIZE: usize = 508 - HEADER_SIZE;
+pub const MAX_SAFE_MESSAGE_SIZE: usize = 508;
 
 /// The absolute maximum size that udp supports.
 ///
 /// The data must be less than [`MAX_MESSAGE_SIZE`] or it will be dropped.
-pub const MAX_MESSAGE_SIZE: usize = 65507 - HEADER_SIZE;
+pub const MAX_MESSAGE_SIZE: usize = 65507;
 
 /// The size of carrier-pigeon's header.
 pub const HEADER_SIZE: usize = 6;
@@ -204,43 +204,35 @@ impl CIdSpec {
 
 /// Configuration for a client.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
-pub struct ClientConfig {
-
-}
+pub struct ClientConfig {}
 
 impl ClientConfig {
     /// Creates a new client configuration.
     pub fn new() -> Self {
-        ClientConfig {
-        }
+        ClientConfig {}
     }
 }
 
 impl Default for ClientConfig {
     fn default() -> Self {
-        ClientConfig {
-        }
+        ClientConfig {}
     }
 }
 
 /// Configuration for a server.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
-pub struct ServerConfig {
-
-}
+pub struct ServerConfig {}
 
 impl ServerConfig {
     /// Creates a new server configuration.
     pub fn new() -> Self {
-        ServerConfig {
-        }
+        ServerConfig {}
     }
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
-        ServerConfig {
-        }
+        ServerConfig {}
     }
 }
 
