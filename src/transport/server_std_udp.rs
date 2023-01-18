@@ -1,3 +1,4 @@
+use crate::message_table::CONNECTION_TYPE_MID;
 use crate::net::{MsgHeader, HEADER_SIZE, MAX_MESSAGE_SIZE, MAX_SAFE_MESSAGE_SIZE};
 use crate::transport::ServerTransport;
 use crate::{MId, MsgTable};
@@ -8,7 +9,6 @@ use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::sync::{Arc, Mutex};
-use crate::message_table::CONNECTION_TYPE_MID;
 
 pub struct UdpServerTransport {
     socket: UdpSocket,
@@ -99,21 +99,21 @@ impl UdpServerTransport {
     fn recv_next(&mut self) -> io::Result<(usize, MsgHeader, SocketAddr)> {
         loop {
             let (n, from) = self.socket.recv_from(&mut self.buf)?;
-                if n < HEADER_SIZE {
-                    warn!(
-                        "Received a packet of length {} which is not big enough \
+            if n < HEADER_SIZE {
+                warn!(
+                    "Received a packet of length {} which is not big enough \
                          to be a carrier pigeon message. Discarding",
-                        n
-                    );
-                    continue;
-                }
-
-                let header = MsgHeader::from_be_bytes(&self.buf[..HEADER_SIZE]);
-                trace!(
-                    "Server: received message with MId: {}, len: {}.",
-                    header.mid,
-                    n,
+                    n
                 );
+                continue;
+            }
+
+            let header = MsgHeader::from_be_bytes(&self.buf[..HEADER_SIZE]);
+            trace!(
+                "Server: received message with MId: {}, len: {}.",
+                header.mid,
+                n,
+            );
 
             // If we get a message that is a type other than the connection type message ID,
             // make sure it is from a connected address

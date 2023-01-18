@@ -1,6 +1,6 @@
 use crate::connection::client::ClientConnection;
 use crate::message_table::{MsgTable, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID};
-use crate::net::{ErasedNetMsg, NetConfig, NetMsg, Status};
+use crate::net::{ErasedNetMsg, ClientConfig, NetMsg, Status};
 use crate::transport::client_std_udp::UdpClientTransport;
 use crossbeam_channel::internal::SelectHandle;
 use crossbeam_channel::Receiver;
@@ -20,7 +20,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct Client {
     /// The configuration of the client.
-    config: NetConfig,
+    config: ClientConfig,
     /// The status of the client. Whether it is connected/disconnected etc.
     status: Status,
     /// The received message buffer.
@@ -47,7 +47,7 @@ impl Client {
         local: impl ToSocketAddrs + Send + 'static,
         peer: impl ToSocketAddrs + Send + 'static,
         msg_table: MsgTable,
-        config: NetConfig,
+        config: ClientConfig,
         con_msg: C,
     ) -> PendingClient {
         let (client_tx, client_rx) = crossbeam_channel::bounded(1);
@@ -64,27 +64,19 @@ impl Client {
         local: impl ToSocketAddrs,
         peer: impl ToSocketAddrs,
         msg_table: MsgTable,
-        config: NetConfig,
+        config: ClientConfig,
         con_msg: C,
     ) -> io::Result<(Self, Box<dyn Any + Send + Sync>)> {
         // verify that `con_msg` is the correct type.
         let tid = TypeId::of::<C>();
         let con_msg_mid = msg_table.tid_map.get(&tid);
         match con_msg_mid {
-            None => Err(Error::new(
-                InvalidData,
-                "the type of `con_msg` passed into `Client::new` or `Client::new_blocking` \
-        should match the first type parameter of the `MsgTable::build` function. \
-        The type of con_msg was not registered at all",
-            )),
             Some(&CONNECTION_TYPE_MID) => Ok(()),
-            Some(other_mid) => Err(Error::new(
+            _ => Err(Error::new(
                 InvalidData,
                 format!(
                     "the type of `con_msg` passed into `Client::new` or `Client::new_blocking` \
-            should match the first type parameter of the `MsgTable::build` function. \
-            got Mid {}, expected {}",
-                    other_mid, CONNECTION_TYPE_MID
+                    should match the first type parameter of the `MsgTable::build` function.",
                 ),
             )),
         }?;
@@ -138,7 +130,7 @@ impl Client {
     }
 
     /// Gets the [`NetConfig`] of the client.
-    pub fn config(&self) -> &NetConfig {
+    pub fn config(&self) -> &ClientConfig {
         &self.config
     }
 
@@ -236,7 +228,7 @@ impl Client {
                 // Successfully got a message.
                 Ok((header, msg)) => {
                     i += 1;
-                    self.msg_buff[header.mid].push(ErasedNetMsg::new(0, msg));
+                    self.msg_buff[header.mid].push(ErasedNetMsg::new(0, header.ack_num, msg));
                 }
             }
         }

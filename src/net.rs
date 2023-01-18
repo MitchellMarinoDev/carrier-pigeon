@@ -5,7 +5,6 @@ use std::any::Any;
 use std::fmt::{Debug, Display, Formatter};
 use std::io::Error;
 use std::ops::Deref;
-use std::time::Duration;
 
 /// The maximum safe message size that can be sent on udp,
 /// after taking off the possible overheads from the transport.
@@ -203,41 +202,44 @@ impl CIdSpec {
     }
 }
 
-/// Configuration for a client or server.
-///
-/// This needs to be defined before starting up the server.
-///
-/// Contains all configurable information about the server.
+/// Configuration for a client.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
-pub struct NetConfig {
-    /// The timeout for handling new connections. The time to wait for a connection message
-    /// after establishing a tcp connection.
-    pub timeout: Duration,
-    /// The maximum number of connections that this can handle at the same time.
-    pub max_con_handle: usize,
-    /// The maximum message size in bytes. This is used for sizing the buffer for TCP and UDP.
-    /// Any attempts to send messages over this size will be discarded. Keep in mind, there is
-    /// still a soft limit for UDP messages (`MAX_SAFE_MSG_SIZE`)
-    pub max_msg_size: usize,
+pub struct ClientConfig {
+
 }
 
-impl NetConfig {
-    /// Creates a new Server configuration.
-    pub fn new(timeout: Duration, max_con_handle: usize, max_msg_size: usize) -> Self {
-        NetConfig {
-            timeout,
-            max_con_handle,
-            max_msg_size,
+impl ClientConfig {
+    /// Creates a new client configuration.
+    pub fn new() -> Self {
+        ClientConfig {
         }
     }
 }
 
-impl Default for NetConfig {
+impl Default for ClientConfig {
     fn default() -> Self {
-        NetConfig {
-            timeout: Duration::from_millis(5_000),
-            max_con_handle: 4,
-            max_msg_size: 2048,
+        ClientConfig {
+        }
+    }
+}
+
+/// Configuration for a server.
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub struct ServerConfig {
+
+}
+
+impl ServerConfig {
+    /// Creates a new server configuration.
+    pub fn new() -> Self {
+        ServerConfig {
+        }
+    }
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        ServerConfig {
         }
     }
 }
@@ -247,13 +249,19 @@ impl Default for NetConfig {
 pub(crate) struct ErasedNetMsg {
     /// The [`CId`] that the message was sent from.
     pub(crate) cid: CId,
-    /// The message.
+    /// The acknowledgement number for the given message.
+    /// This is an incrementing integer assigned by the sender.
+    ///
+    /// It is used for uniquely identifying the message for acknowledgement, and for ordering of
+    /// the messages.
+    pub ack_num: AckNum,
+    /// The actual message.
     pub(crate) msg: Box<dyn Any + Send + Sync>,
 }
 
 impl ErasedNetMsg {
-    pub(crate) fn new(cid: CId, msg: Box<dyn Any + Send + Sync>) -> Self {
-        Self { cid, msg }
+    pub(crate) fn new(cid: CId, ack_num: AckNum, msg: Box<dyn Any + Send + Sync>) -> Self {
+        Self { cid, ack_num, msg }
     }
 
     /// Converts this to NetMsg, borrowed from this.
@@ -261,6 +269,7 @@ impl ErasedNetMsg {
         let msg = self.msg.downcast_ref()?;
         Some(NetMsg {
             cid: self.cid,
+            ack_num: self.ack_num,
             m: msg,
         })
     }
@@ -271,6 +280,12 @@ impl ErasedNetMsg {
 pub struct NetMsg<'n, T: Any + Send + Sync> {
     /// The [`CId`] that the message was sent from.
     pub cid: CId,
+    /// The acknowledgement number for the given message.
+    /// This is an incrementing integer assigned by the sender.
+    ///
+    /// It is used for uniquely identifying the message for acknowledgement, and for ordering of
+    /// the messages.
+    pub ack_num: AckNum,
     /// The actual message.
     ///
     /// Borrowed from the client or server.

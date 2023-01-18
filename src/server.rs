@@ -1,6 +1,6 @@
 use crate::connection::server::ServerConnection;
 use crate::message_table::{MsgTable, CONNECTION_TYPE_MID, RESPONSE_TYPE_MID};
-use crate::net::{CId, CIdSpec, ErasedNetMsg, NetConfig, NetMsg, Status};
+use crate::net::{CId, CIdSpec, ErasedNetMsg, NetMsg, Status, ServerConfig};
 use crate::transport::server_std_udp::UdpServerTransport;
 use log::*;
 use std::any::{Any, TypeId};
@@ -17,7 +17,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct Server {
     /// The configuration of the server.
-    config: NetConfig,
+    config: ServerConfig,
     /// The received message buffer.
     ///
     /// Each [`MId`] has its own vector.
@@ -37,7 +37,7 @@ impl Server {
     pub fn new(
         listen_addr: impl ToSocketAddrs,
         msg_table: MsgTable,
-        config: NetConfig,
+        config: ServerConfig,
     ) -> io::Result<Self> {
         let connection = ServerConnection::new(msg_table.clone(), listen_addr)?;
 
@@ -54,7 +54,7 @@ impl Server {
     }
 
     /// Gets the config of the server.
-    pub fn config(&self) -> &NetConfig {
+    pub fn config(&self) -> &ServerConfig {
         &self.config
     }
 
@@ -243,7 +243,7 @@ impl Server {
                 Ok((cid, header, msg)) => {
                     // TODO: handle special message types here
                     count += 1;
-                    self.msg_buf[header.mid].push(ErasedNetMsg { cid, msg });
+                    self.msg_buf[header.mid].push(ErasedNetMsg { cid, ack_num: header.ack_num, msg });
                 }
             }
         }

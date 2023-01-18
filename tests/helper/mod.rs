@@ -2,7 +2,7 @@
 //! Helper functions and types to make setting up the tests easier.
 
 use crate::helper::test_messages::{get_msg_table, Connection, Disconnect, Response};
-use carrier_pigeon::net::NetConfig;
+use carrier_pigeon::net::{ClientConfig, ServerConfig};
 use carrier_pigeon::{Client, Server};
 use log::debug;
 
@@ -18,7 +18,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
 
     debug!("Creating server.");
     let mut server =
-        Server::new(SERVER_ADDR_LOCAL, msg_table.clone(), NetConfig::default()).unwrap();
+        Server::new(SERVER_ADDR_LOCAL, msg_table.clone(), ServerConfig::default()).unwrap();
     let addr = server.listen_addr().unwrap();
     debug!("Server created on addr: {}", addr);
 
@@ -28,7 +28,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
         CLIENT_ADDR_LOCAL,
         SERVER_ADDR_LOCAL,
         msg_table,
-        NetConfig::default(),
+        ClientConfig::default(),
         Connection::new("John"),
     );
 

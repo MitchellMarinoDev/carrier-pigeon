@@ -1,6 +1,7 @@
 //! Simple send/receive tests.
 use crate::helper::create_client_server_pair;
 use crate::helper::test_messages::{ReliableMsg, UnreliableMsg};
+use log::info;
 use simple_logger::SimpleLogger;
 use std::time::Duration;
 
@@ -15,6 +16,7 @@ fn send_recv() {
 
     // CLIENT TO SERVER
     let (mut client, mut server) = create_client_server_pair();
+    info!("connection made");
 
     // Send 10 tcp messages.
     for i in 0..10 {

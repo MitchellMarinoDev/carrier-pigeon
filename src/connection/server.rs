@@ -184,9 +184,16 @@ impl<T: ServerTransport> ServerConnection<T> {
         self.connection_list.new_connection(cid, addr)?;
         let mid_count = self.msg_table.mid_count();
 
-        self.missing_msg.insert(cid, (0..mid_count).map(|_| vec![]).collect());
-        self.msg_counter.insert(cid, (0..mid_count).map(|_| AtomicU32::new(0)).collect());
-        self.non_acked.insert(cid, (0..mid_count).map(|_| Mutex::new(NonAckedMsgs::new())).collect());
+        self.missing_msg
+            .insert(cid, (0..mid_count).map(|_| vec![]).collect());
+        self.msg_counter
+            .insert(cid, (0..mid_count).map(|_| AtomicU32::new(0)).collect());
+        self.non_acked.insert(
+            cid,
+            (0..mid_count)
+                .map(|_| Mutex::new(NonAckedMsgs::new()))
+                .collect(),
+        );
         Ok(())
     }
 
