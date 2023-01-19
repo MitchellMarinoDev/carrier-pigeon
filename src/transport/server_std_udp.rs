@@ -66,7 +66,7 @@ impl ServerTransport for UdpServerTransport {
 
     fn recv_from(&mut self) -> io::Result<(SocketAddr, Vec<u8>)> {
         let (n, from) = self.socket.recv_from(&mut self.buf)?;
-        Ok((from, (self.buf[HEADER_SIZE..n]).to_vec()))
+        Ok((from, (self.buf[..n]).to_vec()))
     }
 
     fn listen_addr(&self) -> io::Result<SocketAddr> {
