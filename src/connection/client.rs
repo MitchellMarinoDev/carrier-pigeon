@@ -1,12 +1,12 @@
 use crate::connection::{NonAckedMsgs, SavedMsg};
-use crate::net::MsgHeader;
+use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ClientTransport;
 use crate::{MId, MsgTable};
-use log::trace;
+use log::{trace, warn};
 use std::any::{Any, TypeId};
 use std::io;
 use std::io::{Error, ErrorKind};
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 /// A wrapper around the the [`ClientTransport`] that adds the reliability and ordering.
@@ -21,12 +21,8 @@ pub struct ClientConnection<T: ClientTransport> {
 }
 
 impl<T: ClientTransport> ClientConnection<T> {
-    pub fn new(
-        msg_table: MsgTable,
-        local: impl ToSocketAddrs,
-        peer: impl ToSocketAddrs,
-    ) -> io::Result<Self> {
-        let transport = T::new(local, peer, msg_table.clone())?;
+    pub fn new(msg_table: MsgTable, local: SocketAddr, peer: SocketAddr) -> io::Result<Self> {
+        let transport = T::new(local, peer)?;
         trace!(
             "UdpClientTransport connected from {} to {}",
             transport
@@ -95,13 +91,47 @@ impl<T: ClientTransport> ClientConnection<T> {
     }
 
     pub fn recv(&mut self) -> io::Result<(MsgHeader, Box<dyn Any + Send + Sync>)> {
-        // TODO: handle any reliability stuff here.
-        self.transport.recv()
+        self.recv_shared(false)
     }
 
     pub fn recv_blocking(&mut self) -> io::Result<(MsgHeader, Box<dyn Any + Send + Sync>)> {
-        // TODO: handle any reliability stuff here.
-        self.transport.recv_blocking()
+        self.recv_shared(true)
+    }
+
+    fn recv_shared(
+        &mut self,
+        blocking: bool,
+    ) -> io::Result<(MsgHeader, Box<dyn Any + Send + Sync>)> {
+        loop {
+            let buf = if blocking {
+                self.transport.recv_blocking()
+            } else {
+                self.transport.recv()
+            }?;
+
+            let n = buf.len();
+            if n < HEADER_SIZE {
+                warn!(
+                    "Client: Received a packet of length {} which is not big enough \
+                    to be a carrier pigeon message. Discarding",
+                    n
+                );
+                continue;
+            }
+            let header = MsgHeader::from_be_bytes(&buf[..HEADER_SIZE]);
+            self.msg_table.check_mid(header.mid)?;
+
+            trace!(
+                "Client: received message with MId: {}, len: {}.",
+                header.mid,
+                n,
+            );
+
+            let msg = self.msg_table.deser[header.mid](&buf)?;
+            // TODO: handle any reliability stuff here.
+
+            return Ok((header, msg));
+        }
     }
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {

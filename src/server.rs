@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use std::io;
 use std::io::ErrorKind::WouldBlock;
 use std::io::{Error, ErrorKind};
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 
 /// A server that manages connections to multiple clients.
 ///
@@ -35,7 +35,7 @@ pub struct Server {
 impl Server {
     /// Creates a new [`Server`].
     pub fn new(
-        listen_addr: impl ToSocketAddrs,
+        listen_addr: SocketAddr,
         msg_table: MsgTable,
         config: ServerConfig,
     ) -> io::Result<Self> {

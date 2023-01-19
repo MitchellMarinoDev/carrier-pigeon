@@ -33,9 +33,17 @@ fn main() {
         .unwrap();
 
     let mut args = env::args().skip(1);
-    // Get the address from the command line args, or use loopback on port 7799.
-    let local = args.next().unwrap_or(CLIENT_ADDR_LOCAL.to_owned());
-    let peer = args.next().unwrap_or(SERVER_ADDR_LOCAL.to_owned());
+    // Get the address from the command line args, or use loopback on port 7777.
+    let local = args
+        .next()
+        .unwrap_or(CLIENT_ADDR_LOCAL.to_owned())
+        .parse()
+        .expect("failed to parse the first arg as a SocketAddr");
+    let peer = args
+        .next()
+        .unwrap_or(SERVER_ADDR_LOCAL.to_owned())
+        .parse()
+        .expect("failed to parse the second arg as a SocketAddr");
 
     let username = args.next().unwrap_or("MyUser".to_owned());
 

@@ -1,25 +1,19 @@
-use crate::net::{MsgHeader, HEADER_SIZE, MAX_MESSAGE_SIZE, MAX_SAFE_MESSAGE_SIZE};
+use crate::net::{MAX_MESSAGE_SIZE, MAX_SAFE_MESSAGE_SIZE};
 use crate::transport::ClientTransport;
-use crate::{MId, MsgTable};
+use crate::MId;
 use log::*;
-use std::any::Any;
 use std::io;
 use std::io::{Error, ErrorKind};
-use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
+use std::net::{SocketAddr, UdpSocket};
 use std::sync::Arc;
 
 pub struct UdpClientTransport {
     socket: UdpSocket,
     buf: [u8; MAX_MESSAGE_SIZE],
-    msg_table: MsgTable,
 }
 
 impl ClientTransport for UdpClientTransport {
-    fn new(
-        local: impl ToSocketAddrs,
-        peer: impl ToSocketAddrs,
-        msg_table: MsgTable,
-    ) -> io::Result<Self> {
+    fn new(local: SocketAddr, peer: SocketAddr) -> io::Result<Self> {
         let socket = UdpSocket::bind(local)?;
         socket.connect(peer)?;
 
@@ -28,11 +22,7 @@ impl ClientTransport for UdpClientTransport {
 
         let buf = [0; MAX_MESSAGE_SIZE];
 
-        Ok(UdpClientTransport {
-            socket,
-            buf,
-            msg_table,
-        })
+        Ok(UdpClientTransport { socket, buf })
     }
 
     fn send(&self, mid: MId, payload: Arc<Vec<u8>>) -> io::Result<()> {
@@ -75,31 +65,12 @@ impl ClientTransport for UdpClientTransport {
         Ok(())
     }
 
-    fn recv(&mut self) -> io::Result<(MsgHeader, Box<dyn Any + Send + Sync>)> {
+    fn recv(&mut self) -> io::Result<Vec<u8>> {
         let n = self.socket.recv(&mut self.buf)?;
-
-        if n < HEADER_SIZE {
-            warn!(
-                "Received a packet of length {} \
-                 which is not big enough to be a carrier pigeon message",
-                n
-            );
-        }
-
-        let header = MsgHeader::from_be_bytes(&self.buf[0..HEADER_SIZE]);
-        trace!(
-            "Client: received message with MId: {}, len: {}.",
-            header.mid,
-            n,
-        );
-
-        self.msg_table.check_mid(header.mid)?;
-
-        let deser_fn = self.msg_table.deser[header.mid];
-        deser_fn(&self.buf[HEADER_SIZE..n]).map(|msg| (header, msg))
+        return Ok(self.buf[..n].to_vec());
     }
 
-    fn recv_blocking(&mut self) -> io::Result<(MsgHeader, Box<dyn Any + Send + Sync>)> {
+    fn recv_blocking(&mut self) -> io::Result<Vec<u8>> {
         self.socket.set_nonblocking(false)?;
         let result = self.recv();
         self.socket.set_nonblocking(true)?;

@@ -10,8 +10,8 @@ fn client_fail() {
     let parts = get_msg_table();
 
     let client = Client::new(
-        "127.0.0.1:7776",
-        "127.0.0.1:7777",
+        "127.0.0.1:7776".parse().unwrap(),
+        "127.0.0.1:7777".parse().unwrap(),
         parts,
         ClientConfig::default(),
         Connection::new("John Smith"),

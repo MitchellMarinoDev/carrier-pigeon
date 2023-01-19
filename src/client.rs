@@ -10,7 +10,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::ErrorKind::InvalidData;
 use std::io::{Error, ErrorKind};
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 
 /// A Client connection.
 ///
@@ -44,8 +44,8 @@ impl Client {
     /// message, and for the server to send back the response message.
     #[allow(clippy::new_ret_no_self)]
     pub fn new<C: Any + Send + Sync>(
-        local: impl ToSocketAddrs + Send + 'static,
-        peer: impl ToSocketAddrs + Send + 'static,
+        local: SocketAddr,
+        peer: SocketAddr,
         msg_table: MsgTable,
         config: ClientConfig,
         con_msg: C,
@@ -61,8 +61,8 @@ impl Client {
 
     /// Creates a new [`Client`] by blocking.
     fn new_blocking<C: Any + Send + Sync>(
-        local: impl ToSocketAddrs,
-        peer: impl ToSocketAddrs,
+        local: SocketAddr,
+        peer: SocketAddr,
         msg_table: MsgTable,
         config: ClientConfig,
         con_msg: C,

@@ -8,10 +8,10 @@ use crate::util::DoubleHashMap;
 use crate::CId;
 use hashbrown::HashMap;
 use std::any::Any;
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
@@ -32,12 +32,6 @@ struct ConnectionList {
     current_cid: CId,
     /// The mapping of [`CId`]s to [`SocketAddr`]s and back.
     cid_addr: DoubleHashMap<CId, SocketAddr>,
-    /// A set of all the connected addresses.
-    ///
-    /// This is wrapped in multithreading types as it is used in the ServerTransport so that
-    /// the transport doesnt waste time handling messages that arent from any of the connected
-    /// clients.
-    addrs: Arc<Mutex<BTreeSet<SocketAddr>>>,
     /// A que that keeps track of new unhandled connections.
     pending_connections: VecDeque<(CId, SocketAddr, Box<dyn Any + Send + Sync>)>,
 }
@@ -47,7 +41,6 @@ impl ConnectionList {
         ConnectionList {
             current_cid: 1,
             cid_addr: DoubleHashMap::new(),
-            addrs: Arc::new(Mutex::new(BTreeSet::new())),
             pending_connections: VecDeque::new(),
         }
     }
@@ -86,16 +79,6 @@ impl ConnectionList {
         self.cid_addr
             .insert(cid, addr)
             .map_err(|_| ConnectionListError::AlreadyConnected)?;
-        let inserted = {
-            self.addrs
-                .lock()
-                .expect("failed to obtain lock")
-                .insert(addr)
-        };
-        debug_assert!(
-            inserted,
-            "The address was not added to the BTree address set"
-        );
         Ok(())
     }
 
@@ -104,23 +87,11 @@ impl ConnectionList {
             return Err(ConnectionListError::NotConnected);
         }
         let addr = self.cid_addr.remove(&cid).expect("cid should be connected");
-        {
-            let mut addrs = self.addrs.lock().expect("failed to obtain lock");
-            addrs.remove(&addr);
-        }
         Ok(())
     }
 
     pub fn disconnect(&mut self, cid: CId) -> bool {
-        if let Some(addr) = self.cid_addr.remove(&cid) {
-            let mut addrs = self.addrs.lock().expect("failed to obtain lock");
-            assert!(
-                addrs.remove(&addr),
-                "`addrs` did not have an address that was in the double hash map"
-            );
-            return true;
-        }
-        false
+        return self.cid_addr.remove(&cid).is_some();
     }
 
     pub fn connection_count(&self) -> usize {

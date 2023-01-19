@@ -1,14 +1,14 @@
 use crate::connection::{ConnectionList, ConnectionListError, NonAckedMsgs, SavedMsg};
 use crate::message_table::{CONNECTION_TYPE_MID, RESPONSE_TYPE_MID};
-use crate::net::MsgHeader;
+use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ServerTransport;
 use crate::{CId, MId, MsgTable};
 use hashbrown::HashMap;
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use std::any::{type_name, Any, TypeId};
 use std::io;
 use std::io::{Error, ErrorKind};
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -26,13 +26,9 @@ pub struct ServerConnection<T: ServerTransport> {
 }
 
 impl<T: ServerTransport> ServerConnection<T> {
-    pub fn new(msg_table: MsgTable, listen_addr: impl ToSocketAddrs) -> io::Result<Self> {
+    pub fn new(msg_table: MsgTable, listen_addr: SocketAddr) -> io::Result<Self> {
         let connection_list = ConnectionList::new();
-        let transport = T::new(
-            listen_addr,
-            msg_table.clone(),
-            connection_list.addrs.clone(),
-        )?;
+        let transport = T::new(listen_addr)?;
         trace!(
             "{} listening on {}",
             type_name::<T>(),
@@ -106,7 +102,6 @@ impl<T: ServerTransport> ServerConnection<T> {
         self.transport.send_to(addr, mid, payload)
     }
 
-
     pub fn recv_from(&mut self) -> io::Result<(CId, MsgHeader, Box<dyn Any + Send + Sync>)> {
         let (cid, header, msg) = self.raw_recv_from()?;
         // TODO: handle any reliability stuff here.
@@ -120,22 +115,52 @@ impl<T: ServerTransport> ServerConnection<T> {
     /// This does not handle reliablility at all, just discards unneeded messages.
     fn raw_recv_from(&mut self) -> io::Result<(CId, MsgHeader, Box<dyn Any + Send + Sync>)> {
         loop {
-            let (addr, header, msg) = self.transport.recv_from()?;
-            let cid = match self.connection_list.cid_of(addr) {
+            let (from, buf) = self.transport.recv_from()?;
+            let n = buf.len();
+            if n < HEADER_SIZE {
+                warn!(
+                    "Server: Received a packet of length {} from {} which is not big enough \
+                    to be a carrier pigeon message. Discarding",
+                    n, from
+                );
+                continue;
+            }
+            let header = MsgHeader::from_be_bytes(&buf[..HEADER_SIZE]);
+            self.msg_table.check_mid(header.mid)?;
+            trace!(
+                "Server: received message with MId: {}, len: {}, from: {}.",
+                header.mid,
+                n,
+                from
+            );
+
+            let cid = match self.connection_list.cid_of(from) {
                 // the message received was not from a connected client
                 None => {
                     // ignore messages from not connected clients,
                     // unless it is a connection type message
                     if header.mid != CONNECTION_TYPE_MID {
-                        debug!("Discarding a message that not a connection message from a non-client ({})", addr);
+                        debug!(
+                            "Server: Discarding a message that not a connection \
+                        message from a non-client ({})",
+                            from
+                        );
                         continue;
                     }
+
+                    debug!("Server: Connection message from {}", from);
+                    let msg = self.msg_table.deser[header.mid](&buf)?;
                     // create a new connection
-                    let _ = self.connection_list.new_pending(addr, msg);
+                    let _ = self.connection_list.new_pending(from, msg);
                     continue;
                 }
                 Some(cid) => cid,
             };
+
+            let msg = self.msg_table.deser[header.mid](&buf)?;
+
+            // TODO: handle any reliability stuff here
+
             return Ok((cid, header, msg));
         }
     }
