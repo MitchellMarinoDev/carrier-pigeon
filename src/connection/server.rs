@@ -149,7 +149,7 @@ impl<T: ServerTransport> ServerConnection<T> {
                     }
 
                     debug!("Server: Connection message from {}", from);
-                    let msg = self.msg_table.deser[header.mid](&buf)?;
+                    let msg = self.msg_table.deser[header.mid](&buf[HEADER_SIZE..])?;
                     // create a new connection
                     let _ = self.connection_list.new_pending(from, msg);
                     continue;
