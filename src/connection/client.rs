@@ -1,7 +1,7 @@
 use crate::connection::{NonAckedMsgs, SavedMsg};
 use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ClientTransport;
-use crate::{MId, MsgTable};
+use crate::{MType, MsgTable};
 use log::{trace, warn};
 use std::any::{Any, TypeId};
 use std::io;
@@ -35,7 +35,7 @@ impl<T: ClientTransport> ClientConnection<T> {
                 .unwrap_or("UNKNOWN".to_owned()),
         );
 
-        let len = msg_table.mid_count();
+        let len = msg_table.mtype_count();
         let msg_counter = vec![0; len];
         let non_acked = (0..len).map(|_| NonAckedMsgs::new()).collect();
         let missing_msg = (0..len).map(|_| Vec::with_capacity(0)).collect();
@@ -54,40 +54,40 @@ impl<T: ClientTransport> ClientConnection<T> {
         let tid = TypeId::of::<M>();
 
         // create the message header
-        let mid = self.msg_table.tid_map[&tid];
-        let ack_num = self.msg_counter[mid];
-        self.msg_counter[mid] += 1;
-        let msg_header = MsgHeader::new(mid, ack_num);
+        let m_type = self.msg_table.tid_map[&tid];
+        let ack_num = self.msg_counter[m_type];
+        self.msg_counter[m_type] += 1;
+        let msg_header = MsgHeader::new(m_type, ack_num);
 
         // build the payload using the header and the message
         let mut payload = Vec::new();
         payload.extend(msg_header.to_be_bytes());
 
-        let ser_fn = self.msg_table.ser[mid];
+        let ser_fn = self.msg_table.ser[m_type];
         ser_fn(msg, &mut payload).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
         let payload = Arc::new(payload);
 
         // send the payload based on the guarantees
-        let guarantees = self.msg_table.guarantees[mid];
+        let guarantees = self.msg_table.guarantees[m_type];
         if guarantees.reliable() {
-            self.send_reliable(mid, ack_num, payload)
+            self.send_reliable(m_type, ack_num, payload)
         } else {
-            self.send_unreliable(mid, payload)
+            self.send_unreliable(m_type, payload)
         }
     }
 
-    fn send_reliable(&mut self, mid: MId, ack_num: u32, payload: Arc<Vec<u8>>) -> io::Result<()> {
-        self.transport.send(mid, payload.clone())?;
+    fn send_reliable(&mut self, m_type: MType, ack_num: u32, payload: Arc<Vec<u8>>) -> io::Result<()> {
+        self.transport.send(m_type, payload.clone())?;
         // add the payload to the list of non-acked messages
         self.non_acked
-            .get_mut(mid)
-            .expect("mid should exist")
+            .get_mut(m_type)
+            .expect("m_type should exist")
             .insert(ack_num, SavedMsg::new(payload));
         Ok(())
     }
 
-    fn send_unreliable(&self, mid: MId, payload: Arc<Vec<u8>>) -> io::Result<()> {
-        self.transport.send(mid, payload)
+    fn send_unreliable(&self, m_type: MType, payload: Arc<Vec<u8>>) -> io::Result<()> {
+        self.transport.send(m_type, payload)
     }
 
     pub fn recv(&mut self) -> io::Result<(MsgHeader, Box<dyn Any + Send + Sync>)> {
@@ -119,15 +119,15 @@ impl<T: ClientTransport> ClientConnection<T> {
                 continue;
             }
             let header = MsgHeader::from_be_bytes(&buf[..HEADER_SIZE]);
-            self.msg_table.check_mid(header.mid)?;
+            self.msg_table.check_m_type(header.m_type)?;
 
             trace!(
-                "Client: received message with MId: {}, len: {}.",
-                header.mid,
+                "Client: received message with MType: {}, len: {}.",
+                header.m_type,
                 n,
             );
 
-            let msg = self.msg_table.deser[header.mid](&buf[HEADER_SIZE..])?;
+            let msg = self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..])?;
             // TODO: handle any reliability stuff here.
 
             return Ok((header, msg));

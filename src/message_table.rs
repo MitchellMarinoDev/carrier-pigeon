@@ -1,6 +1,6 @@
 use crate::message_table::MsgRegError::TypeAlreadyRegistered;
 use crate::net::{DeserFn, SerFn};
-use crate::MId;
+use crate::MType;
 use hashbrown::HashMap;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -91,7 +91,7 @@ pub struct MsgTableBuilder {
     sorted: Vec<(String, Registration)>,
 }
 
-/// The table mapping [`TypeId`]s to message ids ([`MId`]s) and [`Guarantees`].
+/// The table mapping [`TypeId`]s to message ids ([`MType`](crate::MType)s) and [`Guarantees`].
 ///
 /// You can build this by registering your types with a [`MsgTableBuilder`] or [`SortedMsgTableBuilder`], then building it with
 /// [`MsgTableBuilder::build()`] or [`SortedMsgTableBuilder::build()`].
@@ -99,7 +99,7 @@ pub struct MsgTableBuilder {
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct MsgTable {
     /// The mapping from TypeId to MessageId.
-    pub tid_map: HashMap<TypeId, MId>,
+    pub tid_map: HashMap<TypeId, MType>,
     /// The transport associated with each message type.
     pub guarantees: Vec<Guarantees>,
     /// The serialization functions associated with each message type.
@@ -108,9 +108,9 @@ pub struct MsgTable {
     pub deser: Vec<DeserFn>,
 }
 
-pub const CONNECTION_TYPE_MID: MId = 0;
-pub const RESPONSE_TYPE_MID: MId = 1;
-pub const DISCONNECT_TYPE_MID: MId = 2;
+pub const CONNECTION_M_TYPE: MType = 0;
+pub const RESPONSE_M_TYPE: MType = 1;
+pub const DISCONNECT_M_TYPE: MType = 2;
 
 impl MsgTableBuilder {
     /// Creates a new [`MsgTableBuilder`].
@@ -281,7 +281,7 @@ impl MsgTableBuilder {
         D: Any + Send + Sync + DeserializeOwned + Serialize,
     {
         // Always prepend the Connection and Disconnect types first.
-        // This gives them universal MIds.
+        // This gives them universal MTypes.
         let con_discon_types = [
             self.get_ordered_registration::<C>(Guarantees::Reliable)?,
             self.get_ordered_registration::<R>(Guarantees::Reliable)?,
@@ -322,16 +322,16 @@ impl MsgTableBuilder {
 }
 
 impl MsgTable {
-    /// Gets the number of registered `MId`s.
+    /// Gets the number of registered [`MType`](crate::MType)s.
     #[inline]
-    pub fn mid_count(&self) -> usize {
+    pub fn mtype_count(&self) -> usize {
         self.guarantees.len()
     }
 
-    /// Checks if the [`MId`] `mid` is valid.
+    /// Checks if the [`MType`](crate::MType) `m_type` is valid.
     #[inline]
-    pub fn valid_mid(&self, mid: MId) -> bool {
-        mid <= self.mid_count()
+    pub fn valid_m_type(&self, m_type: MType) -> bool {
+        m_type <= self.mtype_count()
     }
 
     /// Checks if the [`TypeId`] `tid` is registered.
@@ -366,14 +366,14 @@ impl MsgTable {
         Ok(())
     }
 
-    pub fn check_mid(&self, mid: MId) -> io::Result<()> {
-        if !self.valid_mid(mid) {
+    pub fn check_m_type(&self, m_type: MType) -> io::Result<()> {
+        if !self.valid_m_type(m_type) {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 format!(
-                    "Message specified MId {}, but the maximum MId is {}.",
-                    mid,
-                    self.mid_count()
+                    "Message specified MType: {}, but the maximum MType is {}.",
+                    m_type,
+                    self.mtype_count()
                 ),
             ));
         }

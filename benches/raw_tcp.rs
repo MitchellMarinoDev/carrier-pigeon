@@ -48,7 +48,7 @@ fn many_raw_tcp_big(b: &mut Bencher) {
             s1.send(0, &msg).unwrap();
         }
         for _ in 0..100 {
-            let (_mid, _msg) = s2.recv().unwrap();
+            let (_m_type, _msg) = s2.recv().unwrap();
         }
         // Data validation is done in different tests.
     })
@@ -66,7 +66,7 @@ fn many_raw_tcp_small(b: &mut Bencher) {
             s1.send(0, &msg).unwrap();
         }
         for _ in 0..100 {
-            let (_mid, _msg) = s2.recv().unwrap();
+            let (_m_type, _msg) = s2.recv().unwrap();
         }
         // Data validation is done in different tests.
     })

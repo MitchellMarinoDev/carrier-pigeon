@@ -1,6 +1,6 @@
 use crate::net::{MAX_MESSAGE_SIZE, MAX_SAFE_MESSAGE_SIZE};
 use crate::transport::ClientTransport;
-use crate::MId;
+use crate::MType;
 use log::*;
 use std::io;
 use std::io::{Error, ErrorKind};
@@ -25,14 +25,14 @@ impl ClientTransport for UdpClientTransport {
         Ok(UdpClientTransport { socket, buf })
     }
 
-    fn send(&self, mid: MId, payload: Arc<Vec<u8>>) -> io::Result<()> {
+    fn send(&self, m_type: MType, payload: Arc<Vec<u8>>) -> io::Result<()> {
         // Check if the message is valid, and should be sent.
         let payload_len = payload.len();
         if payload_len > MAX_MESSAGE_SIZE {
             let e_msg = format!(
                 "UDP: Outgoing message size is greater than the maximum message size ({}). \
-                MId: {}, size: {}. Discarding message.",
-                MAX_MESSAGE_SIZE, mid, payload_len
+                MType: {}, size: {}. Discarding message.",
+                MAX_MESSAGE_SIZE, m_type, payload_len
             );
             return Err(Error::new(ErrorKind::InvalidData, e_msg));
         }
@@ -40,15 +40,15 @@ impl ClientTransport for UdpClientTransport {
         if payload_len > MAX_SAFE_MESSAGE_SIZE {
             debug!(
                 "UDP: Outgoing message size is greater than the maximum SAFE message size.\
-                MId: {}, size: {}. Sending message anyway.",
-                mid, payload_len
+                MType: {}, size: {}. Sending message anyway.",
+                m_type, payload_len
             );
         }
         // Message can be sent!
 
         trace!(
-            "Client: Sending message with MId: {}, len: {}.",
-            mid,
+            "Client: Sending message with MType: {}, len: {}.",
+            m_type,
             payload_len
         );
         let n = self.socket.send(&payload)?;
@@ -56,10 +56,10 @@ impl ClientTransport for UdpClientTransport {
         // Make sure it sent correctly.
         if n != payload_len {
             error!(
-                "UDP: Couldn't send all the bytes of a message (mid: {}). \
+                "UDP: Couldn't send all the bytes of a message (MType: {}). \
 				Wanted to send {} but could only send {}. This will likely \
 				cause issues on the other side.",
-                mid, payload_len, n
+                m_type, payload_len, n
             );
         }
         Ok(())

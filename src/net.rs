@@ -24,31 +24,31 @@ pub const HEADER_SIZE: usize = 6;
 
 /// A header to be sent before the payload on TCP.
 ///
-/// `len` and `mid` are sent as big endian u16s.
+/// `len` and `m_type` are sent as big endian u16s.
 /// This means they have a max value of **`65535`**.
 /// This shouldn't pose any real issues.
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 pub struct MsgHeader {
     /// The message id of this message.
-    pub mid: MId,
+    pub m_type: MType,
     /// An incrementing integer unique to this message.
     pub ack_num: u32,
 }
 
 impl MsgHeader {
-    /// Creates a [`MsgHeader`] with the given [`MId`] and `ack_number`.
-    pub fn new(mid: MId, ack_num: u32) -> Self {
-        MsgHeader { mid, ack_num }
+    /// Creates a [`MsgHeader`] with the given [`MType`] and `ack_number`.
+    pub fn new(m_type: MType, ack_num: u32) -> Self {
+        MsgHeader { m_type, ack_num }
     }
 
     /// Converts the [`MsgHeader`] to big endian bytes to be sent over the internet.
     pub fn to_be_bytes(&self) -> [u8; HEADER_SIZE] {
-        let mid_b = (self.mid as u16).to_be_bytes();
+        let m_type_b = (self.m_type as u16).to_be_bytes();
         let ack_num_b = self.ack_num.to_be_bytes();
 
         [
-            mid_b[0],
-            mid_b[1],
+            m_type_b[0],
+            m_type_b[1],
             ack_num_b[0],
             ack_num_b[1],
             ack_num_b[2],
@@ -62,10 +62,10 @@ impl MsgHeader {
     pub fn from_be_bytes(bytes: &[u8]) -> Self {
         assert_eq!(bytes.len(), HEADER_SIZE);
 
-        let mid = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
+        let m_type = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
         let ack_num = u32::from_be_bytes(bytes[2..].try_into().unwrap());
 
-        MsgHeader { mid, ack_num }
+        MsgHeader { m_type, ack_num }
     }
 }
 
@@ -142,10 +142,10 @@ impl Status {
     }
 }
 
-/// Message ID.
+/// Message Type.
 ///
 /// This is an integer unique to each type of message.
-pub type MId = usize;
+pub type MType = usize;
 
 /// Connection ID.
 ///
@@ -203,8 +203,7 @@ impl CIdSpec {
 }
 
 /// Configuration for a client.
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize, Default)]
 pub struct ClientConfig {}
 
 impl ClientConfig {
@@ -214,11 +213,8 @@ impl ClientConfig {
     }
 }
 
-
-
 /// Configuration for a server.
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize, Default)]
 pub struct ServerConfig {}
 
 impl ServerConfig {
@@ -227,8 +223,6 @@ impl ServerConfig {
         ServerConfig {}
     }
 }
-
-
 
 /// An untyped network message containing the message content, along with the metadata associated.
 #[derive(Debug)]

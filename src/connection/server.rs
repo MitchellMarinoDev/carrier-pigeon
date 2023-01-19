@@ -1,8 +1,8 @@
 use crate::connection::{ConnectionList, ConnectionListError, NonAckedMsgs, SavedMsg};
-use crate::message_table::{CONNECTION_TYPE_MID, RESPONSE_TYPE_MID};
+use crate::message_table::{CONNECTION_M_TYPE, RESPONSE_M_TYPE};
 use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ServerTransport;
-use crate::{CId, MId, MsgTable};
+use crate::{CId, MType, MsgTable};
 use hashbrown::HashMap;
 use log::{debug, trace, warn};
 use std::any::{type_name, Any, TypeId};
@@ -58,24 +58,24 @@ impl<T: ServerTransport> ServerConnection<T> {
         let tid = TypeId::of::<M>();
 
         // create the message header
-        let mid = self.msg_table.tid_map[&tid];
-        let ack_num = self.msg_counter[&cid][mid].fetch_add(1, Ordering::AcqRel);
-        let msg_header = MsgHeader::new(mid, ack_num);
+        let m_type = self.msg_table.tid_map[&tid];
+        let ack_num = self.msg_counter[&cid][m_type].fetch_add(1, Ordering::AcqRel);
+        let msg_header = MsgHeader::new(m_type, ack_num);
 
         // build the payload using the header and the message
         let mut payload = Vec::new();
         payload.extend(msg_header.to_be_bytes());
 
-        let ser_fn = self.msg_table.ser[mid];
+        let ser_fn = self.msg_table.ser[m_type];
         ser_fn(msg, &mut payload).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
         let payload = Arc::new(payload);
 
         // send the payload based on the guarantees
-        let guarantees = self.msg_table.guarantees[mid];
+        let guarantees = self.msg_table.guarantees[m_type];
         if guarantees.reliable() {
-            self.send_reliable(cid, addr, mid, ack_num, payload)
+            self.send_reliable(cid, addr, m_type, ack_num, payload)
         } else {
-            self.send_unreliable(addr, mid, payload)
+            self.send_unreliable(addr, m_type, payload)
         }
     }
 
@@ -83,14 +83,14 @@ impl<T: ServerTransport> ServerConnection<T> {
         &self,
         cid: CId,
         addr: SocketAddr,
-        mid: MId,
+        m_type: MType,
         ack_num: u32,
         payload: Arc<Vec<u8>>,
     ) -> io::Result<()> {
-        self.transport.send_to(addr, mid, payload.clone())?;
+        self.transport.send_to(addr, m_type, payload.clone())?;
         {
             // add the payload to the list of non-acked messages
-            let mut non_acked = self.non_acked[&cid][mid]
+            let mut non_acked = self.non_acked[&cid][m_type]
                 .lock()
                 .expect("should be able to obtain lock");
             non_acked.insert(ack_num, SavedMsg::new(payload));
@@ -98,8 +98,8 @@ impl<T: ServerTransport> ServerConnection<T> {
         Ok(())
     }
 
-    fn send_unreliable(&self, addr: SocketAddr, mid: MId, payload: Arc<Vec<u8>>) -> io::Result<()> {
-        self.transport.send_to(addr, mid, payload)
+    fn send_unreliable(&self, addr: SocketAddr, m_type: MType, payload: Arc<Vec<u8>>) -> io::Result<()> {
+        self.transport.send_to(addr, m_type, payload)
     }
 
     pub fn recv_from(&mut self) -> io::Result<(CId, MsgHeader, Box<dyn Any + Send + Sync>)> {
@@ -111,7 +111,7 @@ impl<T: ServerTransport> ServerConnection<T> {
     /// Receives a message from the transport.
     ///
     /// This function converts the address to a CId and drops any messages from not connected
-    /// clients that arent of the type [`CONNECTION_TYPE_MID`]. This also validates the MId.
+    /// clients that arent of the type [`CONNECTION_M_TYPE`]. This also validates the MType.
     /// This does not handle reliablility at all, just discards unneeded messages.
     fn raw_recv_from(&mut self) -> io::Result<(CId, MsgHeader, Box<dyn Any + Send + Sync>)> {
         loop {
@@ -126,10 +126,10 @@ impl<T: ServerTransport> ServerConnection<T> {
                 continue;
             }
             let header = MsgHeader::from_be_bytes(&buf[..HEADER_SIZE]);
-            self.msg_table.check_mid(header.mid)?;
+            self.msg_table.check_m_type(header.m_type)?;
             trace!(
-                "Server: received message with MId: {}, len: {}, from: {}.",
-                header.mid,
+                "Server: received message with MType: {}, len: {}, from: {}.",
+                header.m_type,
                 n,
                 from
             );
@@ -139,7 +139,7 @@ impl<T: ServerTransport> ServerConnection<T> {
                 None => {
                     // ignore messages from not connected clients,
                     // unless it is a connection type message
-                    if header.mid != CONNECTION_TYPE_MID {
+                    if header.m_type != CONNECTION_M_TYPE {
                         debug!(
                             "Server: Discarding a message that not a connection \
                         message from a non-client ({})",
@@ -149,7 +149,7 @@ impl<T: ServerTransport> ServerConnection<T> {
                     }
 
                     debug!("Server: Connection message from {}", from);
-                    let msg = self.msg_table.deser[header.mid](&buf[HEADER_SIZE..])?;
+                    let msg = self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..])?;
                     // create a new connection
                     let _ = self.connection_list.new_pending(from, msg);
                     continue;
@@ -157,7 +157,7 @@ impl<T: ServerTransport> ServerConnection<T> {
                 Some(cid) => cid,
             };
 
-            let msg = self.msg_table.deser[header.mid](&buf[HEADER_SIZE..])?;
+            let msg = self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..])?;
 
             // TODO: handle any reliability stuff here
 
@@ -177,18 +177,20 @@ impl<T: ServerTransport> ServerConnection<T> {
     ) -> io::Result<u32> {
         let c_tid = TypeId::of::<C>();
         let r_tid = TypeId::of::<R>();
-        if self.msg_table.tid_map.get(&c_tid) != Some(&CONNECTION_TYPE_MID) {
+        if self.msg_table.tid_map.get(&c_tid) != Some(&CONNECTION_M_TYPE) {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 "generic type `C` needs to the same `C` \
-                    that you passed into `MsgTableBuilder::build`".to_string(),
+                    that you passed into `MsgTableBuilder::build`"
+                    .to_string(),
             ));
         }
-        if self.msg_table.tid_map.get(&r_tid) != Some(&RESPONSE_TYPE_MID) {
+        if self.msg_table.tid_map.get(&r_tid) != Some(&RESPONSE_M_TYPE) {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 "generic type `R` needs to the same `R` \
-                    that you passed into `MsgTableBuilder::build`".to_string(),
+                    that you passed into `MsgTableBuilder::build`"
+                    .to_string(),
             ));
         }
 
@@ -215,15 +217,15 @@ impl<T: ServerTransport> ServerConnection<T> {
 
     fn new_connection(&mut self, cid: CId, addr: SocketAddr) -> Result<(), ConnectionListError> {
         self.connection_list.new_connection(cid, addr)?;
-        let mid_count = self.msg_table.mid_count();
+        let m_type_count = self.msg_table.mtype_count();
 
         self.missing_msg
-            .insert(cid, (0..mid_count).map(|_| vec![]).collect());
+            .insert(cid, (0..m_type_count).map(|_| vec![]).collect());
         self.msg_counter
-            .insert(cid, (0..mid_count).map(|_| AtomicU32::new(0)).collect());
+            .insert(cid, (0..m_type_count).map(|_| AtomicU32::new(0)).collect());
         self.non_acked.insert(
             cid,
-            (0..mid_count)
+            (0..m_type_count)
                 .map(|_| Mutex::new(NonAckedMsgs::new()))
                 .collect(),
         );

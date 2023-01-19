@@ -1,4 +1,4 @@
-use crate::MId;
+use crate::MType;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -16,8 +16,8 @@ pub trait ClientTransport {
         Self: Sized;
     /// Send the payload `payload` to the connected address.
     ///
-    /// The [`MId`] of the message is not needed, but provided for logging purposes.
-    fn send(&self, mid: MId, payload: Arc<Vec<u8>>) -> io::Result<()>;
+    /// The [`MType`](crate::MType) of the message is not needed, but provided for logging purposes.
+    fn send(&self, m_type: MType, payload: Arc<Vec<u8>>) -> io::Result<()>;
     /// Receive the next message (or error) from the connected address.
     fn recv(&mut self) -> io::Result<Vec<u8>>;
     fn recv_blocking(&mut self) -> io::Result<Vec<u8>>;
@@ -34,8 +34,8 @@ pub trait ServerTransport {
         Self: Sized;
     /// Sends the payload `payload` to the address `addr`.
     ///
-    /// The [`MId`] of the message is not needed, but provided for logging purposes.
-    fn send_to(&self, addr: SocketAddr, mid: MId, payload: Arc<Vec<u8>>) -> io::Result<()>;
+    /// The [`MType`](crate::MType) of the message is not needed, but provided for logging purposes.
+    fn send_to(&self, addr: SocketAddr, m_type: MType, payload: Arc<Vec<u8>>) -> io::Result<()>;
     /// Receives the next message (or error) from from any address/client.
     fn recv_from(&mut self) -> io::Result<(SocketAddr, Vec<u8>)>;
     /// Returns the address that the server is listening on.

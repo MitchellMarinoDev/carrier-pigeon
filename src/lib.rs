@@ -28,6 +28,6 @@ mod util;
 
 pub use client::{Client, OptionPendingClient, PendingClient};
 pub use message_table::{Guarantees, MsgRegError, MsgTable, MsgTableBuilder};
-pub use net::{CId, MId};
-pub use server::Server;
+pub use net::{CId, MType};
 pub use net::{ClientConfig, ServerConfig};
+pub use server::Server;

@@ -42,7 +42,8 @@ pub fn create_client_server_pair() -> (Client, Server) {
     loop {
         server.clear_msgs();
         server.get_msgs();
-        let count = server.handle_new_cons(|_cid, _addr, _con_msg: Connection| (true, Response::Accepted));
+        let count =
+            server.handle_new_cons(|_cid, _addr, _con_msg: Connection| (true, Response::Accepted));
         if count != 0 {
             break;
         }

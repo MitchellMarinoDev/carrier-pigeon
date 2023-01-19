@@ -1,5 +1,5 @@
 use crate::connection::server::ServerConnection;
-use crate::message_table::{MsgTable, CONNECTION_TYPE_MID, RESPONSE_TYPE_MID};
+use crate::message_table::{MsgTable, CONNECTION_M_TYPE, RESPONSE_M_TYPE};
 use crate::net::{CId, CIdSpec, ErasedNetMsg, NetMsg, ServerConfig, Status};
 use crate::transport::server_std_udp::UdpServerTransport;
 use log::*;
@@ -20,7 +20,7 @@ pub struct Server {
     config: ServerConfig,
     /// The received message buffer.
     ///
-    /// Each [`MId`] has its own vector.
+    /// Each [`MType`](crate::MType) has its own vector.
     msg_buf: Vec<Vec<ErasedNetMsg>>,
 
     /// Disconnected connections.
@@ -41,8 +41,8 @@ impl Server {
     ) -> io::Result<Self> {
         let connection = ServerConnection::new(msg_table.clone(), listen_addr)?;
 
-        let mid_count = msg_table.tid_map.len();
-        let msg_buf = (0..mid_count).map(|_| vec![]).collect();
+        let m_type_count = msg_table.tid_map.len();
+        let msg_buf = (0..m_type_count).map(|_| vec![]).collect();
 
         Ok(Server {
             config,
@@ -87,8 +87,8 @@ impl Server {
         // verify that `C` and `R` are the right type.
         let c_tid = TypeId::of::<C>();
         let r_tid = TypeId::of::<R>();
-        if self.msg_table.tid_map.get(&c_tid) != Some(&CONNECTION_TYPE_MID)
-            || self.msg_table.tid_map.get(&r_tid) != Some(&RESPONSE_TYPE_MID)
+        if self.msg_table.tid_map.get(&c_tid) != Some(&CONNECTION_M_TYPE)
+            || self.msg_table.tid_map.get(&r_tid) != Some(&RESPONSE_M_TYPE)
         {
             panic!(
                 "generic parameters `C` and `R` need to match the generic parameters \
@@ -158,9 +158,9 @@ impl Server {
             For a non panicking version, use `try_recv`",
         );
         let tid = TypeId::of::<M>();
-        let mid = self.msg_table.tid_map[&tid];
+        let m_type = self.msg_table.tid_map[&tid];
 
-        self.msg_buf[mid]
+        self.msg_buf[m_type]
             .iter()
             .map(|m| m.get_typed::<M>().unwrap())
     }
@@ -172,10 +172,10 @@ impl Server {
     /// Returns `None` if the type `M` was not registered.
     pub fn try_recv<M: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = NetMsg<M>>> {
         let tid = TypeId::of::<M>();
-        let mid = *self.msg_table.tid_map.get(&tid)?;
+        let m_type = *self.msg_table.tid_map.get(&tid)?;
 
         Some(
-            self.msg_buf[mid]
+            self.msg_buf[m_type]
                 .iter()
                 .map(|m| m.get_typed::<M>().unwrap()),
         )
@@ -198,9 +198,9 @@ impl Server {
             For a non panicking version, use `try_recv_spec`",
         );
         let tid = TypeId::of::<M>();
-        let mid = self.msg_table.tid_map[&tid];
+        let m_type = self.msg_table.tid_map[&tid];
 
-        self.msg_buf[mid]
+        self.msg_buf[m_type]
             .iter()
             .filter(move |net_msg| spec.matches(net_msg.cid))
             .map(|net_msg| net_msg.get_typed().unwrap())
@@ -217,10 +217,10 @@ impl Server {
         spec: CIdSpec,
     ) -> Option<impl Iterator<Item = NetMsg<M>> + '_> {
         let tid = TypeId::of::<M>();
-        let mid = *self.msg_table.tid_map.get(&tid)?;
+        let m_type = *self.msg_table.tid_map.get(&tid)?;
 
         Some(
-            self.msg_buf[mid]
+            self.msg_buf[m_type]
                 .iter()
                 .filter(move |net_msg| spec.matches(net_msg.cid))
                 .map(|net_msg| net_msg.get_typed().unwrap()),
@@ -243,7 +243,7 @@ impl Server {
                 Ok((cid, header, msg)) => {
                     // TODO: handle special message types here
                     count += 1;
-                    self.msg_buf[header.mid].push(ErasedNetMsg {
+                    self.msg_buf[header.m_type].push(ErasedNetMsg {
                         cid,
                         ack_num: header.ack_num,
                         msg,

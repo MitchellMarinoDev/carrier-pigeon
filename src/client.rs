@@ -1,5 +1,5 @@
 use crate::connection::client::ClientConnection;
-use crate::message_table::{MsgTable, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID};
+use crate::message_table::{MsgTable, CONNECTION_M_TYPE, DISCONNECT_M_TYPE, RESPONSE_M_TYPE};
 use crate::net::{ClientConfig, ErasedNetMsg, NetMsg, Status};
 use crate::transport::client_std_udp::UdpClientTransport;
 use crossbeam_channel::internal::SelectHandle;
@@ -25,7 +25,7 @@ pub struct Client {
     status: Status,
     /// The received message buffer.
     ///
-    /// Each [`MId`] has its own vector.
+    /// Each [`MType`](crate::MType) has its own vector.
     msg_buff: Vec<Vec<ErasedNetMsg>>,
 
     // TODO: make this generic/behind a feature flag somehow.
@@ -69,20 +69,21 @@ impl Client {
     ) -> io::Result<(Self, Box<dyn Any + Send + Sync>)> {
         // verify that `con_msg` is the correct type.
         let tid = TypeId::of::<C>();
-        let con_msg_mid = msg_table.tid_map.get(&tid);
-        match con_msg_mid {
-            Some(&CONNECTION_TYPE_MID) => Ok(()),
+        let con_msg_m_type = msg_table.tid_map.get(&tid);
+        match con_msg_m_type {
+            Some(&CONNECTION_M_TYPE) => Ok(()),
             _ => Err(Error::new(
                 InvalidData,
                 "the type of `con_msg` passed into `Client::new` or `Client::new_blocking` \
-                    should match the first type parameter of the `MsgTable::build` function.".to_string(),
+                    should match the first type parameter of the `MsgTable::build` function."
+                    .to_string(),
             )),
         }?;
 
         debug!("Attempting to create a client connection");
         let connection = ClientConnection::new(msg_table.clone(), local, peer)?;
 
-        let msg_buff = (0..msg_table.mid_count()).map(|_| vec![]).collect();
+        let msg_buff = (0..msg_table.mtype_count()).map(|_| vec![]).collect();
 
         let mut client = Client {
             config,
@@ -100,12 +101,12 @@ impl Client {
         let (header, response_msg) = client.connection.recv_blocking()?;
         trace!("Got response message from the server.");
 
-        if header.mid != RESPONSE_TYPE_MID {
+        if header.m_type != RESPONSE_M_TYPE {
             return Err(io::Error::new(
                 InvalidData,
                 format!(
-                    "Client: First received message was MId: {} not MId: {} (Response message)",
-                    header.mid, RESPONSE_TYPE_MID
+                    "Client: First received message was MType: {} not MType: {} (Response message)",
+                    header.m_type, RESPONSE_M_TYPE
                 ),
             ));
         }
@@ -143,7 +144,7 @@ impl Client {
     /// give a reason for the disconnect.
     pub fn disconnect<D: Any + Send + Sync>(&mut self, discon_msg: &D) -> io::Result<()> {
         let tid = TypeId::of::<D>();
-        if self.msg_table.tid_map[&tid] != DISCONNECT_TYPE_MID {
+        if self.msg_table.tid_map[&tid] != DISCONNECT_M_TYPE {
             return Err(Error::new(
                 InvalidData,
                 "The `discon_msg` type must be the disconnection message type \
@@ -186,9 +187,9 @@ impl Client {
             For a non panicking version, use `try_get_msgs`",
         );
         let tid = TypeId::of::<T>();
-        let mid = self.msg_table.tid_map[&tid];
+        let m_type = self.msg_table.tid_map[&tid];
 
-        self.msg_buff[mid].iter().map(|m| m.get_typed().unwrap())
+        self.msg_buff[m_type].iter().map(|m| m.get_typed().unwrap())
     }
 
     /// Gets an iterator for the messages of type `T`.
@@ -196,9 +197,9 @@ impl Client {
     /// Returns `None` if the type `T` was not registered.
     pub fn try_recv<T: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = NetMsg<T>> + '_> {
         let tid = TypeId::of::<T>();
-        let mid = *self.msg_table.tid_map.get(&tid)?;
+        let m_type = *self.msg_table.tid_map.get(&tid)?;
 
-        Some(self.msg_buff[mid].iter().map(|m| m.get_typed().unwrap()))
+        Some(self.msg_buff[m_type].iter().map(|m| m.get_typed().unwrap()))
     }
 
     /// Receives the messages from the connections.
@@ -226,7 +227,7 @@ impl Client {
                 // Successfully got a message.
                 Ok((header, msg)) => {
                     i += 1;
-                    self.msg_buff[header.mid].push(ErasedNetMsg::new(0, header.ack_num, msg));
+                    self.msg_buff[header.m_type].push(ErasedNetMsg::new(0, header.ack_num, msg));
                 }
             }
         }
