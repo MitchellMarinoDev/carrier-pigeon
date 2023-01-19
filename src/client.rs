@@ -74,10 +74,8 @@ impl Client {
             Some(&CONNECTION_TYPE_MID) => Ok(()),
             _ => Err(Error::new(
                 InvalidData,
-                format!(
-                    "the type of `con_msg` passed into `Client::new` or `Client::new_blocking` \
-                    should match the first type parameter of the `MsgTable::build` function.",
-                ),
+                "the type of `con_msg` passed into `Client::new` or `Client::new_blocking` \
+                    should match the first type parameter of the `MsgTable::build` function.".to_string(),
             )),
         }?;
 

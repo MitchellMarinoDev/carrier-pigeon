@@ -86,12 +86,12 @@ impl ConnectionList {
         if !self.cid_connected(cid) {
             return Err(ConnectionListError::NotConnected);
         }
-        let addr = self.cid_addr.remove(&cid).expect("cid should be connected");
+        let _addr = self.cid_addr.remove(&cid).expect("cid should be connected");
         Ok(())
     }
 
     pub fn disconnect(&mut self, cid: CId) -> bool {
-        return self.cid_addr.remove(&cid).is_some();
+        self.cid_addr.remove(&cid).is_some()
     }
 
     pub fn connection_count(&self) -> usize {

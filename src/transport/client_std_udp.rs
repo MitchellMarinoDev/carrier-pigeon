@@ -67,14 +67,14 @@ impl ClientTransport for UdpClientTransport {
 
     fn recv(&mut self) -> io::Result<Vec<u8>> {
         let n = self.socket.recv(&mut self.buf)?;
-        return Ok(self.buf[..n].to_vec());
+        Ok(self.buf[..n].to_vec())
     }
 
     fn recv_blocking(&mut self) -> io::Result<Vec<u8>> {
         self.socket.set_nonblocking(false)?;
         let result = self.recv();
         self.socket.set_nonblocking(true)?;
-        return result;
+        result
     }
 
     fn local_addr(&self) -> io::Result<SocketAddr> {

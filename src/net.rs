@@ -44,7 +44,7 @@ impl MsgHeader {
     /// Converts the [`MsgHeader`] to big endian bytes to be sent over the internet.
     pub fn to_be_bytes(&self) -> [u8; HEADER_SIZE] {
         let mid_b = (self.mid as u16).to_be_bytes();
-        let ack_num_b = (self.ack_num as u32).to_be_bytes();
+        let ack_num_b = self.ack_num.to_be_bytes();
 
         [
             mid_b[0],
@@ -204,6 +204,7 @@ impl CIdSpec {
 
 /// Configuration for a client.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct ClientConfig {}
 
 impl ClientConfig {
@@ -213,14 +214,11 @@ impl ClientConfig {
     }
 }
 
-impl Default for ClientConfig {
-    fn default() -> Self {
-        ClientConfig {}
-    }
-}
+
 
 /// Configuration for a server.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct ServerConfig {}
 
 impl ServerConfig {
@@ -230,11 +228,7 @@ impl ServerConfig {
     }
 }
 
-impl Default for ServerConfig {
-    fn default() -> Self {
-        ServerConfig {}
-    }
-}
+
 
 /// An untyped network message containing the message content, along with the metadata associated.
 #[derive(Debug)]

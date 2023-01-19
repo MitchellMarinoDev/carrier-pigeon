@@ -12,7 +12,7 @@
 //! not be broadcast to the other clients.
 
 use crate::shared::{Connection, Disconnect, Msg, Response, SERVER_ADDR_LOCAL};
-use carrier_pigeon::net::{CIdSpec, ClientConfig, ServerConfig};
+use carrier_pigeon::net::{CIdSpec, ServerConfig};
 use carrier_pigeon::{Guarantees, MsgTableBuilder, Server};
 use log::LevelFilter;
 use simple_logger::SimpleLogger;

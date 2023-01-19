@@ -180,19 +180,15 @@ impl<T: ServerTransport> ServerConnection<T> {
         if self.msg_table.tid_map.get(&c_tid) != Some(&CONNECTION_TYPE_MID) {
             return Err(Error::new(
                 ErrorKind::InvalidData,
-                format!(
-                    "generic type `C` needs to the same `C` \
-                    that you passed into `MsgTableBuilder::build`"
-                ),
+                "generic type `C` needs to the same `C` \
+                    that you passed into `MsgTableBuilder::build`".to_string(),
             ));
         }
         if self.msg_table.tid_map.get(&r_tid) != Some(&RESPONSE_TYPE_MID) {
             return Err(Error::new(
                 ErrorKind::InvalidData,
-                format!(
-                    "generic type `R` needs to the same `R` \
-                    that you passed into `MsgTableBuilder::build`"
-                ),
+                "generic type `R` needs to the same `R` \
+                    that you passed into `MsgTableBuilder::build`".to_string(),
             ));
         }
 

@@ -1,13 +1,11 @@
-use crate::message_table::CONNECTION_TYPE_MID;
-use crate::net::{MsgHeader, HEADER_SIZE, MAX_MESSAGE_SIZE, MAX_SAFE_MESSAGE_SIZE};
+use crate::net::{HEADER_SIZE, MAX_MESSAGE_SIZE, MAX_SAFE_MESSAGE_SIZE};
 use crate::transport::ServerTransport;
 use crate::MId;
 use log::*;
-use std::collections::BTreeSet;
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::{SocketAddr, UdpSocket};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 
 pub struct UdpServerTransport {
     socket: UdpSocket,
@@ -68,7 +66,7 @@ impl ServerTransport for UdpServerTransport {
 
     fn recv_from(&mut self) -> io::Result<(SocketAddr, Vec<u8>)> {
         let (n, from) = self.socket.recv_from(&mut self.buf)?;
-        return Ok((from, (self.buf[HEADER_SIZE..n]).to_vec()));
+        Ok((from, (self.buf[HEADER_SIZE..n]).to_vec()))
     }
 
     fn listen_addr(&self) -> io::Result<SocketAddr> {

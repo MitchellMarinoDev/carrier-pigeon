@@ -50,7 +50,7 @@ impl<K: Clone + Hash + Eq, V: Clone + Hash + Eq> DoubleHashMap<K, V> {
     pub fn insert(&mut self, key: K, value: V) -> Result<(), DoubleHashMapError> {
         let old_key = self.backward.get(&value);
         let old_value = self.forward.get(&key);
-        if (old_key == None && old_value == None)
+        if (old_key.is_none() && old_value.is_none())
             || (old_key == Some(&key) && old_value == Some(&value))
         {
             self.forward.insert(key.clone(), value.clone());
