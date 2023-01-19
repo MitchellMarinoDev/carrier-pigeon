@@ -157,7 +157,7 @@ impl<T: ServerTransport> ServerConnection<T> {
                 Some(cid) => cid,
             };
 
-            let msg = self.msg_table.deser[header.mid](&buf)?;
+            let msg = self.msg_table.deser[header.mid](&buf[HEADER_SIZE..])?;
 
             // TODO: handle any reliability stuff here
 
