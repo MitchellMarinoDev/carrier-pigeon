@@ -91,7 +91,7 @@ pub struct MsgTableBuilder {
     sorted: Vec<(String, Registration)>,
 }
 
-/// The table mapping [`TypeId`]s to message ids ([`MType`](crate::MType)s) and [`Guarantees`].
+/// The table mapping [`TypeId`]s to [`MType`](crate::MType)s and [`Guarantees`].
 ///
 /// You can build this by registering your types with a [`MsgTableBuilder`] or [`SortedMsgTableBuilder`], then building it with
 /// [`MsgTableBuilder::build()`] or [`SortedMsgTableBuilder::build()`].

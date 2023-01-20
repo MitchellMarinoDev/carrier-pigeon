@@ -27,6 +27,7 @@ simple_logger = "4.0"
 
 [dependencies]
 bevy = { version = "0.9", optional = true }
+dashmap = "5.4"
 crossbeam-channel = "0.5"
 serde = { version = "1.0", features = ["derive"] }
 bincode = "1.3"

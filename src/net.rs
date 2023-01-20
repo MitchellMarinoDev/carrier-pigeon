@@ -20,39 +20,64 @@ pub const MAX_SAFE_MESSAGE_SIZE: usize = 508;
 pub const MAX_MESSAGE_SIZE: usize = 65507;
 
 /// The size of carrier-pigeon's header.
-pub const HEADER_SIZE: usize = 6;
+pub const HEADER_SIZE: usize = 12;
 
-/// A header to be sent before the payload on TCP.
-///
-/// `len` and `m_type` are sent as big endian u16s.
-/// This means they have a max value of **`65535`**.
-/// This shouldn't pose any real issues.
+/// A header to be sent before the message contents of a message.
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 pub struct MsgHeader {
-    /// The message id of this message.
+    /// The message type of this message.
     pub m_type: MType,
-    /// An incrementing integer unique to this message.
-    pub ack_num: u32,
+    /// An incrementing integer specific to this `m_type`. This allows us to order messages
+    /// on arrival.
+    pub order_num: OrderNum,
+    /// The [`AckNumber`] of this outgoing message.
+    pub sender_ack_num: AckNum,
+    /// The header also contains a place to acknowledge the previously received messages that were
+    /// from the destination of this message.
+    ///
+    /// This number is a offset for the `ack_bits`. Read `acknowledgements.md` and look at
+    /// [AckSystem](crate::connection::ack_system::AckSystem) for more.
+    pub receiver_acking_num: AckNum,
+    /// 32 bits representing weather the 32 ack numbers before the `receiver_acking_num` are acked.
+    ///
+    /// This allows us to acknowledge up to 32 messages at once.
+    ///
+    /// For example, with an `receiver_acking_num` of 32
+    pub ack_bits: u32,
 }
 
 impl MsgHeader {
-    /// Creates a [`MsgHeader`] with the given [`MType`] and `ack_number`.
-    pub fn new(m_type: MType, ack_num: u32) -> Self {
-        MsgHeader { m_type, ack_num }
+    /// Creates a [`MsgHeader`] with the given [`MType`], `ack_number` and `order_num`.
+    pub fn new(m_type: MType, order_num: OrderNum, sender_ack_num: AckNum, receiver_acking_num: AckNum, ack_bits: u32) -> Self {
+        MsgHeader { m_type, order_num, sender_ack_num, receiver_acking_num, ack_bits }
     }
 
     /// Converts the [`MsgHeader`] to big endian bytes to be sent over the internet.
     pub fn to_be_bytes(&self) -> [u8; HEADER_SIZE] {
         let m_type_b = (self.m_type as u16).to_be_bytes();
-        let ack_num_b = self.ack_num.to_be_bytes();
+        let order_num_b = self.order_num.to_be_bytes();
+        let sender_ack_num_b = self.sender_ack_num.to_be_bytes();
+        let receiver_acking_num_b = self.receiver_acking_num.to_be_bytes();
+        let ack_bits_b = self.ack_bits.to_be_bytes();
+        debug_assert_eq!(m_type_b.len(), 2);
+        debug_assert_eq!(order_num_b.len(), 2);
+        debug_assert_eq!(sender_ack_num_b.len(), 2);
+        debug_assert_eq!(receiver_acking_num_b.len(), 4);
+        debug_assert_eq!(m_type_b.len() + order_num_b.len() + sender_ack_num_b.len() + receiver_acking_num_b.len() + ack_bits_b.len(), HEADER_SIZE);
 
         [
             m_type_b[0],
             m_type_b[1],
-            ack_num_b[0],
-            ack_num_b[1],
-            ack_num_b[2],
-            ack_num_b[3],
+            order_num_b[0],
+            order_num_b[1],
+            sender_ack_num_b[0],
+            sender_ack_num_b[1],
+            receiver_acking_num_b[0],
+            receiver_acking_num_b[1],
+            ack_bits_b[0],
+            ack_bits_b[1],
+            ack_bits_b[2],
+            ack_bits_b[3],
         ]
     }
 
@@ -60,12 +85,15 @@ impl MsgHeader {
     ///
     /// You **must** pass in a slice that is [`HEADER_LEN`] long.
     pub fn from_be_bytes(bytes: &[u8]) -> Self {
-        assert_eq!(bytes.len(), HEADER_SIZE);
+        assert_eq!(bytes.len(), HEADER_SIZE, "The length of the buffer passed into `from_be_bytes` should have a length of {}", HEADER_SIZE);
 
         let m_type = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
-        let ack_num = u32::from_be_bytes(bytes[2..].try_into().unwrap());
+        let order_num = u16::from_be_bytes(bytes[2..4].try_into().unwrap());
+        let sender_ack_num = u16::from_be_bytes(bytes[4..6].try_into().unwrap());
+        let receiver_acking_num = u16::from_be_bytes(bytes[6..8].try_into().unwrap());
+        let ack_bits = u32::from_be_bytes(bytes[8..12].try_into().unwrap());
 
-        MsgHeader { m_type, ack_num }
+        MsgHeader { m_type, order_num, sender_ack_num, receiver_acking_num, ack_bits }
     }
 }
 
@@ -156,8 +184,14 @@ pub type CId = u32;
 /// Acknowledgement Number.
 ///
 /// This is an integer incremented for every message sent, so messages can be uniquely identified.
-/// This is used as a way to acknowledge reliable messages, and order the messages as they come in.
-pub type AckNum = u32;
+/// This is used as a way to acknowledge reliable messages.
+pub type AckNum = u16;
+
+/// Ordering Number.
+///
+/// This is an integer specific to each [`MType`], incremented for every message sent,
+/// This is so we can order the messages as they come in.
+pub type OrderNum = u16;
 
 /// A way to specify the valid [`CId`]s for an operation.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
@@ -228,20 +262,26 @@ impl ServerConfig {
 #[derive(Debug)]
 pub(crate) struct ErasedNetMsg {
     /// The [`CId`] that the message was sent from.
-    pub(crate) cid: CId,
-    /// The acknowledgement number for the given message.
-    /// This is an incrementing integer assigned by the sender.
+    pub cid: CId,
+    /// The acknowledgment number. This is an incrementing integer assigned by the sender for every
+    /// message.
     ///
-    /// It is used for uniquely identifying the message for acknowledgement, and for ordering of
-    /// the messages.
+    /// This is not necessarily guaranteed to be unique as wrapping can happen after a lot of
+    /// messages.
     pub ack_num: AckNum,
+    /// The ordering number. This is an incrementing integer assigned by the sender, on a
+    /// per-[`MType`] basis.
+    ///
+    /// This is not necessarily guaranteed to be unique as wrapping can happen after a lot of
+    /// messages.
+    pub order_num: OrderNum,
     /// The actual message.
-    pub(crate) msg: Box<dyn Any + Send + Sync>,
+    pub msg: Box<dyn Any + Send + Sync>,
 }
 
 impl ErasedNetMsg {
-    pub(crate) fn new(cid: CId, ack_num: AckNum, msg: Box<dyn Any + Send + Sync>) -> Self {
-        Self { cid, ack_num, msg }
+    pub(crate) fn new(cid: CId, ack_num: AckNum, order_num: OrderNum, msg: Box<dyn Any + Send + Sync>) -> Self {
+        Self { cid, ack_num, order_num, msg }
     }
 
     /// Converts this to NetMsg, borrowed from this.
@@ -250,6 +290,7 @@ impl ErasedNetMsg {
         Some(NetMsg {
             cid: self.cid,
             ack_num: self.ack_num,
+            order_num: self.order_num,
             m: msg,
         })
     }
@@ -260,12 +301,18 @@ impl ErasedNetMsg {
 pub struct NetMsg<'n, T: Any + Send + Sync> {
     /// The [`CId`] that the message was sent from.
     pub cid: CId,
-    /// The acknowledgement number for the given message.
-    /// This is an incrementing integer assigned by the sender.
+    /// The acknowledgment number. This is an incrementing integer assigned by the sender for every
+    /// message.
     ///
-    /// It is used for uniquely identifying the message for acknowledgement, and for ordering of
-    /// the messages.
+    /// This is not necessarily guaranteed to be unique as wrapping can happen after a lot of
+    /// messages.
     pub ack_num: AckNum,
+    /// The ordering number. This is an incrementing integer assigned by the sender, on a
+    /// per-[`MType`] basis.
+    ///
+    /// This is not necessarily guaranteed to be unique as wrapping can happen after a lot of
+    /// messages.
+    pub order_num: OrderNum,
     /// The actual message.
     ///
     /// Borrowed from the client or server.

@@ -1,5 +1,5 @@
 use crate::connection::{NonAckedMsgs, SavedMsg};
-use crate::net::{MsgHeader, HEADER_SIZE};
+use crate::net::{MsgHeader, HEADER_SIZE, AckNum, OrderNum};
 use crate::transport::ClientTransport;
 use crate::{MType, MsgTable};
 use log::{trace, warn};
@@ -8,14 +8,19 @@ use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use crate::connection::ack_system::AckSystem;
 
 /// A wrapper around the the [`ClientTransport`] that adds the reliability and ordering.
-pub struct ClientConnection<T: ClientTransport> {
+pub(crate) struct ClientConnection<T: ClientTransport> {
     msg_table: MsgTable,
     transport: T,
 
-    msg_counter: Vec<u32>,
+    /// A MType-independent counter for acknowledgment numbers.
+    ack_num: AckNum,
+    /// A per-MType counter used for ordering.
+    order_num: Vec<OrderNum>,
     non_acked: Vec<NonAckedMsgs>,
+    remote_ack: AckSystem,
 
     missing_msg: Vec<Vec<u32>>,
 }
@@ -42,8 +47,10 @@ impl<T: ClientTransport> ClientConnection<T> {
         Ok(Self {
             msg_table,
             transport,
-            msg_counter,
+            ack_num: 0,
+            order_num: msg_counter,
             non_acked,
+            remote_ack: AckSystem::new(),
             missing_msg,
         })
     }
@@ -55,9 +62,12 @@ impl<T: ClientTransport> ClientConnection<T> {
 
         // create the message header
         let m_type = self.msg_table.tid_map[&tid];
-        let ack_num = self.msg_counter[m_type];
-        self.msg_counter[m_type] += 1;
-        let msg_header = MsgHeader::new(m_type, ack_num);
+        let order_num = self.order_num[m_type];
+        self.order_num[m_type] += 1;
+        let sender_ack_num = self.ack_num;
+        self.ack_num += 1;
+        let (receiver_acking_num, ack_bits) = self.remote_ack.get_next();
+        let msg_header = MsgHeader::new(m_type, order_num, sender_ack_num, receiver_acking_num, ack_bits);
 
         // build the payload using the header and the message
         let mut payload = Vec::new();
@@ -70,19 +80,16 @@ impl<T: ClientTransport> ClientConnection<T> {
         // send the payload based on the guarantees
         let guarantees = self.msg_table.guarantees[m_type];
         if guarantees.reliable() {
-            self.send_reliable(m_type, ack_num, payload)
+            self.send_reliable(m_type, sender_ack_num, payload)
         } else {
             self.send_unreliable(m_type, payload)
         }
     }
 
-    fn send_reliable(&mut self, m_type: MType, ack_num: u32, payload: Arc<Vec<u8>>) -> io::Result<()> {
+    fn send_reliable(&mut self, m_type: MType, ack_num: AckNum, payload: Arc<Vec<u8>>) -> io::Result<()> {
         self.transport.send(m_type, payload.clone())?;
         // add the payload to the list of non-acked messages
-        self.non_acked
-            .get_mut(m_type)
-            .expect("m_type should exist")
-            .insert(ack_num, SavedMsg::new(payload));
+        self.non_acked.get_mut(m_type).expect("m_type should be valid").insert(ack_num, SavedMsg::new(payload));
         Ok(())
     }
 

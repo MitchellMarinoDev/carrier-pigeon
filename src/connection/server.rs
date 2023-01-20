@@ -1,6 +1,6 @@
 use crate::connection::{ConnectionList, ConnectionListError, NonAckedMsgs, SavedMsg};
 use crate::message_table::{CONNECTION_M_TYPE, RESPONSE_M_TYPE};
-use crate::net::{MsgHeader, HEADER_SIZE};
+use crate::net::{MsgHeader, HEADER_SIZE, AckNum, OrderNum};
 use crate::transport::ServerTransport;
 use crate::{CId, MType, MsgTable};
 use hashbrown::HashMap;
@@ -9,8 +9,8 @@ use std::any::{type_name, Any, TypeId};
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
+use crate::connection::ack_system::AckSystem;
 
 /// A wrapper around the the [`ServerTransport`] that adds the reliability and ordering.
 pub struct ServerConnection<T: ServerTransport> {
@@ -19,8 +19,16 @@ pub struct ServerConnection<T: ServerTransport> {
 
     connection_list: ConnectionList,
 
-    msg_counter: HashMap<CId, Vec<AtomicU32>>,
-    non_acked: HashMap<CId, Vec<Mutex<NonAckedMsgs>>>,
+
+    // TODO: combine all these hashmaps.
+    // TODO: Then, combine logic in this inner type to reduce code duplication.
+    /// A MType-independent, per-connection, counter for acknowledgment numbers.
+    ack_num: HashMap<CId, AckNum>,
+    /// A per-MType counter used for ordering.
+    order_num: HashMap<CId, Vec<OrderNum>>,
+    msg_counter: HashMap<CId, Vec<OrderNum>>,
+    non_acked: HashMap<CId, Vec<NonAckedMsgs>>,
+    remote_ack: HashMap<CId, AckSystem>,
 
     missing_msg: HashMap<CId, Vec<Vec<u32>>>,
 }
@@ -41,30 +49,36 @@ impl<T: ServerTransport> ServerConnection<T> {
             msg_table,
             transport,
             connection_list,
+            ack_num: HashMap::new(),
+            order_num: HashMap::new(),
             msg_counter: HashMap::new(),
             non_acked: HashMap::new(),
+            remote_ack: HashMap::new(),
             missing_msg: HashMap::new(),
         })
     }
 
-    pub fn send_to<M: Any + Send + Sync>(&self, cid: CId, msg: &M) -> io::Result<()> {
+    pub fn send_to<M: Any + Send + Sync>(&mut self, cid: CId, msg: &M) -> io::Result<()> {
         // verify type is valid
         self.msg_table.check_type::<M>()?;
         let addr = self
             .connection_list
             .addr_of(cid)
-            .ok_or_else(|| Error::new(ErrorKind::InvalidData, format!("Invalid CId ({})", cid)))?;
+            .ok_or_else(|| Error::new(ErrorKind::InvalidData, format!("Invalid CId: {}", cid)))?;
 
         let tid = TypeId::of::<M>();
 
         // create the message header
         let m_type = self.msg_table.tid_map[&tid];
-        let ack_num = self.msg_counter[&cid][m_type].fetch_add(1, Ordering::AcqRel);
-        let msg_header = MsgHeader::new(m_type, ack_num);
+        let order_num = self.order_num.get_mut(&cid).expect("cid is already checked").get_mut(m_type).expect("m_type is already checked");
+        *order_num += 1;
+        let sender_ack_num = self.ack_num[&cid];
+        *self.ack_num.get_mut(&cid).expect("cid is already checked") += 1;
+        let (receiver_acking_num, ack_bits) = self.remote_ack.get_mut(&cid).expect("cid is already checked").get_next();
+        let msg_header = MsgHeader::new(m_type, *order_num, sender_ack_num, receiver_acking_num, ack_bits);
 
         // build the payload using the header and the message
-        let mut payload = Vec::new();
-        payload.extend(msg_header.to_be_bytes());
+        let mut payload = Vec::from(msg_header.to_be_bytes());
 
         let ser_fn = self.msg_table.ser[m_type];
         ser_fn(msg, &mut payload).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
@@ -73,28 +87,22 @@ impl<T: ServerTransport> ServerConnection<T> {
         // send the payload based on the guarantees
         let guarantees = self.msg_table.guarantees[m_type];
         if guarantees.reliable() {
-            self.send_reliable(cid, addr, m_type, ack_num, payload)
+            self.send_reliable(cid, addr, m_type, sender_ack_num, payload)
         } else {
             self.send_unreliable(addr, m_type, payload)
         }
     }
 
     fn send_reliable(
-        &self,
+        &mut self,
         cid: CId,
         addr: SocketAddr,
         m_type: MType,
-        ack_num: u32,
+        sender_ack_number: AckNum,
         payload: Arc<Vec<u8>>,
     ) -> io::Result<()> {
         self.transport.send_to(addr, m_type, payload.clone())?;
-        {
-            // add the payload to the list of non-acked messages
-            let mut non_acked = self.non_acked[&cid][m_type]
-                .lock()
-                .expect("should be able to obtain lock");
-            non_acked.insert(ack_num, SavedMsg::new(payload));
-        }
+        self.non_acked.get_mut(&cid).expect("cid is already checked").get_mut(m_type).expect("m_type already checked").insert(sender_ack_number, SavedMsg::new(payload));
         Ok(())
     }
 
@@ -219,14 +227,18 @@ impl<T: ServerTransport> ServerConnection<T> {
         self.connection_list.new_connection(cid, addr)?;
         let m_type_count = self.msg_table.mtype_count();
 
+        self.ack_num.insert(cid, 0);
+        self.order_num.insert(cid, vec![0; m_type_count]);
         self.missing_msg
             .insert(cid, (0..m_type_count).map(|_| vec![]).collect());
         self.msg_counter
-            .insert(cid, (0..m_type_count).map(|_| AtomicU32::new(0)).collect());
+            .insert(cid, vec![0; m_type_count]);
+        self.remote_ack
+            .insert(cid, AckSystem::new());
         self.non_acked.insert(
             cid,
             (0..m_type_count)
-                .map(|_| Mutex::new(NonAckedMsgs::new()))
+                .map(|_| NonAckedMsgs::new())
                 .collect(),
         );
         Ok(())

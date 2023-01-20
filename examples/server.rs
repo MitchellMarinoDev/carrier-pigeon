@@ -82,6 +82,7 @@ fn main() {
 
         let mut cids_to_disconnect = vec![];
 
+        let mut msgs = vec![];
         for msg in server.recv::<Msg>() {
             println!(
                 "Client {} sent message: {}: \"{}\"",
@@ -95,7 +96,10 @@ fn main() {
             }
 
             // Broadcast the message to all other clients.
-            server.send_spec(CIdSpec::Except(msg.cid), msg.m).unwrap();
+            msgs.push((msg.cid, msg.m.clone()));
+        }
+        for (cid, msg) in msgs {
+            server.send_spec(CIdSpec::Except(cid), &msg).unwrap();
         }
 
         for cid in cids_to_disconnect {
