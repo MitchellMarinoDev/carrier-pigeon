@@ -227,7 +227,12 @@ impl Client {
                 // Successfully got a message.
                 Ok((header, msg)) => {
                     i += 1;
-                    self.msg_buff[header.m_type].push(ErasedNetMsg::new(0, header.sender_ack_num, header.order_num, msg));
+                    self.msg_buff[header.m_type].push(ErasedNetMsg::new(
+                        0,
+                        header.sender_ack_num,
+                        header.order_num,
+                        msg,
+                    ));
                 }
             }
         }

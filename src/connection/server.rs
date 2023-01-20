@@ -1,6 +1,7 @@
+use crate::connection::ack_system::AckSystem;
 use crate::connection::{ConnectionList, ConnectionListError, NonAckedMsgs, SavedMsg};
 use crate::message_table::{CONNECTION_M_TYPE, RESPONSE_M_TYPE};
-use crate::net::{MsgHeader, HEADER_SIZE, AckNum, OrderNum};
+use crate::net::{AckNum, MsgHeader, OrderNum, HEADER_SIZE};
 use crate::transport::ServerTransport;
 use crate::{CId, MType, MsgTable};
 use hashbrown::HashMap;
@@ -9,8 +10,7 @@ use std::any::{type_name, Any, TypeId};
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
-use std::sync::{Arc};
-use crate::connection::ack_system::AckSystem;
+use std::sync::Arc;
 
 /// A wrapper around the the [`ServerTransport`] that adds the reliability and ordering.
 pub struct ServerConnection<T: ServerTransport> {
@@ -18,7 +18,6 @@ pub struct ServerConnection<T: ServerTransport> {
     transport: T,
 
     connection_list: ConnectionList,
-
 
     // TODO: combine all these hashmaps.
     // TODO: Then, combine logic in this inner type to reduce code duplication.
@@ -70,12 +69,27 @@ impl<T: ServerTransport> ServerConnection<T> {
 
         // create the message header
         let m_type = self.msg_table.tid_map[&tid];
-        let order_num = self.order_num.get_mut(&cid).expect("cid is already checked").get_mut(m_type).expect("m_type is already checked");
+        let order_num = self
+            .order_num
+            .get_mut(&cid)
+            .expect("cid is already checked")
+            .get_mut(m_type)
+            .expect("m_type is already checked");
         *order_num += 1;
         let sender_ack_num = self.ack_num[&cid];
         *self.ack_num.get_mut(&cid).expect("cid is already checked") += 1;
-        let (receiver_acking_num, ack_bits) = self.remote_ack.get_mut(&cid).expect("cid is already checked").get_next();
-        let msg_header = MsgHeader::new(m_type, *order_num, sender_ack_num, receiver_acking_num, ack_bits);
+        let (receiver_acking_num, ack_bits) = self
+            .remote_ack
+            .get_mut(&cid)
+            .expect("cid is already checked")
+            .get_next();
+        let msg_header = MsgHeader::new(
+            m_type,
+            *order_num,
+            sender_ack_num,
+            receiver_acking_num,
+            ack_bits,
+        );
 
         // build the payload using the header and the message
         let mut payload = Vec::from(msg_header.to_be_bytes());
@@ -102,11 +116,21 @@ impl<T: ServerTransport> ServerConnection<T> {
         payload: Arc<Vec<u8>>,
     ) -> io::Result<()> {
         self.transport.send_to(addr, m_type, payload.clone())?;
-        self.non_acked.get_mut(&cid).expect("cid is already checked").get_mut(m_type).expect("m_type already checked").insert(sender_ack_number, SavedMsg::new(payload));
+        self.non_acked
+            .get_mut(&cid)
+            .expect("cid is already checked")
+            .get_mut(m_type)
+            .expect("m_type already checked")
+            .insert(sender_ack_number, SavedMsg::new(payload));
         Ok(())
     }
 
-    fn send_unreliable(&self, addr: SocketAddr, m_type: MType, payload: Arc<Vec<u8>>) -> io::Result<()> {
+    fn send_unreliable(
+        &self,
+        addr: SocketAddr,
+        m_type: MType,
+        payload: Arc<Vec<u8>>,
+    ) -> io::Result<()> {
         self.transport.send_to(addr, m_type, payload)
     }
 
@@ -231,15 +255,11 @@ impl<T: ServerTransport> ServerConnection<T> {
         self.order_num.insert(cid, vec![0; m_type_count]);
         self.missing_msg
             .insert(cid, (0..m_type_count).map(|_| vec![]).collect());
-        self.msg_counter
-            .insert(cid, vec![0; m_type_count]);
-        self.remote_ack
-            .insert(cid, AckSystem::new());
+        self.msg_counter.insert(cid, vec![0; m_type_count]);
+        self.remote_ack.insert(cid, AckSystem::new());
         self.non_acked.insert(
             cid,
-            (0..m_type_count)
-                .map(|_| NonAckedMsgs::new())
-                .collect(),
+            (0..m_type_count).map(|_| NonAckedMsgs::new()).collect(),
         );
         Ok(())
     }

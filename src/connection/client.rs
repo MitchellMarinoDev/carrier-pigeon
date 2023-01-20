@@ -1,5 +1,6 @@
+use crate::connection::ack_system::AckSystem;
 use crate::connection::{NonAckedMsgs, SavedMsg};
-use crate::net::{MsgHeader, HEADER_SIZE, AckNum, OrderNum};
+use crate::net::{AckNum, MsgHeader, OrderNum, HEADER_SIZE};
 use crate::transport::ClientTransport;
 use crate::{MType, MsgTable};
 use log::{trace, warn};
@@ -8,7 +9,6 @@ use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use crate::connection::ack_system::AckSystem;
 
 /// A wrapper around the the [`ClientTransport`] that adds the reliability and ordering.
 pub(crate) struct ClientConnection<T: ClientTransport> {
@@ -67,7 +67,13 @@ impl<T: ClientTransport> ClientConnection<T> {
         let sender_ack_num = self.ack_num;
         self.ack_num += 1;
         let (receiver_acking_num, ack_bits) = self.remote_ack.get_next();
-        let msg_header = MsgHeader::new(m_type, order_num, sender_ack_num, receiver_acking_num, ack_bits);
+        let msg_header = MsgHeader::new(
+            m_type,
+            order_num,
+            sender_ack_num,
+            receiver_acking_num,
+            ack_bits,
+        );
 
         // build the payload using the header and the message
         let mut payload = Vec::new();
@@ -86,10 +92,18 @@ impl<T: ClientTransport> ClientConnection<T> {
         }
     }
 
-    fn send_reliable(&mut self, m_type: MType, ack_num: AckNum, payload: Arc<Vec<u8>>) -> io::Result<()> {
+    fn send_reliable(
+        &mut self,
+        m_type: MType,
+        ack_num: AckNum,
+        payload: Arc<Vec<u8>>,
+    ) -> io::Result<()> {
         self.transport.send(m_type, payload.clone())?;
         // add the payload to the list of non-acked messages
-        self.non_acked.get_mut(m_type).expect("m_type should be valid").insert(ack_num, SavedMsg::new(payload));
+        self.non_acked
+            .get_mut(m_type)
+            .expect("m_type should be valid")
+            .insert(ack_num, SavedMsg::new(payload));
         Ok(())
     }
 

@@ -1,5 +1,5 @@
-use std::collections::VecDeque;
 use crate::net::AckNum;
+use std::collections::VecDeque;
 
 /// The number of times we need to ack something, to consider it acknowledged enough.
 const SEND_ACK_THRESHOLD: u32 = 2;
@@ -89,16 +89,22 @@ mod tests {
         assert_eq!(ack_system.ack_bitfields.len(), 1);
         assert_eq!(ack_system.ack_bitfields[0].send_count, 0);
         assert_eq!(ack_system.ack_offset, 32); // default
-        assert_eq!(ack_system.ack_bitfields.front().unwrap().flags, 1 << (32-8));
-        assert_eq!(ack_system.get_next(), (32, 1 << (32-8)));
+        assert_eq!(
+            ack_system.ack_bitfields.front().unwrap().flags,
+            1 << (32 - 8)
+        );
+        assert_eq!(ack_system.get_next(), (32, 1 << (32 - 8)));
         assert_eq!(ack_system.ack_bitfields[0].send_count, 1);
 
-        ack_system.mark(32+6);
+        ack_system.mark(32 + 6);
         assert_eq!(ack_system.ack_bitfields.len(), 2);
         assert_eq!(ack_system.ack_offset, 64);
-        assert_eq!(ack_system.ack_bitfields.front().unwrap().flags, 1 << (32-6));
+        assert_eq!(
+            ack_system.ack_bitfields.front().unwrap().flags,
+            1 << (32 - 6)
+        );
         assert_eq!(ack_system.ack_bitfields[0].send_count, 0);
-        assert_eq!(ack_system.get_next(), (64, 1 << (32-6)));
+        assert_eq!(ack_system.get_next(), (64, 1 << (32 - 6)));
         assert_eq!(ack_system.ack_bitfields[0].send_count, 1);
     }
 }

@@ -48,8 +48,20 @@ pub struct MsgHeader {
 
 impl MsgHeader {
     /// Creates a [`MsgHeader`] with the given [`MType`], `ack_number` and `order_num`.
-    pub fn new(m_type: MType, order_num: OrderNum, sender_ack_num: AckNum, receiver_acking_num: AckNum, ack_bits: u32) -> Self {
-        MsgHeader { m_type, order_num, sender_ack_num, receiver_acking_num, ack_bits }
+    pub fn new(
+        m_type: MType,
+        order_num: OrderNum,
+        sender_ack_num: AckNum,
+        receiver_acking_num: AckNum,
+        ack_bits: u32,
+    ) -> Self {
+        MsgHeader {
+            m_type,
+            order_num,
+            sender_ack_num,
+            receiver_acking_num,
+            ack_bits,
+        }
     }
 
     /// Converts the [`MsgHeader`] to big endian bytes to be sent over the internet.
@@ -63,7 +75,14 @@ impl MsgHeader {
         debug_assert_eq!(order_num_b.len(), 2);
         debug_assert_eq!(sender_ack_num_b.len(), 2);
         debug_assert_eq!(receiver_acking_num_b.len(), 4);
-        debug_assert_eq!(m_type_b.len() + order_num_b.len() + sender_ack_num_b.len() + receiver_acking_num_b.len() + ack_bits_b.len(), HEADER_SIZE);
+        debug_assert_eq!(
+            m_type_b.len()
+                + order_num_b.len()
+                + sender_ack_num_b.len()
+                + receiver_acking_num_b.len()
+                + ack_bits_b.len(),
+            HEADER_SIZE
+        );
 
         [
             m_type_b[0],
@@ -85,7 +104,12 @@ impl MsgHeader {
     ///
     /// You **must** pass in a slice that is [`HEADER_LEN`] long.
     pub fn from_be_bytes(bytes: &[u8]) -> Self {
-        assert_eq!(bytes.len(), HEADER_SIZE, "The length of the buffer passed into `from_be_bytes` should have a length of {}", HEADER_SIZE);
+        assert_eq!(
+            bytes.len(),
+            HEADER_SIZE,
+            "The length of the buffer passed into `from_be_bytes` should have a length of {}",
+            HEADER_SIZE
+        );
 
         let m_type = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
         let order_num = u16::from_be_bytes(bytes[2..4].try_into().unwrap());
@@ -93,7 +117,13 @@ impl MsgHeader {
         let receiver_acking_num = u16::from_be_bytes(bytes[6..8].try_into().unwrap());
         let ack_bits = u32::from_be_bytes(bytes[8..12].try_into().unwrap());
 
-        MsgHeader { m_type, order_num, sender_ack_num, receiver_acking_num, ack_bits }
+        MsgHeader {
+            m_type,
+            order_num,
+            sender_ack_num,
+            receiver_acking_num,
+            ack_bits,
+        }
     }
 }
 
@@ -280,8 +310,18 @@ pub(crate) struct ErasedNetMsg {
 }
 
 impl ErasedNetMsg {
-    pub(crate) fn new(cid: CId, ack_num: AckNum, order_num: OrderNum, msg: Box<dyn Any + Send + Sync>) -> Self {
-        Self { cid, ack_num, order_num, msg }
+    pub(crate) fn new(
+        cid: CId,
+        ack_num: AckNum,
+        order_num: OrderNum,
+        msg: Box<dyn Any + Send + Sync>,
+    ) -> Self {
+        Self {
+            cid,
+            ack_num,
+            order_num,
+            msg,
+        }
     }
 
     /// Converts this to NetMsg, borrowed from this.
