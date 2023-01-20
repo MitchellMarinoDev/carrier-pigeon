@@ -1,6 +1,7 @@
 use crate::net::AckNum;
 use std::collections::VecDeque;
 
+// TODO: add to config
 /// The number of times we need to ack something, to consider it acknowledged enough.
 const SEND_ACK_THRESHOLD: u32 = 2;
 

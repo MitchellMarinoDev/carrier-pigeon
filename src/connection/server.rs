@@ -11,6 +11,7 @@ use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// A wrapper around the the [`ServerTransport`] that adds the reliability and ordering.
 pub struct ServerConnection<T: ServerTransport> {
@@ -26,7 +27,7 @@ pub struct ServerConnection<T: ServerTransport> {
     /// A per-MType counter used for ordering.
     order_num: HashMap<CId, Vec<OrderNum>>,
     msg_counter: HashMap<CId, Vec<OrderNum>>,
-    non_acked: HashMap<CId, Vec<NonAckedMsgs>>,
+    non_acked: HashMap<CId, NonAckedMsgs>,
     remote_ack: HashMap<CId, AckSystem>,
 
     missing_msg: HashMap<CId, Vec<Vec<u32>>>,
@@ -119,8 +120,6 @@ impl<T: ServerTransport> ServerConnection<T> {
         self.non_acked
             .get_mut(&cid)
             .expect("cid is already checked")
-            .get_mut(m_type)
-            .expect("m_type already checked")
             .insert(sender_ack_number, SavedMsg::new(payload));
         Ok(())
     }
@@ -197,6 +196,29 @@ impl<T: ServerTransport> ServerConnection<T> {
         }
     }
 
+    /// Resends any messages that it needs to for the reliability system to work.
+    pub fn resend_reliable(&mut self) {
+        let mut resend = vec![];
+
+        for (&cid, msgs) in self.non_acked.iter() {
+            for (_ack_num, saved) in msgs.iter() {
+                // TODO: move to config.
+                if saved.sent.elapsed() > Duration::from_millis(1000) {
+                    resend.push((cid, saved.payload.clone()));
+                }
+            }
+        }
+
+        for (cid, msg) in resend {
+            // TODO: potentially unsafe expect: are we dropping this non acked list at the same
+            //       as the list in the connection list?
+            let addr = self
+                .connection_list
+                .addr_of(cid)
+                .expect("cid should be a valid cid");
+        }
+    }
+
     /// Handles all outstanding pending connections
     /// by calling `hook` with the `CId`, `SocketAddr` and the connection message.
     ///
@@ -257,10 +279,7 @@ impl<T: ServerTransport> ServerConnection<T> {
             .insert(cid, (0..m_type_count).map(|_| vec![]).collect());
         self.msg_counter.insert(cid, vec![0; m_type_count]);
         self.remote_ack.insert(cid, AckSystem::new());
-        self.non_acked.insert(
-            cid,
-            (0..m_type_count).map(|_| NonAckedMsgs::new()).collect(),
-        );
+        self.non_acked.insert(cid, NonAckedMsgs::new());
         Ok(())
     }
 

@@ -55,7 +55,7 @@ impl ServerTransport for UdpServerTransport {
         // Make sure it sent correctly.
         if n != payload_len {
             error!(
-                "UDP: Couldn't send all the bytes of a message (MType: {}). \
+                "Server: Couldn't send all the bytes of a message (MType: {}). \
 				Wanted to send {} but could only send {}. This will likely \
 				cause issues on the other side.",
                 m_type, payload_len, n

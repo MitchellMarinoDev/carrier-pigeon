@@ -74,7 +74,8 @@ impl MsgHeader {
         debug_assert_eq!(m_type_b.len(), 2);
         debug_assert_eq!(order_num_b.len(), 2);
         debug_assert_eq!(sender_ack_num_b.len(), 2);
-        debug_assert_eq!(receiver_acking_num_b.len(), 4);
+        debug_assert_eq!(receiver_acking_num_b.len(), 2);
+        debug_assert_eq!(ack_bits_b.len(), 4);
         debug_assert_eq!(
             m_type_b.len()
                 + order_num_b.len()
