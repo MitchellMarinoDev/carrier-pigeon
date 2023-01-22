@@ -8,11 +8,17 @@ use std::io::ErrorKind;
 use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
+use log::LevelFilter;
+use simple_logger::SimpleLogger;
 
 #[test]
 #[ignore]
 fn test_reliability() {
-    // println!("testing...");
+    SimpleLogger::new()
+        .with_level(LevelFilter::Trace)
+        .init()
+        .unwrap();
+
     let msg_table = get_msg_table();
 
     let mut server_connection: ServerConnection<UdpServerTransport> =

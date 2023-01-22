@@ -24,7 +24,7 @@ mod shared;
 fn main() {
     // Create a simple logger
     SimpleLogger::new()
-        .with_level(LevelFilter::Debug)
+        .with_level(LevelFilter::Trace)
         .init()
         .unwrap();
 
