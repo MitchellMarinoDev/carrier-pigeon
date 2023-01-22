@@ -2,7 +2,7 @@ use crate::connection::ack_system::AckSystem;
 use crate::connection::{ConnectionList, ConnectionListError, NonAckedMsgs, SavedMsg};
 use crate::message_table::{CONNECTION_M_TYPE, RESPONSE_M_TYPE};
 use crate::net::{AckNum, MsgHeader, OrderNum, HEADER_SIZE};
-use crate::transport::ServerTransport;
+use crate::transport::{ServerTransport};
 use crate::{CId, MType, MsgTable};
 use hashbrown::HashMap;
 use log::{debug, trace, warn};
@@ -12,11 +12,13 @@ use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use crate::connection::reliable::ReliableSystem;
 
 /// A wrapper around the the [`ServerTransport`] that adds the reliability and ordering.
 pub struct ServerConnection<T: ServerTransport> {
     msg_table: MsgTable,
     transport: T,
+    reliable_sys: ReliableSystem<(SocketAddr, Vec<u8>)>,
 
     connection_list: ConnectionList,
 
@@ -28,7 +30,7 @@ pub struct ServerConnection<T: ServerTransport> {
     order_num: HashMap<CId, Vec<OrderNum>>,
     msg_counter: HashMap<CId, Vec<OrderNum>>,
     non_acked: HashMap<CId, NonAckedMsgs>,
-    remote_ack: HashMap<CId, AckSystem>,
+    remote_ack: HashMap<CId, AckSystem<(SocketAddr, Vec<u8>)>>,
 
     missing_msg: HashMap<CId, Vec<Vec<u32>>>,
 }
@@ -46,6 +48,7 @@ impl<T: ServerTransport> ServerConnection<T> {
                 .unwrap_or("UNKNOWN".to_owned()),
         );
         Ok(Self {
+            reliable_sys: ReliableSystem::new(msg_table.clone()),
             msg_table,
             transport,
             connection_list,
@@ -83,7 +86,7 @@ impl<T: ServerTransport> ServerConnection<T> {
             .remote_ack
             .get_mut(&cid)
             .expect("cid is already checked")
-            .get_next();
+            .next_header();
         let msg_header = MsgHeader::new(
             m_type,
             *order_num,
@@ -92,8 +95,8 @@ impl<T: ServerTransport> ServerConnection<T> {
             ack_bits,
         );
 
-        // build the payload using the header and the message
-        let mut payload = Vec::from(msg_header.to_be_bytes());
+        // leave room at the start of the payload for the MsgHeader
+        let mut payload = vec![0; HEADER_SIZE];
 
         let ser_fn = self.msg_table.ser[m_type];
         ser_fn(msg, &mut payload).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
@@ -101,6 +104,7 @@ impl<T: ServerTransport> ServerConnection<T> {
 
         // send the payload based on the guarantees
         let guarantees = self.msg_table.guarantees[m_type];
+
         if guarantees.reliable() {
             self.send_reliable(cid, addr, m_type, sender_ack_num, payload)
         } else {

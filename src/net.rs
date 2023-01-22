@@ -37,7 +37,7 @@ pub struct MsgHeader {
     ///
     /// This number is a offset for the `ack_bits`. Read `acknowledgements.md` and look at
     /// [AckSystem](crate::connection::ack_system::AckSystem) for more.
-    pub receiver_acking_num: AckNum,
+    pub receiver_acking_offset: AckNum,
     /// 32 bits representing weather the 32 ack numbers before the `receiver_acking_num` are acked.
     ///
     /// This allows us to acknowledge up to 32 messages at once.
@@ -59,7 +59,7 @@ impl MsgHeader {
             m_type,
             order_num,
             sender_ack_num,
-            receiver_acking_num,
+            receiver_acking_offset: receiver_acking_num,
             ack_bits,
         }
     }
@@ -69,7 +69,7 @@ impl MsgHeader {
         let m_type_b = (self.m_type as u16).to_be_bytes();
         let order_num_b = self.order_num.to_be_bytes();
         let sender_ack_num_b = self.sender_ack_num.to_be_bytes();
-        let receiver_acking_num_b = self.receiver_acking_num.to_be_bytes();
+        let receiver_acking_num_b = self.receiver_acking_offset.to_be_bytes();
         let ack_bits_b = self.ack_bits.to_be_bytes();
         debug_assert_eq!(m_type_b.len(), 2);
         debug_assert_eq!(order_num_b.len(), 2);
@@ -122,7 +122,7 @@ impl MsgHeader {
             m_type,
             order_num,
             sender_ack_num,
-            receiver_acking_num,
+            receiver_acking_offset: receiver_acking_num,
             ack_bits,
         }
     }
@@ -216,12 +216,14 @@ pub type CId = u32;
 ///
 /// This is an integer incremented for every message sent, so messages can be uniquely identified.
 /// This is used as a way to acknowledge reliable messages.
+// TODO: this might need to be a wrapper type, as the comparing logic should consider wrapping
 pub type AckNum = u16;
 
 /// Ordering Number.
 ///
 /// This is an integer specific to each [`MType`], incremented for every message sent,
 /// This is so we can order the messages as they come in.
+// TODO: this might need to be a wrapper type, as the comparing logic should consider wrapping
 pub type OrderNum = u16;
 
 /// A way to specify the valid [`CId`]s for an operation.

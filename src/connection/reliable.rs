@@ -1,99 +1,60 @@
 use crate::connection::ack_system::AckSystem;
 use crate::connection::ordering_system::OrderingSystem;
-use crate::connection::SavedMsg;
-use crate::net::{AckNum, MsgHeader, HEADER_SIZE};
-use crate::transport::Transport;
-use crate::{Guarantees, MsgTable};
-use hashbrown::HashMap;
-use log::{debug, trace};
-use std::io;
-use std::net::SocketAddr;
+use crate::net::MsgHeader;
+use crate::{Guarantees, MsgTable, MType};
 
-/// A reliable and ordered wrapper around a [`Transport`].
-struct Reliable<T: Transport> {
-    ack_counter: u16,
+/// A system that handles the reliablility and ordering of incoming messages based on their
+/// [`Guarantees`].
+///
+/// Generic parameter `O` is for "OtherData", which is the data that should be stored along side
+/// the header. This is so, if this is used by a client, this can store the payload.
+/// If this is used by a server, this can store the payload and from address.
+pub(crate) struct ReliableSystem<O> {
     msg_table: MsgTable,
-    non_acked: HashMap<AckNum, SavedMsg>,
-    ack_sys: AckSystem,
-    ordering_sys: OrderingSystem,
-    transport: T,
+    ack_sys: AckSystem<O>,
+    ordering_sys: OrderingSystem<O>,
 }
 
-impl<T: Transport> Reliable<T> {
+impl<O> ReliableSystem<O> {
     /// Creates a new [`Reliable`] wrapper around a transport.
-    pub fn new(transport: T, msg_table: MsgTable) -> Self {
+    pub fn new(msg_table: MsgTable) -> Self {
         let m_table_count = msg_table.mtype_count();
-        Reliable {
-            ack_counter: 0,
+        ReliableSystem {
             msg_table,
-            non_acked: HashMap::new(),
             ack_sys: AckSystem::new(),
             ordering_sys: OrderingSystem::new(m_table_count),
-            transport,
         }
     }
 
-    pub fn recv(&mut self) -> io::Result<(SocketAddr, MsgHeader, Vec<u8>)> {
-        loop {
-            // if there is something in the ordering buffer, return it now
-            if let Some(data) = self.ordering_sys.next() {
-                return Ok(data);
-            }
+    pub fn push_received(&mut self, header: MsgHeader, other_data: O) {
+        self.ack_sys.mark_received(header.sender_ack_num);
 
-            let (from, header, payload) = self.recv_next()?;
+        let guarantees = self.msg_table.guarantees[header.m_type];
+        self.ordering_sys.push(header, guarantees, other_data);
+    }
 
-            self.ack_sys.mark(header.sender_ack_num);
+    pub fn get_received(&mut self) -> Option<(MsgHeader, O)> {
+        self.ordering_sys.next()
+    }
 
-            // handle ordering guarantees
-            let guarantees = self.msg_table.guarantees[header.m_type];
-            if guarantees.newest() {
-                if self.ordering_sys.check_newest(&header) {
-                    return Ok((from, header, payload));
-                }
-            } else if guarantees.ordered() {
-                self.ordering_sys.push(from, header, payload);
-            }
+    pub fn get_send_header(&mut self, m_type: MType) -> MsgHeader {
+        let (offset, bitfield) = self.ack_sys.next_header();
+        MsgHeader {
+            m_type,
+            order_num: self.ordering_sys.next_outgoing(m_type),
+            sender_ack_num: self.ack_sys.outgoing_ack_num(),
+            receiver_acking_offset: offset,
+            ack_bits: bitfield,
         }
     }
 
-    /// Gets the next message (or error) from the transport.
-    ///
-    /// Does some error checking and logging.
-    /// This validates the [`MType`].
-    fn recv_next(&mut self) -> io::Result<(SocketAddr, MsgHeader, Vec<u8>)> {
-        loop {
-            let (from, payload) = self.transport.recv()?;
-
-            let n = payload.len();
-            if n < HEADER_SIZE {
-                debug!(
-                    "Received a packet of length {} which is not big enough \
-                    to be a carrier pigeon message. Discarding",
-                    n
-                );
-                continue;
-            }
-            let header = MsgHeader::from_be_bytes(&payload[..HEADER_SIZE]);
-            if let Err(err) = self.msg_table.check_m_type(header.m_type) {
-                debug!("Received a message with an invalid MType: {}", err);
-                continue;
-            }
-
-            trace!(
-                "Received message with MType: {}, len: {}.",
-                header.m_type,
-                n,
-            );
-
-            return Ok((from, header, payload));
-        }
-    }
-
-    pub fn send(&mut self, guarantees: Guarantees, addr: SocketAddr, payload: Vec<u8>) {
+    /// Saves a message, if it is reliable, so that it can be resent if it is lost in transit.
+    pub fn save(&mut self, guarantees: Guarantees, header: &mut MsgHeader, other_data: O) {
+        // TODO: delegate to the ack_system.
         todo!()
     }
 
-    pub fn resend_reliable(&mut self) {
+    pub fn get_resend(&mut self) {
         todo!()
     }
 }

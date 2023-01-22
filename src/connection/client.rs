@@ -20,7 +20,8 @@ pub(crate) struct ClientConnection<T: ClientTransport> {
     /// A per-MType counter used for ordering.
     order_num: Vec<OrderNum>,
     non_acked: Vec<NonAckedMsgs>,
-    remote_ack: AckSystem,
+    // TODO: replace with `Reliable`.
+    remote_ack: AckSystem<Vec<u8>>,
 
     missing_msg: Vec<Vec<u32>>,
 }
@@ -66,7 +67,7 @@ impl<T: ClientTransport> ClientConnection<T> {
         self.order_num[m_type] += 1;
         let sender_ack_num = self.ack_num;
         self.ack_num += 1;
-        let (receiver_acking_num, ack_bits) = self.remote_ack.get_next();
+        let (receiver_acking_num, ack_bits) = self.remote_ack.next_header();
         let msg_header = MsgHeader::new(
             m_type,
             order_num,
