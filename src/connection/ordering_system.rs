@@ -150,4 +150,6 @@ mod test {
         assert!(ordering_sys.next().is_some());
         assert!(ordering_sys.next().is_none());
     }
+
+    // TODO: impl and test the OrderNum rolling over logic
 }

@@ -49,12 +49,12 @@ impl<O> ReliableSystem<O> {
     }
 
     /// Saves a message, if it is reliable, so that it can be resent if it is lost in transit.
-    pub fn save(&mut self, guarantees: Guarantees, header: &mut MsgHeader, other_data: O) {
-        // TODO: delegate to the ack_system.
-        todo!()
+    pub fn save(&mut self, header: MsgHeader, guarantees: Guarantees, other_data: O) {
+        self.ack_sys.save_msg(header, guarantees, other_data);
     }
 
-    pub fn get_resend(&mut self) {
-        todo!()
+    /// Gets messages that are due for a resend.
+    pub fn get_resend(&mut self) -> impl Iterator<Item=(&MsgHeader, &O)> {
+        self.ack_sys.get_resend()
     }
 }

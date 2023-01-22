@@ -1,7 +1,8 @@
 use crate::net::{AckNum, MsgHeader};
 use std::collections::VecDeque;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use hashbrown::HashMap;
+use crate::Guarantees;
 
 // TODO: add to config
 /// The number of times we need to ack something, to consider it acknowledged enough.
@@ -10,13 +11,17 @@ const SEND_ACK_THRESHOLD: u32 = 2;
 /// The width of the bitfield that is used for acknowledgement.
 const BITFIELD_WIDTH: u32 = 32;
 
+/// Saves the bitfield next to a counter for how many times this was acked.
 #[derive(Copy, Clone, Eq, PartialEq, Default, Hash, Debug)]
 pub(crate) struct AckBitfields {
-    flags: u32,
+    bitfield: u32,
     send_count: u32,
 }
 
 /// The Acknowledgement System.
+///
+/// This handles generating the acknowledgment part of the header, getting the info needed for the
+/// acknowledgment message, and keeping track of an outgoing ack_number.
 ///
 /// Generic parameter `O` is for "OtherData", which is the data that should be stored along side
 /// the header. This is so, if this is used by a client, this can store the payload.
@@ -81,7 +86,7 @@ impl<O> AckSystem<O> {
         let dif = num - self.ack_offset;
         let field_idx = dif / 32;
         let bit_flag = 1 << (dif % 32);
-        self.ack_bitfields[field_idx as usize].flags |= bit_flag;
+        self.ack_bitfields[field_idx as usize].bitfield |= bit_flag;
     }
 
     /// Marks one of the outgoing messages as acknowledged. That is, an ack from the peer,
@@ -111,7 +116,7 @@ impl<O> AckSystem<O> {
         let field = self.ack_bitfields[self.current_idx];
         self.ack_bitfields[self.current_idx].send_count += 1;
         self.current_idx = (self.current_idx + 1) % self.ack_bitfields.len();
-        (self.ack_offset, field.flags)
+        (self.ack_offset, field.bitfield)
     }
 
     /// Gets all the information needed for an ack message.
@@ -133,13 +138,51 @@ impl<O> AckSystem<O> {
     }
 
     /// Saves a reliable message so that it can be sent again later if the message gets lost.
-    pub fn save_msg(&mut self, header: MsgHeader, other_data: O) {
+    pub fn save_msg(&mut self, header: MsgHeader, guarantees: Guarantees, other_data: O) {
+        if guarantees.unreliable() { return; }
+
+        // if the guarantee is ReliableNewest, we only need to guarantee the reliability of the
+        // newest message; we should remove an old one if it exists
+        if guarantees == Guarantees::ReliableNewest {
+            // if there is an existing message of the same m_type in the saved buffer, remove it.
+            // TODO: this might work better as a sorted vector.
+            let existing_ack = self.saved_msgs.iter().filter_map(|(ack, (_, saved_header, _))| {
+                if saved_header.m_type == header.m_type {
+                    Some(*ack)
+                } else {
+                    None
+                }
+            }).next();
+            if let Some(ack) = existing_ack {
+                self.saved_msgs.remove(&ack);
+            }
+        }
+
+        // finally, insert the msg
         self.saved_msgs.insert(header.sender_ack_num, (Instant::now(), header, other_data));
+    }
+
+    /// Gets messages that are due for a resend. This resets the time sent.
+    pub fn get_resend(&mut self) -> impl Iterator<Item=(&MsgHeader, &O)> {
+        let mut acks = vec![];
+        for (ack, (sent, _, _)) in self.saved_msgs.iter_mut() {
+            // TODO: add duration to config.
+            if sent.elapsed() > Duration::from_millis(1000) {
+                *sent = Instant::now();
+                acks.push(*ack);
+            }
+        }
+
+        acks.into_iter().map(|ack| {
+            let (_, header, other) = &self.saved_msgs[&ack];
+            (header, other)
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::Guarantees::{Reliable, ReliableNewest};
     use super::*;
 
     #[test]
@@ -151,7 +194,7 @@ mod tests {
         assert_eq!(ack_system.ack_bitfields[0].send_count, 0);
         assert_eq!(ack_system.ack_offset, 0); // default
         assert_eq!(
-            ack_system.ack_bitfields.front().unwrap().flags,
+            ack_system.ack_bitfields.front().unwrap().bitfield,
             1 << 0,
         );
 
@@ -160,7 +203,7 @@ mod tests {
         assert_eq!(ack_system.ack_bitfields[0].send_count, 0);
         assert_eq!(ack_system.ack_offset, 0); // default
         assert_eq!(
-            ack_system.ack_bitfields.front().unwrap().flags,
+            ack_system.ack_bitfields.front().unwrap().bitfield,
             1 << 8 | 1 << 0
         );
         assert_eq!(ack_system.next_header(), (0, 1 << 8 | 1 << 0));
@@ -170,7 +213,7 @@ mod tests {
         assert_eq!(ack_system.ack_bitfields.len(), 2);
         assert_eq!(ack_system.ack_offset, 32);
         assert_eq!(
-            ack_system.ack_bitfields.front().unwrap().flags,
+            ack_system.ack_bitfields.front().unwrap().bitfield,
             1 << 6
         );
         assert_eq!(ack_system.ack_bitfields[0].send_count, 0);
@@ -182,9 +225,9 @@ mod tests {
     fn test_save_ack() {
         let mut ack_system = AckSystem::new();
 
-        ack_system.save_msg(MsgHeader::new(1, 0, 10, 0, 0), ());
+        ack_system.save_msg(MsgHeader::new(1, 0, 10, 0, 0), Reliable, ());
         assert_eq!(ack_system.saved_msgs.len(), 1);
-        ack_system.save_msg(MsgHeader::new(1, 0, 11, 0, 0), ());
+        ack_system.save_msg(MsgHeader::new(1, 0, 11, 0, 0), Reliable, ());
         assert_eq!(ack_system.saved_msgs.len(), 2);
         ack_system.mark_outgoing(10);
         assert_eq!(ack_system.saved_msgs.len(), 1);
@@ -192,9 +235,9 @@ mod tests {
         assert_eq!(ack_system.saved_msgs.len(), 0);
 
         // check out of order ack
-        ack_system.save_msg(MsgHeader::new(1, 0, 20, 0, 0), ());
-        ack_system.save_msg(MsgHeader::new(1, 0, 21, 0, 0), ());
-        ack_system.save_msg(MsgHeader::new(1, 0, 22, 0, 0), ());
+        ack_system.save_msg(MsgHeader::new(1, 0, 20, 0, 0), Reliable, ());
+        ack_system.save_msg(MsgHeader::new(1, 0, 21, 0, 0), Reliable, ());
+        ack_system.save_msg(MsgHeader::new(1, 0, 22, 0, 0), Reliable, ());
         assert_eq!(ack_system.saved_msgs.len(), 3);
         ack_system.mark_outgoing(22);
         assert_eq!(ack_system.saved_msgs.len(), 2);
@@ -209,12 +252,28 @@ mod tests {
             1 << v
         }
 
-        ack_system.save_msg(MsgHeader::new(1, 0, 32, 0, 0), ());
-        ack_system.save_msg(MsgHeader::new(1, 0, 33, 0, 0), ());
-        ack_system.save_msg(MsgHeader::new(1, 0, 34, 0, 0), ());
-        ack_system.save_msg(MsgHeader::new(1, 0, 63, 0, 0), ());
+        ack_system.save_msg(MsgHeader::new(1, 0, 32, 0, 0), Reliable, ());
+        ack_system.save_msg(MsgHeader::new(1, 0, 33, 0, 0), Reliable, ());
+        ack_system.save_msg(MsgHeader::new(1, 0, 34, 0, 0), Reliable, ());
+        ack_system.save_msg(MsgHeader::new(1, 0, 63, 0, 0), Reliable, ());
         assert_eq!(ack_system.saved_msgs.len(), 4);
         ack_system.mark_bitfield(32, 1 << 0 | 1 << 1 | 1 << 2 | 1 << 31);
         assert_eq!(ack_system.saved_msgs.len(), 0);
     }
+
+    #[test]
+    fn newest() {
+        let mut ack_system = AckSystem::new();
+
+        ack_system.save_msg(MsgHeader::new(1, 0, 10, 0, 0), ReliableNewest, ());
+        assert_eq!(ack_system.saved_msgs.len(), 1);
+        ack_system.save_msg(MsgHeader::new(1, 0, 11, 0, 0), ReliableNewest, ());
+        assert_eq!(ack_system.saved_msgs.len(), 1);
+        ack_system.save_msg(MsgHeader::new(1, 0, 12, 0, 0), ReliableNewest, ());
+        assert_eq!(ack_system.saved_msgs.len(), 1);
+        ack_system.mark_outgoing(12);
+        assert_eq!(ack_system.saved_msgs.len(), 0);
+    }
+
+    // TODO: impl and test the AckNum rolling over logic
 }
