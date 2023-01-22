@@ -1,11 +1,13 @@
 use crate::MType;
 use std::io;
 use std::net::SocketAddr;
+use std::ptr::addr_of_mut;
 use std::sync::Arc;
 
 pub mod client_std_udp;
 pub mod server_std_udp;
 
+// TODO: combine transports.
 pub trait ClientTransport {
     /// Create a new instance of this transport, with the local address `local`
     /// connecting to the peer address `peer`.
@@ -40,4 +42,14 @@ pub trait ServerTransport {
     fn recv_from(&mut self) -> io::Result<(SocketAddr, Vec<u8>)>;
     /// Returns the address that the server is listening on.
     fn listen_addr(&self) -> io::Result<SocketAddr>;
+}
+
+pub trait Transport {
+    fn new_client(local: SocketAddr, peer: SocketAddr) -> io::Result<Self> where Self: Sized;
+    fn new_server(listen: SocketAddr) -> io::Result<Self> where Self: Sized;
+    fn recv(&mut self) -> io::Result<(SocketAddr, Vec<u8>)>;
+    // TODO: combine this with the client constructor.
+    fn recv_blocking(&mut self) -> io::Result<(SocketAddr, Vec<u8>)>;
+    fn local_addr(&self) -> io::Result<SocketAddr>;
+    fn peer_addr(&self) -> io::Result<SocketAddr>;
 }
