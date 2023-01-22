@@ -1,29 +1,22 @@
-use crate::connection::ack_system::AckSystem;
-use crate::connection::{NonAckedMsgs, SavedMsg};
-use crate::net::{AckNum, MsgHeader, OrderNum, HEADER_SIZE};
+use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ClientTransport;
-use crate::{MType, MsgTable};
+use crate::MsgTable;
 use log::{trace, warn};
 use std::any::{Any, TypeId};
 use std::io;
-use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use crate::connection::reliable::ReliableSystem;
 
 /// A wrapper around the the [`ClientTransport`] that adds the reliability and ordering.
 pub(crate) struct ClientConnection<T: ClientTransport> {
+    /// The [`MsgTable`] to use for sending and receiving messages.
     msg_table: MsgTable,
+    /// The transport to use to send and receive the messages.
     transport: T,
 
-    /// A MType-independent counter for acknowledgment numbers.
-    ack_num: AckNum,
-    /// A per-MType counter used for ordering.
-    order_num: Vec<OrderNum>,
-    non_acked: Vec<NonAckedMsgs>,
-    // TODO: replace with `Reliable`.
-    remote_ack: AckSystem<Vec<u8>>,
-
-    missing_msg: Vec<Vec<u32>>,
+    /// The [`ReliableSystem`] to add optional reliability to messages.
+    reliable_sys: ReliableSystem<Arc<Vec<u8>>, Box<dyn Any + Send + Sync>>,
 }
 
 impl<T: ClientTransport> ClientConnection<T> {
@@ -41,18 +34,10 @@ impl<T: ClientTransport> ClientConnection<T> {
                 .unwrap_or("UNKNOWN".to_owned()),
         );
 
-        let len = msg_table.mtype_count();
-        let msg_counter = vec![0; len];
-        let non_acked = (0..len).map(|_| NonAckedMsgs::new()).collect();
-        let missing_msg = (0..len).map(|_| Vec::with_capacity(0)).collect();
         Ok(Self {
-            msg_table,
+            msg_table: msg_table.clone(),
             transport,
-            ack_num: 0,
-            order_num: msg_counter,
-            non_acked,
-            remote_ack: AckSystem::new(),
-            missing_msg,
+            reliable_sys: ReliableSystem::new(msg_table)
         })
     }
 
@@ -63,52 +48,19 @@ impl<T: ClientTransport> ClientConnection<T> {
 
         // create the message header
         let m_type = self.msg_table.tid_map[&tid];
-        let order_num = self.order_num[m_type];
-        self.order_num[m_type] += 1;
-        let sender_ack_num = self.ack_num;
-        self.ack_num += 1;
-        let (receiver_acking_num, ack_bits) = self.remote_ack.next_header();
-        let msg_header = MsgHeader::new(
-            m_type,
-            order_num,
-            sender_ack_num,
-            receiver_acking_num,
-            ack_bits,
-        );
+        let header = self.reliable_sys.get_send_header(m_type);
 
         // build the payload using the header and the message
         let mut payload = Vec::new();
-        payload.extend(msg_header.to_be_bytes());
+        payload.extend(header.to_be_bytes());
 
         let ser_fn = self.msg_table.ser[m_type];
-        ser_fn(msg, &mut payload).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+        ser_fn(msg, &mut payload)?;
         let payload = Arc::new(payload);
 
         // send the payload based on the guarantees
         let guarantees = self.msg_table.guarantees[m_type];
-        if guarantees.reliable() {
-            self.send_reliable(m_type, sender_ack_num, payload)
-        } else {
-            self.send_unreliable(m_type, payload)
-        }
-    }
-
-    fn send_reliable(
-        &mut self,
-        m_type: MType,
-        ack_num: AckNum,
-        payload: Arc<Vec<u8>>,
-    ) -> io::Result<()> {
-        self.transport.send(m_type, payload.clone())?;
-        // add the payload to the list of non-acked messages
-        self.non_acked
-            .get_mut(m_type)
-            .expect("m_type should be valid")
-            .insert(ack_num, SavedMsg::new(payload));
-        Ok(())
-    }
-
-    fn send_unreliable(&self, m_type: MType, payload: Arc<Vec<u8>>) -> io::Result<()> {
+        self.reliable_sys.save(header, guarantees, payload.clone());
         self.transport.send(m_type, payload)
     }
 
@@ -116,6 +68,7 @@ impl<T: ClientTransport> ClientConnection<T> {
         self.recv_shared(false)
     }
 
+    // TODO: move the blocking call into the client transport new function.
     pub fn recv_blocking(&mut self) -> io::Result<(MsgHeader, Box<dyn Any + Send + Sync>)> {
         self.recv_shared(true)
     }

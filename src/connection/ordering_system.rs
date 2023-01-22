@@ -3,18 +3,25 @@ use crate::{Guarantees, MType};
 use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
 
-pub(crate) struct OrderingSystem<O> {
+/// The Ordering System.
+///
+/// This buffers messages and orders them according to their [`Guarantees`].
+///
+/// Generic parameter `RD` is "Receive Data". It should be the data that you get from the transport
+/// other than the header. Since this differs between client and server (server needs to keep track
+/// of a from address), it is made a generic parameter.
+pub(crate) struct OrderingSystem<RD> {
     /// Counters for the [`OrderNum`]s of outgoing messages.
     outgoing: Vec<OrderNum>,
     /// Counters for the current [`OrderNum`]s of incoming messages.
     current: Vec<OrderNum>,
     /// Messages that are waiting on older messages. Used for the "ordered" guarantees.
-    future: Vec<HashMap<OrderNum, (MsgHeader, O)>>,
+    future: Vec<HashMap<OrderNum, (MsgHeader, RD)>>,
     /// Messages that are not waiting on any other messages.
-    next: VecDeque<(MsgHeader, O)>,
+    next: VecDeque<(MsgHeader, RD)>,
 }
 
-impl<O> OrderingSystem<O> {
+impl<RD> OrderingSystem<RD> {
     /// Creates a new [`OrderingSystem`].
     pub fn new(m_type_count: MType) -> Self {
         OrderingSystem {
@@ -28,7 +35,7 @@ impl<O> OrderingSystem<O> {
     /// Pushes message data into the ordering system.
     ///
     /// The MsgHeader in `msg_data` must already be validated.
-    pub fn push(&mut self, header: MsgHeader, guarantees: Guarantees, other_data: O) {
+    pub fn push(&mut self, header: MsgHeader, guarantees: Guarantees, other_data: RD) {
         if guarantees.ordered() {
             self.handle_ordered(header, other_data);
         } else if guarantees.newest() {
@@ -38,7 +45,7 @@ impl<O> OrderingSystem<O> {
         }
     }
 
-    fn handle_ordered(&mut self, header: MsgHeader, other_data: O) {
+    fn handle_ordered(&mut self, header: MsgHeader, other_data: RD) {
         let current = &mut self.current[header.m_type];
         match header.order_num.cmp(current) {
             Ordering::Equal => {
@@ -60,7 +67,7 @@ impl<O> OrderingSystem<O> {
     }
 
     /// For the "Newest" guarantees, check if this message is the newest one received.
-    fn handle_newest(&mut self, header: MsgHeader, other_data: O) {
+    fn handle_newest(&mut self, header: MsgHeader, other_data: RD) {
         let current = &mut self.current[header.m_type];
         if header.order_num < *current { return; }
 
@@ -79,7 +86,7 @@ impl<O> OrderingSystem<O> {
     }
 
     /// Gets the next, if any, message data.
-    pub fn next(&mut self) -> Option<(MsgHeader, O)> {
+    pub fn next(&mut self) -> Option<(MsgHeader, RD)> {
         self.next.pop_front()
     }
 

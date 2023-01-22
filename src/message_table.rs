@@ -231,7 +231,7 @@ impl MsgTableBuilder {
             bincode::deserialize::<T>(bytes)
                 .map(|d| Box::new(d) as Box<dyn Any + Send + Sync>)
                 .map_err(|o| {
-                    io::Error::new(io::ErrorKind::InvalidData, format!("Deser Error: {}", o))
+                    Error::new(ErrorKind::InvalidData, format!("deserialization error: {}", o))
                 })
         };
         let ser: SerFn = |m: &(dyn Any + Send + Sync), buf| {
@@ -240,7 +240,7 @@ impl MsgTableBuilder {
                 m.downcast_ref::<T>()
                     .expect("wrong type passed to the message serialization function"),
             )
-            .map_err(|o| io::Error::new(io::ErrorKind::InvalidData, format!("Ser Error: {}", o)))
+            .map_err(|o| Error::new(ErrorKind::InvalidData, format!("serialization error: {}", o)))
         };
 
         Ok(Registration {

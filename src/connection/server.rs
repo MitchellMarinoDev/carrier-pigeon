@@ -1,38 +1,32 @@
 use crate::connection::ack_system::AckSystem;
-use crate::connection::{ConnectionList, ConnectionListError, NonAckedMsgs, SavedMsg};
+use crate::connection::{ConnectionList, ConnectionListError, NonAckedMsgs};
 use crate::message_table::{CONNECTION_M_TYPE, RESPONSE_M_TYPE};
-use crate::net::{AckNum, MsgHeader, OrderNum, HEADER_SIZE};
+use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::{ServerTransport};
-use crate::{CId, MType, MsgTable};
+use crate::{CId, MsgTable};
 use hashbrown::HashMap;
-use log::{debug, trace, warn};
+use log::{debug, error, trace, warn};
 use std::any::{type_name, Any, TypeId};
+use std::collections::VecDeque;
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
 use crate::connection::reliable::ReliableSystem;
 
-/// A wrapper around the the [`ServerTransport`] that adds the reliability and ordering.
+/// A wrapper around the the [`ServerTransport`] that adds
+/// (de)serialization, reliability and ordering to the messages.
 pub struct ServerConnection<T: ServerTransport> {
+    /// The [`MsgTable`] to use for sending and receiving messages.
     msg_table: MsgTable,
+    /// The transport to use to send and receive the messages.
     transport: T,
-    reliable_sys: ReliableSystem<(SocketAddr, Vec<u8>)>,
-
+    /// The [`ReliableSystem`]s to add optional reliability to messages for each connection.
+    reliable_sys: HashMap<CId, ReliableSystem<(SocketAddr, Arc<Vec<u8>>), (CId, Box<dyn Any + Send + Sync>)>>,
+    /// The connection list for managing the connections to this [`ServerConnection`].
     connection_list: ConnectionList,
-
-    // TODO: combine all these hashmaps.
-    // TODO: Then, combine logic in this inner type to reduce code duplication.
-    /// A MType-independent, per-connection, counter for acknowledgment numbers.
-    ack_num: HashMap<CId, AckNum>,
-    /// A per-MType counter used for ordering.
-    order_num: HashMap<CId, Vec<OrderNum>>,
-    msg_counter: HashMap<CId, Vec<OrderNum>>,
-    non_acked: HashMap<CId, NonAckedMsgs>,
-    remote_ack: HashMap<CId, AckSystem<(SocketAddr, Vec<u8>)>>,
-
-    missing_msg: HashMap<CId, Vec<Vec<u32>>>,
+    /// A buffer for messages that are ready to be received.
+    ready: VecDeque<(CId, MsgHeader, Box<dyn Any + Send + Sync>)>,
 }
 
 impl<T: ServerTransport> ServerConnection<T> {
@@ -48,16 +42,11 @@ impl<T: ServerTransport> ServerConnection<T> {
                 .unwrap_or("UNKNOWN".to_owned()),
         );
         Ok(Self {
-            reliable_sys: ReliableSystem::new(msg_table.clone()),
+            reliable_sys: HashMap::new(),
             msg_table,
             transport,
             connection_list,
-            ack_num: HashMap::new(),
-            order_num: HashMap::new(),
-            msg_counter: HashMap::new(),
-            non_acked: HashMap::new(),
-            remote_ack: HashMap::new(),
-            missing_msg: HashMap::new(),
+            ready: VecDeque::new(),
         })
     }
 
@@ -73,30 +62,12 @@ impl<T: ServerTransport> ServerConnection<T> {
 
         // create the message header
         let m_type = self.msg_table.tid_map[&tid];
-        let order_num = self
-            .order_num
-            .get_mut(&cid)
-            .expect("cid is already checked")
-            .get_mut(m_type)
-            .expect("m_type is already checked");
-        *order_num += 1;
-        let sender_ack_num = self.ack_num[&cid];
-        *self.ack_num.get_mut(&cid).expect("cid is already checked") += 1;
-        let (receiver_acking_num, ack_bits) = self
-            .remote_ack
-            .get_mut(&cid)
-            .expect("cid is already checked")
-            .next_header();
-        let msg_header = MsgHeader::new(
-            m_type,
-            *order_num,
-            sender_ack_num,
-            receiver_acking_num,
-            ack_bits,
-        );
+        let reliable_sys = self.reliable_sys.get_mut(&cid).expect("cid is already checked");
+        let header = reliable_sys.get_send_header(m_type);
 
-        // leave room at the start of the payload for the MsgHeader
-        let mut payload = vec![0; HEADER_SIZE];
+        // build the payload using the header and the message
+        let mut payload = Vec::new();
+        payload.extend(header.to_be_bytes());
 
         let ser_fn = self.msg_table.ser[m_type];
         ser_fn(msg, &mut payload).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
@@ -104,52 +75,25 @@ impl<T: ServerTransport> ServerConnection<T> {
 
         // send the payload based on the guarantees
         let guarantees = self.msg_table.guarantees[m_type];
-
-        if guarantees.reliable() {
-            self.send_reliable(cid, addr, m_type, sender_ack_num, payload)
-        } else {
-            self.send_unreliable(addr, m_type, payload)
-        }
-    }
-
-    fn send_reliable(
-        &mut self,
-        cid: CId,
-        addr: SocketAddr,
-        m_type: MType,
-        sender_ack_number: AckNum,
-        payload: Arc<Vec<u8>>,
-    ) -> io::Result<()> {
-        self.transport.send_to(addr, m_type, payload.clone())?;
-        self.non_acked
-            .get_mut(&cid)
-            .expect("cid is already checked")
-            .insert(sender_ack_number, SavedMsg::new(payload));
-        Ok(())
-    }
-
-    fn send_unreliable(
-        &self,
-        addr: SocketAddr,
-        m_type: MType,
-        payload: Arc<Vec<u8>>,
-    ) -> io::Result<()> {
+        reliable_sys.save(header, guarantees, (addr, payload.clone()));
         self.transport.send_to(addr, m_type, payload)
-    }
-
-    pub fn recv_from(&mut self) -> io::Result<(CId, MsgHeader, Box<dyn Any + Send + Sync>)> {
-        let (cid, header, msg) = self.raw_recv_from()?;
-        // TODO: handle any reliability stuff here.
-        Ok((cid, header, msg))
     }
 
     /// Receives a message from the transport.
     ///
-    /// This function converts the address to a CId and drops any messages from not connected
-    /// clients that arent of the type [`CONNECTION_M_TYPE`]. This also validates the MType.
-    /// This does not handle reliablility at all, just discards unneeded messages.
-    fn raw_recv_from(&mut self) -> io::Result<(CId, MsgHeader, Box<dyn Any + Send + Sync>)> {
+    /// This will get the next message that is ready to be yielded (if all ordering conditions are
+    /// satisfied).
+    ///
+    /// A Error of type WouldBlock means no more messages can be returned at this time. Other
+    /// errors are errors in receiving or validating the data.
+    pub fn recv_from(&mut self) -> io::Result<(CId, MsgHeader, Box<dyn Any + Send + Sync>)> {
         loop {
+            // if there is a message that is ready, return it
+            if let Some(ready) = self.ready.pop_front() {
+                return Ok(ready);
+            }
+            // otherwise, try to get a new one
+
             let (from, buf) = self.transport.recv_from()?;
             let n = buf.len();
             if n < HEADER_SIZE {
@@ -194,32 +138,25 @@ impl<T: ServerTransport> ServerConnection<T> {
 
             let msg = self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..])?;
 
-            // TODO: handle any reliability stuff here
-
-            return Ok((cid, header, msg));
+            // handle reliability and ordering
+            let reliable_sys = self.reliable_sys.get_mut(&cid).expect("cid already checked");
+            reliable_sys.push_received(header, (cid, msg));
+            // get all messages from the reliable system and push them on the "ready" que.
+            while let Some((header, (cid, msg))) = reliable_sys.get_received() {
+                self.ready.push_back((cid, header, msg));
+            }
         }
     }
 
     /// Resends any messages that it needs to for the reliability system to work.
     pub fn resend_reliable(&mut self) {
-        let mut resend = vec![];
-
-        for (&cid, msgs) in self.non_acked.iter() {
-            for (_ack_num, saved) in msgs.iter() {
-                // TODO: move to config.
-                if saved.sent.elapsed() > Duration::from_millis(1000) {
-                    resend.push((cid, saved.payload.clone()));
+        for cid in self.connection_list.cids() {
+            let reliable_sys = self.reliable_sys.get_mut(&cid).expect("cid should be valid");
+            for (header, (addr, payload)) in reliable_sys.get_resend() {
+                if let Err(err) = self.transport.send_to(*addr, header.m_type, payload.clone()) {
+                    error!("Error resending msg {}: {}", header.sender_ack_num, err);
                 }
             }
-        }
-
-        for (cid, msg) in resend {
-            // TODO: potentially unsafe expect: are we dropping this non acked list at the same
-            //       as the list in the connection list?
-            let addr = self
-                .connection_list
-                .addr_of(cid)
-                .expect("cid should be a valid cid");
         }
     }
 
@@ -275,24 +212,14 @@ impl<T: ServerTransport> ServerConnection<T> {
 
     fn new_connection(&mut self, cid: CId, addr: SocketAddr) -> Result<(), ConnectionListError> {
         self.connection_list.new_connection(cid, addr)?;
-        let m_type_count = self.msg_table.mtype_count();
-
-        self.ack_num.insert(cid, 0);
-        self.order_num.insert(cid, vec![0; m_type_count]);
-        self.missing_msg
-            .insert(cid, (0..m_type_count).map(|_| vec![]).collect());
-        self.msg_counter.insert(cid, vec![0; m_type_count]);
-        self.remote_ack.insert(cid, AckSystem::new());
-        self.non_acked.insert(cid, NonAckedMsgs::new());
+        self.reliable_sys.insert(cid, ReliableSystem::new(self.msg_table.clone()));
         Ok(())
     }
 
     pub fn remove_connection(&mut self, cid: CId) -> Result<(), ConnectionListError> {
         self.connection_list.remove_connection(cid)?;
-
-        self.missing_msg.remove(&cid);
-        self.msg_counter.remove(&cid);
-        self.non_acked.remove(&cid);
+        let old_reliable = self.reliable_sys.remove(&cid);
+        debug_assert!(old_reliable.is_some(), "since self.connection_list.remove_connection() didn't fail, there should be a corresponding entry for that cid in self.reliable_sys");
         Ok(())
     }
 

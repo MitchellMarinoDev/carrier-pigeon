@@ -9,13 +9,13 @@ use crate::{Guarantees, MsgTable, MType};
 /// Generic parameter `O` is for "OtherData", which is the data that should be stored along side
 /// the header. This is so, if this is used by a client, this can store the payload.
 /// If this is used by a server, this can store the payload and from address.
-pub(crate) struct ReliableSystem<O> {
+pub(crate) struct ReliableSystem<SD, RD> {
     msg_table: MsgTable,
-    ack_sys: AckSystem<O>,
-    ordering_sys: OrderingSystem<O>,
+    ack_sys: AckSystem<SD>,
+    ordering_sys: OrderingSystem<RD>,
 }
 
-impl<O> ReliableSystem<O> {
+impl<SD, RD> ReliableSystem<SD, RD> {
     /// Creates a new [`Reliable`] wrapper around a transport.
     pub fn new(msg_table: MsgTable) -> Self {
         let m_table_count = msg_table.mtype_count();
@@ -26,14 +26,14 @@ impl<O> ReliableSystem<O> {
         }
     }
 
-    pub fn push_received(&mut self, header: MsgHeader, other_data: O) {
+    pub fn push_received(&mut self, header: MsgHeader, receive_data: RD) {
         self.ack_sys.mark_received(header.sender_ack_num);
 
         let guarantees = self.msg_table.guarantees[header.m_type];
-        self.ordering_sys.push(header, guarantees, other_data);
+        self.ordering_sys.push(header, guarantees, receive_data);
     }
 
-    pub fn get_received(&mut self) -> Option<(MsgHeader, O)> {
+    pub fn get_received(&mut self) -> Option<(MsgHeader, RD)> {
         self.ordering_sys.next()
     }
 
@@ -49,12 +49,12 @@ impl<O> ReliableSystem<O> {
     }
 
     /// Saves a message, if it is reliable, so that it can be resent if it is lost in transit.
-    pub fn save(&mut self, header: MsgHeader, guarantees: Guarantees, other_data: O) {
-        self.ack_sys.save_msg(header, guarantees, other_data);
+    pub fn save(&mut self, header: MsgHeader, guarantees: Guarantees, send_data: SD) {
+        self.ack_sys.save_msg(header, guarantees, send_data);
     }
 
     /// Gets messages that are due for a resend.
-    pub fn get_resend(&mut self) -> impl Iterator<Item=(&MsgHeader, &O)> {
+    pub fn get_resend(&mut self) -> impl Iterator<Item=(&MsgHeader, &SD)> {
         self.ack_sys.get_resend()
     }
 }

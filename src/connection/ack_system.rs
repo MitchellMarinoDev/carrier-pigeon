@@ -23,11 +23,11 @@ pub(crate) struct AckBitfields {
 /// This handles generating the acknowledgment part of the header, getting the info needed for the
 /// acknowledgment message, and keeping track of an outgoing ack_number.
 ///
-/// Generic parameter `O` is for "OtherData", which is the data that should be stored along side
-/// the header. This is so, if this is used by a client, this can store the payload.
-/// If this is used by a server, this can store the payload and from address.
+/// Generic parameter `SD` is "Send Data". It should be the data that you send to the transport
+/// other than the header. Since this differs between client and server (server needs to keep track
+/// of a to address), it is made a generic parameter.
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
-pub(crate) struct AckSystem<O> {
+pub(crate) struct AckSystem<SD> {
     /// The current [`AckNum`] for outgoing messages.
     outgoing_counter: AckNum,
     /// The current ack_offset value.
@@ -44,10 +44,10 @@ pub(crate) struct AckSystem<O> {
     /// put in this buffer if they get lost and must be resent one or more times.
     residual: Vec<AckNum>,
     /// This stores the saved reliable messages.
-    saved_msgs: HashMap<AckNum, (Instant, MsgHeader, O)>
+    saved_msgs: HashMap<AckNum, (Instant, MsgHeader, SD)>
 }
 
-impl<O> AckSystem<O> {
+impl<SD> AckSystem<SD> {
     /// Creates a new [`AckSystem`].
     pub fn new() -> Self {
         let mut deque = VecDeque::new();
@@ -138,7 +138,7 @@ impl<O> AckSystem<O> {
     }
 
     /// Saves a reliable message so that it can be sent again later if the message gets lost.
-    pub fn save_msg(&mut self, header: MsgHeader, guarantees: Guarantees, other_data: O) {
+    pub fn save_msg(&mut self, header: MsgHeader, guarantees: Guarantees, other_data: SD) {
         if guarantees.unreliable() { return; }
 
         // if the guarantee is ReliableNewest, we only need to guarantee the reliability of the
@@ -163,7 +163,7 @@ impl<O> AckSystem<O> {
     }
 
     /// Gets messages that are due for a resend. This resets the time sent.
-    pub fn get_resend(&mut self) -> impl Iterator<Item=(&MsgHeader, &O)> {
+    pub fn get_resend(&mut self) -> impl Iterator<Item=(&MsgHeader, &SD)> {
         let mut acks = vec![];
         for (ack, (sent, _, _)) in self.saved_msgs.iter_mut() {
             // TODO: add duration to config.
