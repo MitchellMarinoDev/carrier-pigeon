@@ -10,9 +10,10 @@ mod helper;
 #[test]
 fn graceful_disconnect() {
     // Create a simple logger
-    let _ = SimpleLogger::new()
+    SimpleLogger::new()
         .with_level(log::LevelFilter::Trace)
-        .init();
+        .init()
+        .unwrap();
 
     {
         // Client Disconnect Test
@@ -61,9 +62,10 @@ fn graceful_disconnect() {
 #[test]
 fn drop_test() {
     // Create a simple logger
-    let _ = SimpleLogger::new()
+    SimpleLogger::new()
         .with_level(log::LevelFilter::Trace)
-        .init();
+        .init()
+        .unwrap();
 
     {
         // Server Drop Client.

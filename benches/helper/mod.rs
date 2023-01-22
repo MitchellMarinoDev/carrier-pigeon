@@ -3,8 +3,7 @@
 
 use crate::helper::test_messages::{get_table_parts, Connection, Disconnect, Response};
 use carrier_pigeon::net::ClientConfig;
-use carrier_pigeon::tcp::TcpCon;
-use carrier_pigeon::{Client, Server};
+use carrier_pigeon::{Client, Server, ServerConfig};
 use log::debug;
 use std::net::{TcpListener, TcpStream, UdpSocket};
 
@@ -21,15 +20,16 @@ pub fn create_client_server_pair() -> (Client, Server) {
     let mut server = Server::new(
         ADDR_LOCAL.parse().unwrap(),
         parts.clone(),
-        ClientConfig::default(),
+        ServerConfig::new(),
     )
     .unwrap();
-    let addr = server.listen_addr();
+    let addr = server.listen_addr().unwrap();
     debug!("Server created on addr: {}", addr);
 
     debug!("Creating client.");
     // Start client connection.
     let client = Client::new(
+        ADDR_LOCAL.parse().unwrap(),
         addr,
         parts,
         ClientConfig::default(),
@@ -37,9 +37,15 @@ pub fn create_client_server_pair() -> (Client, Server) {
     );
 
     // Spin until the connection is handled.
-    // Normally this would be done in the game loop
-    // and there would be other things to do.
-    while 0 == server.handle_new_cons(|_cid, _con_msg: Connection| (true, Response::Accepted)) {}
+    // Normally this would be done in the game loop and there would be other things to do.
+    loop {
+        server.clear_msgs();
+        server.get_msgs();
+        let n = server.handle_new_cons(|_cid, _addr, _con_msg: Connection| (true, Response::Accepted));
+        if n >= 0 {
+            break;
+        }
+    }
 
     // Finish the client connection.
     let (client, response_msg) = client.block::<Response>().unwrap();
@@ -57,15 +63,6 @@ pub fn create_tcp_pair() -> (TcpStream, TcpStream) {
     let addr = listener.local_addr().unwrap();
     let s1 = TcpStream::connect(addr).unwrap();
     let (s2, _) = listener.accept().unwrap();
-    (s1, s2)
-}
-
-/// Creates a pair of [`TcpCon`]s that are connected to each other.
-/// Panics if any issues occur.
-pub fn create_tcp_con_pair() -> (TcpCon, TcpCon) {
-    let (s1, s2) = create_tcp_pair();
-    let s1 = TcpCon::from_stream(s1, 2048);
-    let mut s2 = TcpCon::from_stream(s2, 2048);
     (s1, s2)
 }
 

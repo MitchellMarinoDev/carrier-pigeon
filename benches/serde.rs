@@ -5,19 +5,19 @@
 extern crate test;
 mod helper;
 
-use crate::helper::test_messages::UdpMsg;
+use crate::helper::test_messages::UnreliableMsg;
 use std::hint::black_box;
 use test::Bencher;
 
 #[bench]
 fn ser(b: &mut Bencher) {
-    let udp = black_box(UdpMsg::new("Short Message"));
+    let udp = black_box(UnreliableMsg::new("Short Message"));
     b.iter(|| bincode::serialize(&udp))
 }
 
 #[bench]
 fn ser_size(b: &mut Bencher) {
-    let udp = black_box(UdpMsg::new("Short Message"));
+    let udp = black_box(UnreliableMsg::new("Short Message"));
     b.iter(|| {
         black_box(bincode::serialized_size(&udp).unwrap());
     })
@@ -25,10 +25,10 @@ fn ser_size(b: &mut Bencher) {
 
 #[bench]
 fn deser(b: &mut Bencher) {
-    let udp = black_box(UdpMsg::new("Short Message"));
+    let udp = black_box(UnreliableMsg::new("Short Message"));
     let bytes = bincode::serialize(&udp).unwrap();
     b.iter(|| {
-        let udp_deser = bincode::deserialize::<UdpMsg>(&bytes[..]).unwrap();
+        let udp_deser = bincode::deserialize::<UnreliableMsg>(&bytes[..]).unwrap();
         assert_eq!(udp_deser, udp);
     })
 }

@@ -1,9 +1,9 @@
 #![feature(test)]
 extern crate test;
 
-use crate::helper::create_tcp_pair;
 use std::io::{Read, Write};
 use test::Bencher;
+use crate::helper::create_tcp_pair;
 
 mod helper;
 

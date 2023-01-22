@@ -130,7 +130,7 @@ impl<T: ServerTransport> ServerConnection<T> {
                     debug!("Server: Connection message from {}", from);
                     let msg = self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..])?;
                     // create a new connection
-                    let _ = self.connection_list.new_pending(from, msg);
+                    self.connection_list.new_pending(from, msg).expect("address already checked to not be connected");
                     continue;
                 }
                 Some(cid) => cid,
@@ -203,8 +203,9 @@ impl<T: ServerTransport> ServerConnection<T> {
                 self.new_connection(cid, addr).expect(
                     "cid and address should be valid, as they came from the connection list",
                 );
-                // TODO: in the future, send_to should not return an error.
-                let _ = self.send_to(cid, &response);
+                if let Err(err) = self.send_to(cid, &response) {
+                    warn!("failed to send response message to {} (cid: {}): {}", addr, cid, err);
+                }
             }
         }
         Ok(count)

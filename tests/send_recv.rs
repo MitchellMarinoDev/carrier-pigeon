@@ -10,22 +10,23 @@ mod helper;
 #[test]
 fn send_recv() {
     // Create a simple logger
-    let _ = SimpleLogger::new()
+    SimpleLogger::new()
         .with_level(log::LevelFilter::Trace)
-        .init();
+        .init()
+        .unwrap();
 
     // CLIENT TO SERVER
     let (mut client, mut server) = create_client_server_pair();
     info!("connection made");
 
-    // Send 10 tcp messages.
+    // Send 10 reliable messages.
     for i in 0..10 {
         client
             .send(&ReliableMsg::new(format!("Test Reliable Msg {}", i)))
             .unwrap();
     }
 
-    // Send 10 udp messages.
+    // Send 10 unreliable messages.
     for i in 0..10 {
         client
             .send(&UnreliableMsg::new(format!("Test Unreliable Msg {}", i)))
