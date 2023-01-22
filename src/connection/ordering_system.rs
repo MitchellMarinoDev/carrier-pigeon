@@ -69,7 +69,9 @@ impl<RD> OrderingSystem<RD> {
     /// For the "Newest" guarantees, check if this message is the newest one received.
     fn handle_newest(&mut self, header: MsgHeader, other_data: RD) {
         let current = &mut self.current[header.m_type];
-        if header.order_num < *current { return; }
+        if header.order_num < *current {
+            return;
+        }
 
         *current = header.order_num + 1;
         // if there is an existing message of the same m_type in the next buffer,
@@ -105,11 +107,23 @@ mod test {
     fn test_ordering() {
         let mut ordering_sys = OrderingSystem::new(12);
 
-        ordering_sys.push(MsgHeader::new(1, 0, 0, 0, 0),Guarantees::ReliableOrdered, ());
+        ordering_sys.push(
+            MsgHeader::new(1, 0, 0, 0, 0),
+            Guarantees::ReliableOrdered,
+            (),
+        );
         assert!(ordering_sys.next().is_some());
-        ordering_sys.push(MsgHeader::new(1, 2, 1, 0, 0), Guarantees::ReliableOrdered, ());
+        ordering_sys.push(
+            MsgHeader::new(1, 2, 1, 0, 0),
+            Guarantees::ReliableOrdered,
+            (),
+        );
         assert!(ordering_sys.next().is_none());
-        ordering_sys.push(MsgHeader::new(1, 1, 2, 0, 0), Guarantees::ReliableOrdered, ());
+        ordering_sys.push(
+            MsgHeader::new(1, 1, 2, 0, 0),
+            Guarantees::ReliableOrdered,
+            (),
+        );
         assert!(ordering_sys.next().is_some());
         assert!(ordering_sys.next().is_some());
         assert!(ordering_sys.next().is_none());
@@ -119,16 +133,36 @@ mod test {
     fn test_across_mtypes() {
         let mut ordering_sys = OrderingSystem::new(12);
 
-        ordering_sys.push(MsgHeader::new(1, 0, 0, 0, 0), Guarantees::ReliableOrdered, ());
-        ordering_sys.push(MsgHeader::new(1, 2, 1, 0, 0), Guarantees::ReliableOrdered, ());
-        ordering_sys.push(MsgHeader::new(2, 1, 2, 0, 0), Guarantees::ReliableOrdered, ());
+        ordering_sys.push(
+            MsgHeader::new(1, 0, 0, 0, 0),
+            Guarantees::ReliableOrdered,
+            (),
+        );
+        ordering_sys.push(
+            MsgHeader::new(1, 2, 1, 0, 0),
+            Guarantees::ReliableOrdered,
+            (),
+        );
+        ordering_sys.push(
+            MsgHeader::new(2, 1, 2, 0, 0),
+            Guarantees::ReliableOrdered,
+            (),
+        );
         assert!(ordering_sys.next().is_some());
         assert!(ordering_sys.next().is_none());
-        ordering_sys.push(MsgHeader::new(2, 0, 2, 0, 0), Guarantees::ReliableOrdered, ());
+        ordering_sys.push(
+            MsgHeader::new(2, 0, 2, 0, 0),
+            Guarantees::ReliableOrdered,
+            (),
+        );
         assert!(ordering_sys.next().is_some());
         assert!(ordering_sys.next().is_some());
         assert!(ordering_sys.next().is_none());
-        ordering_sys.push(MsgHeader::new(1, 1, 2, 0, 0), Guarantees::ReliableOrdered, ());
+        ordering_sys.push(
+            MsgHeader::new(1, 1, 2, 0, 0),
+            Guarantees::ReliableOrdered,
+            (),
+        );
         assert!(ordering_sys.next().is_some());
         assert!(ordering_sys.next().is_some());
         assert!(ordering_sys.next().is_none());
@@ -138,22 +172,46 @@ mod test {
     fn test_newest() {
         let mut ordering_sys = OrderingSystem::new(12);
 
-        ordering_sys.push(MsgHeader::new(1, 0, 0, 0, 0), Guarantees::ReliableNewest, ());
+        ordering_sys.push(
+            MsgHeader::new(1, 0, 0, 0, 0),
+            Guarantees::ReliableNewest,
+            (),
+        );
         assert!(ordering_sys.next().is_some());
         assert!(ordering_sys.next().is_none());
-        ordering_sys.push(MsgHeader::new(1, 1, 0, 0, 0), Guarantees::ReliableNewest, ());
+        ordering_sys.push(
+            MsgHeader::new(1, 1, 0, 0, 0),
+            Guarantees::ReliableNewest,
+            (),
+        );
         assert!(ordering_sys.next().is_some());
         assert!(ordering_sys.next().is_none());
-        ordering_sys.push(MsgHeader::new(1, 10, 0, 0, 0), Guarantees::ReliableNewest, ());
+        ordering_sys.push(
+            MsgHeader::new(1, 10, 0, 0, 0),
+            Guarantees::ReliableNewest,
+            (),
+        );
         assert!(ordering_sys.next().is_some());
         assert!(ordering_sys.next().is_none());
 
-        ordering_sys.push(MsgHeader::new(1, 9, 0, 0, 0), Guarantees::ReliableNewest, ());
+        ordering_sys.push(
+            MsgHeader::new(1, 9, 0, 0, 0),
+            Guarantees::ReliableNewest,
+            (),
+        );
         assert!(ordering_sys.next().is_none());
-        ordering_sys.push(MsgHeader::new(1, 10, 0, 0, 0), Guarantees::ReliableNewest, ());
+        ordering_sys.push(
+            MsgHeader::new(1, 10, 0, 0, 0),
+            Guarantees::ReliableNewest,
+            (),
+        );
         assert!(ordering_sys.next().is_none());
 
-        ordering_sys.push(MsgHeader::new(2, 0, 0, 0, 0), Guarantees::ReliableNewest, ());
+        ordering_sys.push(
+            MsgHeader::new(2, 0, 0, 0, 0),
+            Guarantees::ReliableNewest,
+            (),
+        );
         assert!(ordering_sys.next().is_some());
         assert!(ordering_sys.next().is_none());
     }

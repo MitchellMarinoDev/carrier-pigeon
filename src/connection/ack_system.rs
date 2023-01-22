@@ -1,8 +1,8 @@
 use crate::net::{AckNum, MsgHeader};
+use crate::Guarantees;
+use hashbrown::HashMap;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
-use hashbrown::HashMap;
-use crate::Guarantees;
 
 // TODO: add to config
 /// The number of times we need to ack something, to consider it acknowledged enough.
@@ -44,7 +44,7 @@ pub(crate) struct AckSystem<SD> {
     /// put in this buffer if they get lost and must be resent one or more times.
     residual: Vec<AckNum>,
     /// This stores the saved reliable messages.
-    saved_msgs: HashMap<AckNum, (Instant, MsgHeader, SD)>
+    saved_msgs: HashMap<AckNum, (Instant, MsgHeader, SD)>,
 }
 
 impl<SD> AckSystem<SD> {
@@ -139,31 +139,38 @@ impl<SD> AckSystem<SD> {
 
     /// Saves a reliable message so that it can be sent again later if the message gets lost.
     pub fn save_msg(&mut self, header: MsgHeader, guarantees: Guarantees, other_data: SD) {
-        if guarantees.unreliable() { return; }
+        if guarantees.unreliable() {
+            return;
+        }
 
         // if the guarantee is ReliableNewest, we only need to guarantee the reliability of the
         // newest message; we should remove an old one if it exists
         if guarantees == Guarantees::ReliableNewest {
             // if there is an existing message of the same m_type in the saved buffer, remove it.
             // TODO: this might work better as a sorted vector.
-            let existing_ack = self.saved_msgs.iter().filter_map(|(ack, (_, saved_header, _))| {
-                if saved_header.m_type == header.m_type {
-                    Some(*ack)
-                } else {
-                    None
-                }
-            }).next();
+            let existing_ack = self
+                .saved_msgs
+                .iter()
+                .filter_map(|(ack, (_, saved_header, _))| {
+                    if saved_header.m_type == header.m_type {
+                        Some(*ack)
+                    } else {
+                        None
+                    }
+                })
+                .next();
             if let Some(ack) = existing_ack {
                 self.saved_msgs.remove(&ack);
             }
         }
 
         // finally, insert the msg
-        self.saved_msgs.insert(header.sender_ack_num, (Instant::now(), header, other_data));
+        self.saved_msgs
+            .insert(header.sender_ack_num, (Instant::now(), header, other_data));
     }
 
     /// Gets messages that are due for a resend. This resets the time sent.
-    pub fn get_resend(&mut self) -> impl Iterator<Item=(&MsgHeader, &SD)> {
+    pub fn get_resend(&mut self) -> impl Iterator<Item = (&MsgHeader, &SD)> {
         let mut acks = vec![];
         for (ack, (sent, _, _)) in self.saved_msgs.iter_mut() {
             // TODO: add duration to config.
@@ -182,8 +189,8 @@ impl<SD> AckSystem<SD> {
 
 #[cfg(test)]
 mod tests {
-    use crate::Guarantees::{Reliable, ReliableNewest};
     use super::*;
+    use crate::Guarantees::{Reliable, ReliableNewest};
 
     #[test]
     fn test_mark_received() {
@@ -193,10 +200,7 @@ mod tests {
         assert_eq!(ack_system.ack_bitfields.len(), 1);
         assert_eq!(ack_system.ack_bitfields[0].send_count, 0);
         assert_eq!(ack_system.ack_offset, 0); // default
-        assert_eq!(
-            ack_system.ack_bitfields.front().unwrap().bitfield,
-            1 << 0,
-        );
+        assert_eq!(ack_system.ack_bitfields.front().unwrap().bitfield, 1 << 0,);
 
         ack_system.mark_received(8);
         assert_eq!(ack_system.ack_bitfields.len(), 1);
@@ -212,10 +216,7 @@ mod tests {
         ack_system.mark_received(32 + 6);
         assert_eq!(ack_system.ack_bitfields.len(), 2);
         assert_eq!(ack_system.ack_offset, 32);
-        assert_eq!(
-            ack_system.ack_bitfields.front().unwrap().bitfield,
-            1 << 6
-        );
+        assert_eq!(ack_system.ack_bitfields.front().unwrap().bitfield, 1 << 6);
         assert_eq!(ack_system.ack_bitfields[0].send_count, 0);
         assert_eq!(ack_system.next_header(), (32, 1 << 6));
         assert_eq!(ack_system.ack_bitfields[0].send_count, 1);

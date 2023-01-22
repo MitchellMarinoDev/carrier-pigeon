@@ -1,8 +1,9 @@
 use crate::connection::ack_system::AckSystem;
+use crate::connection::reliable::ReliableSystem;
 use crate::connection::{ConnectionList, ConnectionListError, NonAckedMsgs};
 use crate::message_table::{CONNECTION_M_TYPE, RESPONSE_M_TYPE};
 use crate::net::{MsgHeader, HEADER_SIZE};
-use crate::transport::{ServerTransport};
+use crate::transport::ServerTransport;
 use crate::{CId, MsgTable};
 use hashbrown::HashMap;
 use log::{debug, error, trace, warn};
@@ -12,7 +13,6 @@ use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use crate::connection::reliable::ReliableSystem;
 
 /// A wrapper around the the [`ServerTransport`] that adds
 /// (de)serialization, reliability and ordering to the messages.
@@ -22,7 +22,8 @@ pub struct ServerConnection<T: ServerTransport> {
     /// The transport to use to send and receive the messages.
     transport: T,
     /// The [`ReliableSystem`]s to add optional reliability to messages for each connection.
-    reliable_sys: HashMap<CId, ReliableSystem<(SocketAddr, Arc<Vec<u8>>), (CId, Box<dyn Any + Send + Sync>)>>,
+    reliable_sys:
+        HashMap<CId, ReliableSystem<(SocketAddr, Arc<Vec<u8>>), (CId, Box<dyn Any + Send + Sync>)>>,
     /// The connection list for managing the connections to this [`ServerConnection`].
     connection_list: ConnectionList,
     /// A buffer for messages that are ready to be received.
@@ -62,7 +63,10 @@ impl<T: ServerTransport> ServerConnection<T> {
 
         // create the message header
         let m_type = self.msg_table.tid_map[&tid];
-        let reliable_sys = self.reliable_sys.get_mut(&cid).expect("cid is already checked");
+        let reliable_sys = self
+            .reliable_sys
+            .get_mut(&cid)
+            .expect("cid is already checked");
         let header = reliable_sys.get_send_header(m_type);
 
         // build the payload using the header and the message
@@ -130,7 +134,9 @@ impl<T: ServerTransport> ServerConnection<T> {
                     debug!("Server: Connection message from {}", from);
                     let msg = self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..])?;
                     // create a new connection
-                    self.connection_list.new_pending(from, msg).expect("address already checked to not be connected");
+                    self.connection_list
+                        .new_pending(from, msg)
+                        .expect("address already checked to not be connected");
                     continue;
                 }
                 Some(cid) => cid,
@@ -139,7 +145,10 @@ impl<T: ServerTransport> ServerConnection<T> {
             let msg = self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..])?;
 
             // handle reliability and ordering
-            let reliable_sys = self.reliable_sys.get_mut(&cid).expect("cid already checked");
+            let reliable_sys = self
+                .reliable_sys
+                .get_mut(&cid)
+                .expect("cid already checked");
             reliable_sys.push_received(header, (cid, msg));
             // get all messages from the reliable system and push them on the "ready" que.
             while let Some((header, (cid, msg))) = reliable_sys.get_received() {
@@ -151,9 +160,15 @@ impl<T: ServerTransport> ServerConnection<T> {
     /// Resends any messages that it needs to for the reliability system to work.
     pub fn resend_reliable(&mut self) {
         for cid in self.connection_list.cids() {
-            let reliable_sys = self.reliable_sys.get_mut(&cid).expect("cid should be valid");
+            let reliable_sys = self
+                .reliable_sys
+                .get_mut(&cid)
+                .expect("cid should be valid");
             for (header, (addr, payload)) in reliable_sys.get_resend() {
-                if let Err(err) = self.transport.send_to(*addr, header.m_type, payload.clone()) {
+                if let Err(err) = self
+                    .transport
+                    .send_to(*addr, header.m_type, payload.clone())
+                {
                     error!("Error resending msg {}: {}", header.sender_ack_num, err);
                 }
             }
@@ -204,7 +219,10 @@ impl<T: ServerTransport> ServerConnection<T> {
                     "cid and address should be valid, as they came from the connection list",
                 );
                 if let Err(err) = self.send_to(cid, &response) {
-                    warn!("failed to send response message to {} (cid: {}): {}", addr, cid, err);
+                    warn!(
+                        "failed to send response message to {} (cid: {}): {}",
+                        addr, cid, err
+                    );
                 }
             }
         }
@@ -213,7 +231,8 @@ impl<T: ServerTransport> ServerConnection<T> {
 
     fn new_connection(&mut self, cid: CId, addr: SocketAddr) -> Result<(), ConnectionListError> {
         self.connection_list.new_connection(cid, addr)?;
-        self.reliable_sys.insert(cid, ReliableSystem::new(self.msg_table.clone()));
+        self.reliable_sys
+            .insert(cid, ReliableSystem::new(self.msg_table.clone()));
         Ok(())
     }
 

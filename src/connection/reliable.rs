@@ -1,7 +1,7 @@
 use crate::connection::ack_system::AckSystem;
 use crate::connection::ordering_system::OrderingSystem;
 use crate::net::MsgHeader;
-use crate::{Guarantees, MsgTable, MType};
+use crate::{Guarantees, MType, MsgTable};
 
 /// A system that handles the reliablility and ordering of incoming messages based on their
 /// [`Guarantees`].
@@ -54,7 +54,7 @@ impl<SD, RD> ReliableSystem<SD, RD> {
     }
 
     /// Gets messages that are due for a resend.
-    pub fn get_resend(&mut self) -> impl Iterator<Item=(&MsgHeader, &SD)> {
+    pub fn get_resend(&mut self) -> impl Iterator<Item = (&MsgHeader, &SD)> {
         self.ack_sys.get_resend()
     }
 }

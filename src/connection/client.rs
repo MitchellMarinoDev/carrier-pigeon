@@ -1,3 +1,4 @@
+use crate::connection::reliable::ReliableSystem;
 use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ClientTransport;
 use crate::MsgTable;
@@ -6,7 +7,6 @@ use std::any::{Any, TypeId};
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use crate::connection::reliable::ReliableSystem;
 
 /// A wrapper around the the [`ClientTransport`] that adds the reliability and ordering.
 pub(crate) struct ClientConnection<T: ClientTransport> {
@@ -37,7 +37,7 @@ impl<T: ClientTransport> ClientConnection<T> {
         Ok(Self {
             msg_table: msg_table.clone(),
             transport,
-            reliable_sys: ReliableSystem::new(msg_table)
+            reliable_sys: ReliableSystem::new(msg_table),
         })
     }
 

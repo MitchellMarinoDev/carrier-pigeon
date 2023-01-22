@@ -28,7 +28,10 @@ fn test_reliability() {
     sleep(Duration::from_millis(10));
     // recv_from needs to be called in order for the connection to read the client's message.
     // Since the message is a connection type message, it will not be returned from the function.
-    assert_eq!(server_connection.recv_from().unwrap_err().kind(), ErrorKind::WouldBlock);
+    assert_eq!(
+        server_connection.recv_from().unwrap_err().kind(),
+        ErrorKind::WouldBlock
+    );
     let handled = server_connection
         .handle_pending(|_cid, _addr, _msg: Connection| (true, Response::Accepted))
         .unwrap();

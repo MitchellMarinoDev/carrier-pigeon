@@ -68,7 +68,11 @@ impl Response {
 /// Builds a table with all these test messages and returns it's parts.
 pub fn get_table_parts() -> MsgTable {
     let mut table = MsgTableBuilder::new();
-    table.register_ordered::<ReliableMsg>(Guarantees::ReliableOrdered).unwrap();
-    table.register_ordered::<UnreliableMsg>(Guarantees::Unreliable).unwrap();
+    table
+        .register_ordered::<ReliableMsg>(Guarantees::ReliableOrdered)
+        .unwrap();
+    table
+        .register_ordered::<UnreliableMsg>(Guarantees::Unreliable)
+        .unwrap();
     table.build::<Connection, Response, Disconnect>().unwrap()
 }
