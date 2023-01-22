@@ -60,6 +60,15 @@ impl Guarantees {
         }
     }
 
+    /// Weather this guarantee is ordered or newest.
+    pub fn some_ordering(&self) -> bool {
+        use Guarantees::*;
+        match self {
+            ReliableOrdered | ReliableNewest | UnreliableNewest => true,
+            Reliable | Unreliable => false,
+        }
+    }
+
     /// Weather this guarantee is not ordered or newest.
     pub fn no_ordering(&self) -> bool {
         use Guarantees::*;

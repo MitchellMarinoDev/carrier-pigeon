@@ -1,10 +1,10 @@
 mod ack_system;
 pub mod client;
+mod ordering_system;
+mod reliable;
 pub mod server;
 #[cfg(test)]
 mod test_connection;
-mod reliable;
-mod ordering_system;
 
 use crate::net::AckNum;
 use crate::util::DoubleHashMap;
