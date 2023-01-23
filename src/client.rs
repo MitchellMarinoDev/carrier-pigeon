@@ -202,6 +202,12 @@ impl Client {
         Some(self.msg_buff[m_type].iter().map(|m| m.get_typed().unwrap()))
     }
 
+    pub fn tick(&mut self) {
+        self.clear_msgs();
+        self.get_msgs();
+        self.resend_reliable();
+    }
+
     /// Receives the messages from the connections.
     /// This should be done before calling `recv<T>()`.
     ///
@@ -210,7 +216,6 @@ impl Client {
     pub fn get_msgs(&mut self) -> u32 {
         let mut i = 0;
 
-        // UDP
         loop {
             if !self.status.connected() {
                 break;
@@ -245,6 +250,10 @@ impl Client {
         for buff in self.msg_buff.iter_mut() {
             buff.clear();
         }
+    }
+
+    pub fn resend_reliable(&mut self) {
+        self.connection.resend_reliable();
     }
 
     /// Gets the local address.

@@ -41,6 +41,7 @@ impl<RD> OrderingSystem<RD> {
         } else if guarantees.newest() {
             self.handle_newest(header, other_data);
         } else {
+            // TODO: add dupe detection for reliable messages
             self.next.push_back((header, other_data));
         }
     }

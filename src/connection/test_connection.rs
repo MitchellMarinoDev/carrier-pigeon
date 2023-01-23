@@ -57,19 +57,53 @@ fn test_reliability() {
 
     // send 10 bursts of 100 messages.
     for _ in 0..10 {
-        for _ in 0..100 {
+        // TODO: This needs a refactor once the dedicated ack message gets implemented
+        //       The dummy packet from the server will not be required anymore.
+        // make sure that the client is receiving the server's acks
+        let _ = client_connection.recv();
+        for _ in 0..10 {
             client_connection.send(&msg).expect("failed to send");
+            client_connection.resend_reliable();
         }
-        // this delay will allow for about 8-9 resends
         sleep(Duration::from_millis(150));
         loop {
-            let msg = server_connection.recv_from();
-            if matches!(&msg, Err(e) if e.kind() == ErrorKind::WouldBlock) {
-                break;
+            match server_connection.recv_from() {
+                Err(e) if e.kind() == ErrorKind::WouldBlock => break,
+                Err(err) => panic!("unexpected error: {}", err),
+                Ok(msg) => {
+                    // TODO: This will also not be necessary once ignore Connection/Response msgs
+                    //       after connected.
+                    if msg.1.m_type == 3 {
+                        results.push(msg);
+                    }
+                }
             }
-
-            results.push(msg);
         }
+        // TODO: not needed after dedicated ack message type is implemented.
+        // send a message so that the ack header gets sent.
+        server_connection.send_to(1, &ReliableMsg::new("")).unwrap();
+    }
+
+    // do a couple more receives to get the stragglers
+    for _ in 0..10 {
+        // make sure that the client is receiving the server's acks
+        let _ = client_connection.recv();
+        client_connection.resend_reliable();
+        sleep(Duration::from_millis(150));
+        loop {
+            match server_connection.recv_from() {
+                Err(e) if e.kind() == ErrorKind::WouldBlock => break,
+                Err(err) => panic!("unexpected error: {}", err),
+                Ok(msg) => {
+                    // TODO: This will also not be necessary once ignore Connection/Response msgs
+                    //       after connected.
+                    if msg.1.m_type == 3 {
+                        results.push(msg);
+                    }
+                }
+            }
+        }
+        server_connection.send_to(1, &ReliableMsg::new("")).unwrap();
     }
     // remove the simulated conditions
     Command::new("bash")
@@ -85,14 +119,14 @@ fn test_reliability() {
     // ensure all messages arrive uncorrupted
     for v in results.iter() {
         assert_eq!(
-            v.as_ref().unwrap().2.downcast_ref::<ReliableMsg>().unwrap(),
+            v.2.downcast_ref::<ReliableMsg>().unwrap(),
             &msg,
             "message is not intact"
         )
     }
 
     // ensure all messages arrive
-    assert_eq!(results.len(), 10 * 100, "not all messages arrived");
+    assert_eq!(results.len(), 10 * 10, "not all messages arrived");
 }
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
@@ -101,8 +135,8 @@ pub struct ReliableMsg {
     pub msg: String,
 }
 impl ReliableMsg {
-    pub fn new<A: Into<String>>(msg: A) -> Self {
-        ReliableMsg { msg: msg.into() }
+    pub fn new(msg: impl ToString) -> Self {
+        ReliableMsg { msg: msg.to_string() }
     }
 }
 
@@ -136,7 +170,7 @@ pub enum Response {
 pub fn get_msg_table() -> MsgTable {
     let mut builder = MsgTableBuilder::new();
     builder
-        .register_ordered::<ReliableMsg>(Guarantees::Reliable)
+        .register_ordered::<ReliableMsg>(Guarantees::ReliableOrdered)
         .unwrap();
     builder
         .register_ordered::<UnreliableMsg>(Guarantees::Unreliable)

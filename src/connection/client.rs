@@ -2,8 +2,9 @@ use crate::connection::reliable::ReliableSystem;
 use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ClientTransport;
 use crate::MsgTable;
-use log::{trace, warn};
+use log::{error, trace, warn};
 use std::any::{Any, TypeId};
+use std::collections::VecDeque;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -17,6 +18,8 @@ pub(crate) struct ClientConnection<T: ClientTransport> {
 
     /// The [`ReliableSystem`] to add optional reliability to messages.
     reliable_sys: ReliableSystem<Arc<Vec<u8>>, Box<dyn Any + Send + Sync>>,
+    /// A buffer for messages that are ready to be received.
+    ready: VecDeque<(MsgHeader, Box<dyn Any + Send + Sync>)>,
 }
 
 impl<T: ClientTransport> ClientConnection<T> {
@@ -38,6 +41,7 @@ impl<T: ClientTransport> ClientConnection<T> {
             msg_table: msg_table.clone(),
             transport,
             reliable_sys: ReliableSystem::new(msg_table),
+            ready: VecDeque::new(),
         })
     }
 
@@ -78,6 +82,12 @@ impl<T: ClientTransport> ClientConnection<T> {
         blocking: bool,
     ) -> io::Result<(MsgHeader, Box<dyn Any + Send + Sync>)> {
         loop {
+            // if there is a message that is ready, return it
+            if let Some(ready) = self.ready.pop_front() {
+                return Ok(ready);
+            }
+            // otherwise, try to get a new one
+
             let buf = if blocking {
                 self.transport.recv_blocking()
             } else {
@@ -103,9 +113,25 @@ impl<T: ClientTransport> ClientConnection<T> {
             );
 
             let msg = self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..])?;
-            // TODO: handle any reliability stuff here.
 
-            return Ok((header, msg));
+            // handle reliability and ordering
+            self.reliable_sys.push_received(header, msg);
+            // get all messages from the reliable system and push them on the "ready" que.
+            while let Some((header, msg)) = self.reliable_sys.get_received() {
+                self.ready.push_back((header, msg));
+            }
+        }
+    }
+
+    /// Resends any messages that it needs to for the reliability system to work.
+    pub fn resend_reliable(&mut self) {
+        for (header, payload) in self.reliable_sys.get_resend() {
+            if let Err(err) = self
+                .transport
+                .send(header.m_type, payload.clone())
+            {
+                error!("Error resending msg {}: {}", header.sender_ack_num, err);
+            }
         }
     }
 

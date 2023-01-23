@@ -2,7 +2,9 @@ use crate::net::{AckNum, MsgHeader};
 use crate::Guarantees;
 use hashbrown::HashMap;
 use std::collections::VecDeque;
+use std::fmt::Debug;
 use std::time::{Duration, Instant};
+use log::{error, warn, debug};
 
 // TODO: add to config
 /// The number of times we need to ack something, to consider it acknowledged enough.
@@ -27,7 +29,7 @@ pub(crate) struct AckBitfields {
 /// other than the header. Since this differs between client and server (server needs to keep track
 /// of a to address), it is made a generic parameter.
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
-pub(crate) struct AckSystem<SD> {
+pub(crate) struct AckSystem<SD: Debug> {
     /// The current [`AckNum`] for outgoing messages.
     outgoing_counter: AckNum,
     /// The current ack_offset value for the front end of the buffer.
@@ -48,7 +50,7 @@ pub(crate) struct AckSystem<SD> {
     saved_msgs: HashMap<AckNum, (Instant, MsgHeader, SD)>,
 }
 
-impl<SD> AckSystem<SD> {
+impl<SD: Debug> AckSystem<SD> {
     /// Creates a new [`AckSystem`].
     pub fn new() -> Self {
         let mut deque = VecDeque::new();
@@ -67,10 +69,14 @@ impl<SD> AckSystem<SD> {
     ///
     /// Marks an incoming message as received, so it gets acknowledged in the next message we send.
     pub fn mark_received(&mut self, num: AckNum) {
+        // TODO: Remove
+        debug!("marking received {}", num);
         // The highest AckNum we can have without shifting.
         let mut upper_bound = self.ack_offset + (BITFIELD_WIDTH * self.ack_bitfields.len() as AckNum);
         // shift the ack_bitfields (if needed) to make room for ack_offset
         while num >= upper_bound {
+            // TODO: Remove
+            debug!("pushing out");
             // if the last element has been acknowledged enough, pop the back to make room.
             // otherwise, we just push one on the front, growing the buffer
             if self.ack_bitfields[0].send_count >= SEND_ACK_THRESHOLD {
@@ -84,6 +90,8 @@ impl<SD> AckSystem<SD> {
             upper_bound = self.ack_offset + (BITFIELD_WIDTH * self.ack_bitfields.len() as AckNum);
         }
         if num < self.ack_offset {
+            // TODO: Remove
+            debug!("residual");
             // num is outside the window. Add it to the residual to catch it.
             self.residual.push(num);
             return;
@@ -91,15 +99,19 @@ impl<SD> AckSystem<SD> {
         let dif = num - self.ack_offset;
         let bit_flag = 1 << (dif % BITFIELD_WIDTH);
         let field_idx = dif / BITFIELD_WIDTH;
+        // TODO: Remove
+        debug!("flagging bit {}", dif % BITFIELD_WIDTH);
         self.ack_bitfields[field_idx as usize].bitfield |= bit_flag;
+        // TODO: Remove
+        debug!("field is now {:#b}", self.ack_bitfields[field_idx as usize].bitfield);
     }
 
-    /// Marks one of the outgoing messages as acknowledged. That is, an ack from the peer,
+    /// Marks one of the local, outgoing messages as acknowledged. That is, an ack from the peer,
     /// for a message that was sent from the this computer.
     ///
     /// For marking a `ack_offset` and `ack_bitfield` pair,
     /// use [`mark_bitfield`](Self::mark_bitfield)
-    pub fn mark_outgoing(&mut self, num: AckNum) {
+    pub fn mark_local(&mut self, num: AckNum) {
         self.saved_msgs.remove(&num);
     }
 
@@ -109,6 +121,8 @@ impl<SD> AckSystem<SD> {
     /// For marking an incoming single ack,
     /// use [`mark_incoming`](Self::mark_incoming)
     pub fn mark_bitfield(&mut self, offset: AckNum, bitfield: u32) {
+        // TODO: Remove
+        warn!("marking bitfield {}, {}", offset, bitfield);
         for i in 0..BITFIELD_WIDTH {
             if bitfield & (1 << i) != 0 {
                 self.saved_msgs.remove(&(offset + i));
@@ -118,6 +132,8 @@ impl<SD> AckSystem<SD> {
 
     /// Gets the next ack_offset and bitflags associated with it to be sent in the header.
     pub fn next_header(&mut self) -> (AckNum, u32) {
+        // TODO: remove
+        error!("getting msg header. len: {}, cidx: {}, ack_offset: {}", self.ack_bitfields.len(), self.current_idx, self.ack_offset);
         self.current_idx = (self.current_idx + 1) % self.ack_bitfields.len();
         let field = self.ack_bitfields[self.current_idx];
         self.ack_bitfields[self.current_idx].send_count += 1;
@@ -170,8 +186,7 @@ impl<SD> AckSystem<SD> {
         }
 
         // finally, insert the msg
-        self.saved_msgs
-            .insert(header.sender_ack_num, (Instant::now(), header, other_data));
+        self.saved_msgs.insert(header.sender_ack_num, (Instant::now(), header, other_data));
     }
 
     /// Gets messages that are due for a resend. This resets the time sent.
@@ -179,7 +194,7 @@ impl<SD> AckSystem<SD> {
         let mut acks = vec![];
         for (ack, (sent, _, _)) in self.saved_msgs.iter_mut() {
             // TODO: add duration to config.
-            if sent.elapsed() > Duration::from_millis(1000) {
+            if sent.elapsed() > Duration::from_millis(100) {
                 *sent = Instant::now();
                 acks.push(*ack);
             }
@@ -239,9 +254,9 @@ mod tests {
         assert_eq!(ack_system.saved_msgs.len(), 1);
         ack_system.save_msg(MsgHeader::new(1, 0, 11, 0, 0), Reliable, ());
         assert_eq!(ack_system.saved_msgs.len(), 2);
-        ack_system.mark_outgoing(10);
+        ack_system.mark_local(10);
         assert_eq!(ack_system.saved_msgs.len(), 1);
-        ack_system.mark_outgoing(11);
+        ack_system.mark_local(11);
         assert_eq!(ack_system.saved_msgs.len(), 0);
 
         // check out of order ack
@@ -249,19 +264,14 @@ mod tests {
         ack_system.save_msg(MsgHeader::new(1, 0, 21, 0, 0), Reliable, ());
         ack_system.save_msg(MsgHeader::new(1, 0, 22, 0, 0), Reliable, ());
         assert_eq!(ack_system.saved_msgs.len(), 3);
-        ack_system.mark_outgoing(22);
+        ack_system.mark_local(22);
         assert_eq!(ack_system.saved_msgs.len(), 2);
-        ack_system.mark_outgoing(21);
+        ack_system.mark_local(21);
         assert_eq!(ack_system.saved_msgs.len(), 1);
-        ack_system.mark_outgoing(20);
+        ack_system.mark_local(20);
         assert_eq!(ack_system.saved_msgs.len(), 0);
 
         // check mark_bitfield
-        fn bitfield_value(v: AckNum) -> u32 {
-            let v = v as u32 % 32;
-            1 << v
-        }
-
         ack_system.save_msg(MsgHeader::new(1, 0, 32, 0, 0), Reliable, ());
         ack_system.save_msg(MsgHeader::new(1, 0, 33, 0, 0), Reliable, ());
         ack_system.save_msg(MsgHeader::new(1, 0, 34, 0, 0), Reliable, ());
@@ -281,7 +291,7 @@ mod tests {
         assert_eq!(ack_system.saved_msgs.len(), 1);
         ack_system.save_msg(MsgHeader::new(1, 0, 12, 0, 0), ReliableNewest, ());
         assert_eq!(ack_system.saved_msgs.len(), 1);
-        ack_system.mark_outgoing(12);
+        ack_system.mark_local(12);
         assert_eq!(ack_system.saved_msgs.len(), 0);
     }
 

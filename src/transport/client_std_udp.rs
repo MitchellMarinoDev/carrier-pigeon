@@ -17,7 +17,6 @@ impl ClientTransport for UdpClientTransport {
         let socket = UdpSocket::bind(local)?;
         socket.connect(peer)?;
 
-        // TODO: should this be non blocking?
         socket.set_nonblocking(true)?;
 
         let buf = [0; MAX_MESSAGE_SIZE];

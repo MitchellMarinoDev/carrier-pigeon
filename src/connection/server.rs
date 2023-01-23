@@ -164,6 +164,7 @@ impl<T: ServerTransport> ServerConnection<T> {
                 .get_mut(&cid)
                 .expect("cid should be valid");
             for (header, (addr, payload)) in reliable_sys.get_resend() {
+                error!("Resending msg {}", header.sender_ack_num);
                 if let Err(err) = self
                     .transport
                     .send_to(*addr, header.m_type, payload.clone())

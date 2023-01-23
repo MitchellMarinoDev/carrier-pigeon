@@ -16,7 +16,6 @@ impl ServerTransport for UdpServerTransport {
     fn new(listen: SocketAddr) -> io::Result<Self> {
         let socket = UdpSocket::bind(listen)?;
 
-        // TODO: should this be non blocking?
         socket.set_nonblocking(true)?;
 
         let buf = [0; MAX_MESSAGE_SIZE];
