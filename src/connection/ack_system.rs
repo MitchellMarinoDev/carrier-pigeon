@@ -69,14 +69,10 @@ impl<SD: Debug> AckSystem<SD> {
     ///
     /// Marks an incoming message as received, so it gets acknowledged in the next message we send.
     pub fn mark_received(&mut self, num: AckNum) {
-        // TODO: Remove
-        debug!("marking received {}", num);
         // The highest AckNum we can have without shifting.
         let mut upper_bound = self.ack_offset + (BITFIELD_WIDTH * self.ack_bitfields.len() as AckNum);
         // shift the ack_bitfields (if needed) to make room for ack_offset
         while num >= upper_bound {
-            // TODO: Remove
-            debug!("pushing out");
             // if the last element has been acknowledged enough, pop the back to make room.
             // otherwise, we just push one on the front, growing the buffer
             if self.ack_bitfields[0].send_count >= SEND_ACK_THRESHOLD {
@@ -90,8 +86,6 @@ impl<SD: Debug> AckSystem<SD> {
             upper_bound = self.ack_offset + (BITFIELD_WIDTH * self.ack_bitfields.len() as AckNum);
         }
         if num < self.ack_offset {
-            // TODO: Remove
-            debug!("residual");
             // num is outside the window. Add it to the residual to catch it.
             self.residual.push(num);
             return;
@@ -99,11 +93,7 @@ impl<SD: Debug> AckSystem<SD> {
         let dif = num - self.ack_offset;
         let bit_flag = 1 << (dif % BITFIELD_WIDTH);
         let field_idx = dif / BITFIELD_WIDTH;
-        // TODO: Remove
-        debug!("flagging bit {}", dif % BITFIELD_WIDTH);
         self.ack_bitfields[field_idx as usize].bitfield |= bit_flag;
-        // TODO: Remove
-        debug!("field is now {:#b}", self.ack_bitfields[field_idx as usize].bitfield);
     }
 
     /// Marks one of the local, outgoing messages as acknowledged. That is, an ack from the peer,
@@ -121,8 +111,6 @@ impl<SD: Debug> AckSystem<SD> {
     /// For marking an incoming single ack,
     /// use [`mark_incoming`](Self::mark_incoming)
     pub fn mark_bitfield(&mut self, offset: AckNum, bitfield: u32) {
-        // TODO: Remove
-        warn!("marking bitfield {}, {}", offset, bitfield);
         for i in 0..BITFIELD_WIDTH {
             if bitfield & (1 << i) != 0 {
                 self.saved_msgs.remove(&(offset + i));
@@ -132,8 +120,6 @@ impl<SD: Debug> AckSystem<SD> {
 
     /// Gets the next ack_offset and bitflags associated with it to be sent in the header.
     pub fn next_header(&mut self) -> (AckNum, u32) {
-        // TODO: remove
-        error!("getting msg header. len: {}, cidx: {}, ack_offset: {}", self.ack_bitfields.len(), self.current_idx, self.ack_offset);
         self.current_idx = (self.current_idx + 1) % self.ack_bitfields.len();
         let field = self.ack_bitfields[self.current_idx];
         self.ack_bitfields[self.current_idx].send_count += 1;

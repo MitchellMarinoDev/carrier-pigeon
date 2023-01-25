@@ -110,10 +110,11 @@ impl<T: ServerTransport> ServerConnection<T> {
             let header = MsgHeader::from_be_bytes(&buf[..HEADER_SIZE]);
             self.msg_table.check_m_type(header.m_type)?;
             trace!(
-                "Server: received message with MType: {}, len: {}, from: {}.",
+                "Server: received message (MType: {}, len: {}, AckNum: {}, from: {})",
                 header.m_type,
                 n,
-                from
+                header.sender_ack_num,
+                from,
             );
 
             let cid = match self.connection_list.cid_of(from) {

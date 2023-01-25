@@ -29,7 +29,7 @@ impl ClientTransport for UdpClientTransport {
         let payload_len = payload.len();
         if payload_len > MAX_MESSAGE_SIZE {
             let e_msg = format!(
-                "UDP: Outgoing message size is greater than the maximum message size ({}). \
+                "Client: outgoing message size is greater than the maximum message size ({}). \
                 MType: {}, size: {}. Discarding message.",
                 MAX_MESSAGE_SIZE, m_type, payload_len
             );
@@ -38,7 +38,7 @@ impl ClientTransport for UdpClientTransport {
 
         if payload_len > MAX_SAFE_MESSAGE_SIZE {
             debug!(
-                "UDP: Outgoing message size is greater than the maximum SAFE message size.\
+                "Client: outgoing message size is greater than the maximum SAFE message size.\
                 MType: {}, size: {}. Sending message anyway.",
                 m_type, payload_len
             );
@@ -46,7 +46,7 @@ impl ClientTransport for UdpClientTransport {
         // Message can be sent!
 
         trace!(
-            "Client: Sending message with MType: {}, len: {}.",
+            "Client: Sending message (MType: {}, len: {})",
             m_type,
             payload_len
         );

@@ -107,9 +107,10 @@ impl<T: ClientTransport> ClientConnection<T> {
             self.msg_table.check_m_type(header.m_type)?;
 
             trace!(
-                "Client: received message with MType: {}, len: {}.",
+                "Client: received message (MType: {}, len: {}, AckNum: {})",
                 header.m_type,
                 n,
+                header.sender_ack_num,
             );
 
             let msg = self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..])?;

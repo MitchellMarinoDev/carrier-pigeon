@@ -10,8 +10,8 @@ Pulling ideas from
 [Gaffer On Games](https://gafferongames.com/post/reliability_ordering_and_congestion_avoidance_over_udp/)
 and 
 [Laminar](https://github.com/TimonPost/laminar), carrier-pigeon uses an 
-acknowledgement number and bitflags in the header of other messages.
-This means we can acknowledge multiple messages at a time. These acknowledgements
+acknowledgement number and a 32-bit bitfield in the header of other messages.
+This means we can acknowledge up to 32 messages at a time. These acknowledgements
 sent in the header of every message so all the acknowledgements can't be lost 
 (on the network) all at once.
 
@@ -24,4 +24,12 @@ Acknowledgments are packed in the header in this format:
 [ack_offset] u16 // The offset of the bitfield
 [ack_bitfield] u32 // The bitfield of the succeeding 32 ack_numbers
 ```
+In carrier-pigeon, when a packet is resent, it retains the same AckNum. This is so
+the message can stay immutable after it is sent the first time. Because of this, that
+AckNum could get out of the bitfield window before it arrives.
 
+In addition, if messages are only sent 1 way (or very little traffic is sent one way)
+There might not be enough outgoing messages to ack all the incoming messages.
+
+To solve these issues, there is a dedicated type for acknowledging all messages, 
+including the ones that don't fit in the window.
