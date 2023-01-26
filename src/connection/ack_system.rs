@@ -4,7 +4,6 @@ use hashbrown::HashMap;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
-use log::{error, warn, debug};
 
 // TODO: add to config
 /// The number of times we need to ack something, to consider it acknowledged enough.
