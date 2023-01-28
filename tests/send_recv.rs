@@ -37,8 +37,10 @@ fn send_recv() {
     // Give the client enough time to send the messages.
     std::thread::sleep(Duration::from_millis(100));
 
-    // since we are going through localhost, we are going to assume all unreliable messages make it.
-    assert_eq!(server.get_msgs(), 20);
+    // since we are going through localhost, we are going to assume all reliable and unreliable messages make it.
+    server.tick();
+    assert_eq!(server.recv::<UnreliableMsg>().count(), 10);
+    assert_eq!(server.recv::<ReliableMsg>().count(), 10);
     info!("messages received. Verifying...");
 
     let reliable_msgs: Vec<_> = server.recv::<ReliableMsg>().collect();

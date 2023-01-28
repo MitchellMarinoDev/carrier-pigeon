@@ -4,6 +4,7 @@ use hashbrown::HashMap;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
+use log::warn;
 
 // TODO: add to config
 /// The number of times we need to ack something, to consider it acknowledged enough.
@@ -42,9 +43,6 @@ pub(crate) struct AckSystem<SD: Debug> {
     ///
     /// This stores a bitfield for weather the 32 messages before `ack_offset` have been received.
     ack_bitfields: VecDeque<AckBitfields>,
-    /// This stores additional acks that are too old to fit in the bitfield. [`AckNums`] might get
-    /// put in this buffer if they get lost and must be resent one or more times.
-    residual: Vec<AckNum>,
     /// This stores the saved reliable messages.
     saved_msgs: HashMap<AckNum, (Instant, MsgHeader, SD)>,
 }
@@ -59,7 +57,6 @@ impl<SD: Debug> AckSystem<SD> {
             ack_offset: 0,
             current_idx: usize::MAX-1,
             ack_bitfields: deque,
-            residual: vec![],
             saved_msgs: HashMap::new(),
         }
     }
@@ -85,14 +82,17 @@ impl<SD: Debug> AckSystem<SD> {
             upper_bound = self.ack_offset + (BITFIELD_WIDTH * self.ack_bitfields.len() as AckNum);
         }
         if num < self.ack_offset {
-            // num is outside the window. Add it to the residual to catch it.
-            self.residual.push(num);
+            // num is outside the window. This is unlikely to happen unless a packet stays on the
+            // internet for a long time.
+            warn!("Received a message that is outside of the window (AckNum: {})", num);
             return;
         }
         let dif = num - self.ack_offset;
         let bit_flag = 1 << (dif % BITFIELD_WIDTH);
         let field_idx = dif / BITFIELD_WIDTH;
         self.ack_bitfields[field_idx as usize].bitfield |= bit_flag;
+        // when we modify a bitfield, reset that send count back to 0.
+        self.ack_bitfields[field_idx as usize].send_count = 0;
     }
 
     /// Marks one of the local, outgoing messages as acknowledged. That is, an ack from the peer,
@@ -127,13 +127,15 @@ impl<SD: Debug> AckSystem<SD> {
 
     /// Gets all the information needed for an ack message.
     ///
-    /// This increases the send count for all the bitfields, and gets a reference
-    /// to the bitfields and a slice to the residual ack numbers.
-    pub fn ack_msg_info(&mut self) -> (&VecDeque<AckBitfields>, &[AckNum]) {
+    /// This increases the send count for all the bitfields.
+    /// Returns the offset and a vec of the bitfields.
+    pub fn ack_msg_info(&mut self) -> (AckNum, Vec<u32>) {
+        let mut out = Vec::with_capacity(self.ack_bitfields.len());
         for bf in self.ack_bitfields.iter_mut() {
             bf.send_count += 1;
+            out.push(bf.bitfield);
         }
-        (&self.ack_bitfields, &self.residual[..])
+        (self.ack_offset, out)
     }
 
     /// Gets the next outgoing [`AckNum`].

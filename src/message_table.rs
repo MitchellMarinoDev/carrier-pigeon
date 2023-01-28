@@ -9,6 +9,7 @@ use std::fmt::{Display, Formatter};
 use std::io;
 use std::io::{Error, ErrorKind};
 use MsgRegError::NonUniqueIdentifier;
+use crate::messages::{AckMsg, PingMsg};
 
 /// Delivery guarantees.
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
@@ -120,6 +121,8 @@ pub struct MsgTable {
 pub const CONNECTION_M_TYPE: MType = 0;
 pub const RESPONSE_M_TYPE: MType = 1;
 pub const DISCONNECT_M_TYPE: MType = 2;
+pub const ACK_M_TYPE: MType = 3;
+pub const PING_M_TYPE: MType = 4;
 
 impl MsgTableBuilder {
     /// Creates a new [`MsgTableBuilder`].
@@ -303,6 +306,8 @@ impl MsgTableBuilder {
             self.get_ordered_registration::<C>(Guarantees::Reliable)?,
             self.get_ordered_registration::<R>(Guarantees::Reliable)?,
             self.get_ordered_registration::<D>(Guarantees::Reliable)?,
+            self.get_ordered_registration::<AckMsg>(Guarantees::Reliable).expect("failed to create registration for AckMsg"),
+            self.get_ordered_registration::<PingMsg>(Guarantees::Reliable).expect("failed to create registration for AckMsg"),
         ];
 
         let registration_count = self.ordered.len() + self.sorted.len() + 3;

@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::fmt::{Debug, Display, Formatter};
+use std::io;
 use std::io::Error;
 use std::ops::Deref;
 
@@ -130,12 +131,12 @@ impl MsgHeader {
 
 /// The function used to deserialize a message.
 ///
-/// fn(&[u8]) -> Result<Box<dyn Any + Send + Sync>, io::Error>
-pub type DeserFn = fn(&[u8]) -> Result<Box<dyn Any + Send + Sync>, Error>;
+/// fn(&[[u8]]) -> [`io::Result`]<[`Box`]<dyn [`Any`] + [`Send`] + [`Sync`]>>
+pub type DeserFn = fn(&[u8]) -> io::Result<Box<dyn Any + Send + Sync>>;
 /// The function used to serialize a message.
 ///
-/// fn(&(dyn Any + Send + Sync), &mut Vec<u8>) -> Result<(), Error>
-pub type SerFn = fn(&(dyn Any + Send + Sync), &mut Vec<u8>) -> Result<(), Error>;
+/// fn(&(dyn [`Any`] + [`Send`] + [`Sync`]), &mut [`Vec`]<[`u8`]>) -> [`io::Result`]<()>
+pub type SerFn = fn(&(dyn Any + Send + Sync), &mut Vec<u8>) -> io::Result<()>;
 
 #[derive(Debug)]
 /// An enum for the possible states of a connection.

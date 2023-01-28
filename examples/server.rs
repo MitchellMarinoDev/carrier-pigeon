@@ -53,11 +53,7 @@ fn main() {
 
     // This represents the game loop in your favorite game engine.
     loop {
-        // These 2 methods should generally be called at the start of every frame.
-        // This clears the message buffer so that messages from last frame are not carried over.
-        server.clear_msgs();
-        // Then get the new messages that came in since the last call to this function.
-        server.get_msgs();
+        server.tick();
 
         // This should be called every once in a while to clean up so that the
         // server doesn't send messages to disconnected clients.

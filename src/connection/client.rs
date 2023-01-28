@@ -8,6 +8,7 @@ use std::collections::VecDeque;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use crate::message_table::ACK_M_TYPE;
 
 /// A wrapper around the the [`ClientTransport`] that adds the reliability and ordering.
 pub(crate) struct ClientConnection<T: ClientTransport> {
@@ -55,8 +56,7 @@ impl<T: ClientTransport> ClientConnection<T> {
         let header = self.reliable_sys.get_send_header(m_type);
 
         // build the payload using the header and the message
-        let mut payload = Vec::new();
-        payload.extend(header.to_be_bytes());
+        let mut payload = header.to_be_bytes().to_vec();
 
         let ser_fn = self.msg_table.ser[m_type];
         ser_fn(msg, &mut payload)?;
@@ -66,6 +66,21 @@ impl<T: ClientTransport> ClientConnection<T> {
         let guarantees = self.msg_table.guarantees[m_type];
         self.reliable_sys.save(header, guarantees, payload.clone());
         self.transport.send(m_type, payload)
+    }
+
+    /// Sends an [`AckMsg`] to acknowledge all received messages.
+    pub fn send_ack_msgs(&mut self) {
+        let ack_msg = self.reliable_sys.get_ack_msg();
+        let header = self.reliable_sys.get_send_header(ACK_M_TYPE);
+
+        // build the payload using the header and the message
+        let mut payload = header.to_be_bytes().to_vec();
+        bincode::serialize_into(&mut payload, &ack_msg).expect("ack message should serialize without error");
+        let payload = Arc::new(payload);
+
+        if let Err(err) = self.transport.send(ACK_M_TYPE, payload) {
+            error!("Error sending AckMsg: {}", err);
+        }
     }
 
     pub fn recv(&mut self) -> io::Result<(MsgHeader, Box<dyn Any + Send + Sync>)> {

@@ -55,25 +55,25 @@ fn test_reliability() {
     };
     let mut results = vec![];
 
-    // send 10 bursts of 100 messages.
+    // send 10 bursts of 10 messages.
     for _ in 0..10 {
         // TODO: This needs a refactor once the dedicated ack message gets implemented
         //       The dummy packet from the server will not be required anymore.
         // make sure that the client is receiving the server's acks
         let _ = client_connection.recv();
+        client_connection.resend_reliable();
         for _ in 0..10 {
             client_connection.send(&msg).expect("failed to send");
-            client_connection.resend_reliable();
         }
         sleep(Duration::from_millis(150));
         loop {
             match server_connection.recv_from() {
                 Err(e) if e.kind() == ErrorKind::WouldBlock => break,
                 Err(err) => panic!("unexpected error: {}", err),
-                Ok(msg) => {
+                Ok((_cid, header, msg)) => {
                     // TODO: This will also not be necessary once ignore Connection/Response msgs
                     //       after connected.
-                    if msg.1.m_type == 3 {
+                    if header.m_type == 5 {
                         results.push(msg);
                     }
                 }
@@ -94,10 +94,10 @@ fn test_reliability() {
             match server_connection.recv_from() {
                 Err(e) if e.kind() == ErrorKind::WouldBlock => break,
                 Err(err) => panic!("unexpected error: {}", err),
-                Ok(msg) => {
+                Ok((_cid, header, msg)) => {
                     // TODO: This will also not be necessary once ignore Connection/Response msgs
                     //       after connected.
-                    if msg.1.m_type == 3 {
+                    if header.m_type == 5 {
                         results.push(msg);
                     }
                 }
@@ -119,7 +119,7 @@ fn test_reliability() {
     // ensure all messages arrive uncorrupted
     for v in results.iter() {
         assert_eq!(
-            v.2.downcast_ref::<ReliableMsg>().unwrap(),
+            v.downcast_ref::<ReliableMsg>().unwrap(),
             &msg,
             "message is not intact"
         )

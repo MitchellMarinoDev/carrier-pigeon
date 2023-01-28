@@ -3,6 +3,7 @@ use crate::connection::ack_system::AckSystem;
 use crate::connection::ordering_system::OrderingSystem;
 use crate::net::MsgHeader;
 use crate::{Guarantees, MType, MsgTable};
+use crate::messages::AckMsg;
 
 /// A system that handles the reliablility and ordering of incoming messages based on their
 /// [`Guarantees`].
@@ -33,6 +34,12 @@ impl<SD: Debug, RD: Debug> ReliableSystem<SD, RD> {
 
         let guarantees = self.msg_table.guarantees[header.m_type];
         self.ordering_sys.push(header, guarantees, receive_data);
+    }
+
+    /// Gets an [`AckMsg`] for acknowledging all received messages in the window.
+    pub fn get_ack_msg(&mut self) -> AckMsg {
+        let (offset, flags) = self.ack_sys.ack_msg_info();
+        AckMsg::new(offset, flags)
     }
 
     pub fn get_received(&mut self) -> Option<(MsgHeader, RD)> {

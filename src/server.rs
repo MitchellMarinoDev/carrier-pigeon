@@ -227,11 +227,8 @@ impl Server {
         )
     }
 
-    /// Receives the messages from the connections. This should be done before calling `recv<T>()`.
-    ///
-    /// When done in a game loop, you should call `clear_msgs()`, then `get_msgs()` before default
-    /// time. This will clear the messages between frames.
-    pub fn get_msgs(&mut self) -> u32 {
+    /// Receives the messages from the connections. This is called in `server.tick()`.
+    fn get_msgs(&mut self) -> u32 {
         let mut count = 0;
 
         loop {
@@ -256,10 +253,24 @@ impl Server {
     }
 
     /// Clears messages from the buffer.
-    pub fn clear_msgs(&mut self) {
+    fn clear_msgs(&mut self) {
         for buff in self.msg_buf.iter_mut() {
             buff.clear();
         }
+    }
+
+    /// This handles everything that the server needs to do each frame.
+    ///
+    /// This includes:
+    ///
+    ///  - Clearing the message buffer. This gets rid of all the messages from last frame.
+    ///  - (Re)sending messages that are needed for the reliability layer.
+    ///  - Getting the messages for this frame.
+    pub fn tick(&mut self) {
+        self.clear_msgs();
+        self.connection.send_ack_msgs();
+        self.connection.resend_reliable();
+        self.get_msgs();
     }
 
     /// Gets the address that the server is listening on.

@@ -40,8 +40,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
     // Normally this would be done in the game loop
     // and there would be other things to do.
     loop {
-        server.clear_msgs();
-        server.get_msgs();
+        server.tick();
         let count =
             server.handle_new_cons(|_cid, _addr, _con_msg: Connection| (true, Response::Accepted));
         if count != 0 {

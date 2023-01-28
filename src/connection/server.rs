@@ -1,6 +1,6 @@
 use crate::connection::reliable::ReliableSystem;
 use crate::connection::{ConnectionList, ConnectionListError};
-use crate::message_table::{CONNECTION_M_TYPE, RESPONSE_M_TYPE};
+use crate::message_table::{ACK_M_TYPE, CONNECTION_M_TYPE, RESPONSE_M_TYPE};
 use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ServerTransport;
 use crate::{CId, MsgTable};
@@ -69,8 +69,7 @@ impl<T: ServerTransport> ServerConnection<T> {
         let header = reliable_sys.get_send_header(m_type);
 
         // build the payload using the header and the message
-        let mut payload = Vec::new();
-        payload.extend(header.to_be_bytes());
+        let mut payload = header.to_be_bytes().to_vec();
 
         let ser_fn = self.msg_table.ser[m_type];
         ser_fn(msg, &mut payload).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
@@ -80,6 +79,27 @@ impl<T: ServerTransport> ServerConnection<T> {
         let guarantees = self.msg_table.guarantees[m_type];
         reliable_sys.save(header, guarantees, (addr, payload.clone()));
         self.transport.send_to(addr, m_type, payload)
+    }
+
+    /// Sends an [`AckMsg`] to all clients in order to acknowledge all received messages.
+    pub fn send_ack_msgs(&mut self) {
+        for (&cid, reliable_sys) in self.reliable_sys.iter_mut() {
+            let ack_msg = reliable_sys.get_ack_msg();
+            let addr = self
+                .connection_list
+                .addr_of(cid)
+                .expect("cid should be valid");
+            let header = reliable_sys.get_send_header(ACK_M_TYPE);
+
+            // build the payload using the header and the message
+            let mut payload = header.to_be_bytes().to_vec();
+            bincode::serialize_into(&mut payload, &ack_msg).expect("ack message should serialize without error");
+            let payload = Arc::new(payload);
+
+            if let Err(err) = self.transport.send_to(addr, ACK_M_TYPE, payload) {
+                error!("Error sending AckMsg: {}", err);
+            }
+        }
     }
 
     /// Receives a message from the transport.
