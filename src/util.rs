@@ -1,3 +1,6 @@
+// This is a local util module. There will be some unneeded functionality.
+#![allow(unused)]
+
 use hashbrown::HashMap;
 use std::hash::Hash;
 

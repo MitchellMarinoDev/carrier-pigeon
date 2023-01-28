@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 pub mod client_std_udp;
 pub mod server_std_udp;
-mod std_udp;
 
 // TODO: combine transports.
 pub trait ClientTransport {

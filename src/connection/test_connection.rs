@@ -50,9 +50,7 @@ fn test_reliability() {
         .output()
         .expect("failed to run `tc` to emulate an unstable network on the `lo` adapter");
 
-    let msg = ReliableMsg {
-        msg: "This is the message that is sent.".to_owned(),
-    };
+    let msg = ReliableMsg::new("This is the message that is sent.");
     let mut results = vec![];
 
     // send 10 bursts of 10 messages.
@@ -143,11 +141,6 @@ impl ReliableMsg {
 /// An unreliable test message.
 pub struct UnreliableMsg {
     pub msg: String,
-}
-impl UnreliableMsg {
-    pub fn new<A: Into<String>>(msg: A) -> Self {
-        UnreliableMsg { msg: msg.into() }
-    }
 }
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
