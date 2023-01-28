@@ -202,10 +202,18 @@ impl Client {
         Some(self.msg_buff[m_type].iter().map(|m| m.get_typed().unwrap()))
     }
 
+    /// This handles everything that the client needs to do each frame.
+    ///
+    /// This includes:
+    ///
+    ///  - Clearing the message buffer. This gets rid of all the messages from last frame.
+    ///  - (Re)sending messages that are needed for the reliability layer.
+    ///  - Getting the messages for this frame.
     pub fn tick(&mut self) {
         self.clear_msgs();
+        self.connection.send_ack_msg();
+        self.connection.resend_reliable();
         self.get_msgs();
-        self.resend_reliable();
     }
 
     /// Receives the messages from the connections.
@@ -213,7 +221,7 @@ impl Client {
     ///
     /// When done in a game loop, you should call `clear_msgs()`, then `get_msgs()`
     /// before default time. This will clear the messages between frames.
-    pub fn get_msgs(&mut self) -> u32 {
+    fn get_msgs(&mut self) -> u32 {
         let mut i = 0;
 
         loop {
@@ -246,14 +254,10 @@ impl Client {
     }
 
     /// Clears messages from the buffer.
-    pub fn clear_msgs(&mut self) {
+    fn clear_msgs(&mut self) {
         for buff in self.msg_buff.iter_mut() {
             buff.clear();
         }
-    }
-
-    pub fn resend_reliable(&mut self) {
-        self.connection.resend_reliable();
     }
 
     /// Gets the local address.

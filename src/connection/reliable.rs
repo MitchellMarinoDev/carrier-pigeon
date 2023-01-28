@@ -29,7 +29,7 @@ impl<SD: Debug, RD: Debug> ReliableSystem<SD, RD> {
     }
 
     pub fn push_received(&mut self, header: MsgHeader, receive_data: RD) {
-        self.ack_sys.mark_received(header.sender_ack_num);
+        self.ack_sys.msg_received(header.sender_ack_num);
         self.ack_sys.mark_bitfield(header.receiver_acking_offset, header.ack_bits);
 
         let guarantees = self.msg_table.guarantees[header.m_type];

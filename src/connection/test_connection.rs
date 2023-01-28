@@ -57,8 +57,6 @@ fn test_reliability() {
 
     // send 10 bursts of 10 messages.
     for _ in 0..10 {
-        // TODO: This needs a refactor once the dedicated ack message gets implemented
-        //       The dummy packet from the server will not be required anymore.
         // make sure that the client is receiving the server's acks
         let _ = client_connection.recv();
         client_connection.resend_reliable();
@@ -79,12 +77,12 @@ fn test_reliability() {
                 }
             }
         }
-        // TODO: not needed after dedicated ack message type is implemented.
-        // send a message so that the ack header gets sent.
-        server_connection.send_to(1, &ReliableMsg::new("")).unwrap();
+        // send ack messages for the reliability system.
+        server_connection.send_ack_msgs();
     }
 
-    // do a couple more receives to get the stragglers
+    println!("All messages sent at least once. Looping 10 more times for reliability");
+    // do some more receives to get the stragglers
     for _ in 0..10 {
         // make sure that the client is receiving the server's acks
         let _ = client_connection.recv();
@@ -103,7 +101,8 @@ fn test_reliability() {
                 }
             }
         }
-        server_connection.send_to(1, &ReliableMsg::new("")).unwrap();
+        // send ack messages for the reliability system.
+        server_connection.send_ack_msgs();
     }
     // remove the simulated conditions
     Command::new("bash")

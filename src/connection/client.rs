@@ -69,7 +69,7 @@ impl<T: ClientTransport> ClientConnection<T> {
     }
 
     /// Sends an [`AckMsg`] to acknowledge all received messages.
-    pub fn send_ack_msgs(&mut self) {
+    pub fn send_ack_msg(&mut self) {
         let ack_msg = self.reliable_sys.get_ack_msg();
         let header = self.reliable_sys.get_send_header(ACK_M_TYPE);
 

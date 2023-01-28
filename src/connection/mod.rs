@@ -6,16 +6,11 @@ pub mod server;
 #[cfg(test)]
 mod test_connection;
 
-use crate::net::AckNum;
 use crate::util::DoubleHashMap;
 use crate::CId;
-use hashbrown::HashMap;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::net::SocketAddr;
-use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
-use std::time::Instant;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum ConnectionListError {
@@ -130,44 +125,3 @@ impl ConnectionList {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct SavedMsg {
-    /// The payload of the message.
-    payload: Arc<Vec<u8>>,
-    /// The [`Instant`] that the message is sent.
-    ///
-    /// Used for knowing when to resend.
-    sent: Instant,
-}
-
-impl SavedMsg {
-    fn new(payload: Arc<Vec<u8>>) -> Self {
-        SavedMsg {
-            payload,
-            sent: Instant::now(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct NonAckedMsgs(HashMap<AckNum, SavedMsg>);
-
-impl NonAckedMsgs {
-    fn new() -> Self {
-        NonAckedMsgs(HashMap::with_capacity(0))
-    }
-}
-
-impl Deref for NonAckedMsgs {
-    type Target = HashMap<AckNum, SavedMsg>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for NonAckedMsgs {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}

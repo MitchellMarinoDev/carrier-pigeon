@@ -61,10 +61,10 @@ impl<SD: Debug> AckSystem<SD> {
         }
     }
 
-    /// Marks a [`AckNum`] as received.
+    /// Marks the [`AckNum`] of a message as received.
     ///
     /// Marks an incoming message as received, so it gets acknowledged in the next message we send.
-    pub fn mark_received(&mut self, num: AckNum) {
+    pub fn msg_received(&mut self, num: AckNum) {
         // The highest AckNum we can have without shifting.
         let mut upper_bound = self.ack_offset + (BITFIELD_WIDTH * self.ack_bitfields.len() as AckNum);
         // shift the ack_bitfields (if needed) to make room for ack_offset
@@ -93,15 +93,6 @@ impl<SD: Debug> AckSystem<SD> {
         self.ack_bitfields[field_idx as usize].bitfield |= bit_flag;
         // when we modify a bitfield, reset that send count back to 0.
         self.ack_bitfields[field_idx as usize].send_count = 0;
-    }
-
-    /// Marks one of the local, outgoing messages as acknowledged. That is, an ack from the peer,
-    /// for a message that was sent from the this computer.
-    ///
-    /// For marking a `ack_offset` and `ack_bitfield` pair,
-    /// use [`mark_bitfield`](Self::mark_bitfield)
-    pub fn mark_local(&mut self, num: AckNum) {
-        self.saved_msgs.remove(&num);
     }
 
     /// Marks an incoming `ack_offset` and `ack_bitfield` pair. These come in the header of messages
@@ -203,13 +194,13 @@ mod tests {
     fn test_mark_received() {
         let mut ack_system: AckSystem<()> = AckSystem::new();
 
-        ack_system.mark_received(0);
+        ack_system.msg_received(0);
         assert_eq!(ack_system.ack_bitfields.len(), 1);
         assert_eq!(ack_system.ack_bitfields[0].send_count, 0);
         assert_eq!(ack_system.ack_offset, 0); // default
         assert_eq!(ack_system.ack_bitfields.front().unwrap().bitfield, 1 << 0,);
 
-        ack_system.mark_received(8);
+        ack_system.msg_received(8);
         assert_eq!(ack_system.ack_bitfields.len(), 1);
         assert_eq!(ack_system.ack_bitfields[0].send_count, 0);
         assert_eq!(ack_system.ack_offset, 0); // default
@@ -222,7 +213,7 @@ mod tests {
         // The rest of the test relies on this not being across the threshold
         assert!(ack_system.ack_bitfields[0].send_count < SEND_ACK_THRESHOLD);
 
-        ack_system.mark_received(32 + 6);
+        ack_system.msg_received(32 + 6);
         assert_eq!(ack_system.ack_bitfields.len(), 2);
         assert_eq!(ack_system.ack_offset, 0);
         assert_eq!(ack_system.ack_bitfields[1].bitfield, 1 << 6);
@@ -241,9 +232,9 @@ mod tests {
         assert_eq!(ack_system.saved_msgs.len(), 1);
         ack_system.save_msg(MsgHeader::new(1, 0, 11, 0, 0), Reliable, ());
         assert_eq!(ack_system.saved_msgs.len(), 2);
-        ack_system.mark_local(10);
+        ack_system.mark_bitfield(0, 1<<10);
         assert_eq!(ack_system.saved_msgs.len(), 1);
-        ack_system.mark_local(11);
+        ack_system.mark_bitfield(0, 1<<11);
         assert_eq!(ack_system.saved_msgs.len(), 0);
 
         // check out of order ack
@@ -251,11 +242,11 @@ mod tests {
         ack_system.save_msg(MsgHeader::new(1, 0, 21, 0, 0), Reliable, ());
         ack_system.save_msg(MsgHeader::new(1, 0, 22, 0, 0), Reliable, ());
         assert_eq!(ack_system.saved_msgs.len(), 3);
-        ack_system.mark_local(22);
+        ack_system.mark_bitfield(0, 1<<22);
         assert_eq!(ack_system.saved_msgs.len(), 2);
-        ack_system.mark_local(21);
+        ack_system.mark_bitfield(0, 1<<21);
         assert_eq!(ack_system.saved_msgs.len(), 1);
-        ack_system.mark_local(20);
+        ack_system.mark_bitfield(0, 1<<20);
         assert_eq!(ack_system.saved_msgs.len(), 0);
 
         // check mark_bitfield
@@ -278,7 +269,7 @@ mod tests {
         assert_eq!(ack_system.saved_msgs.len(), 1);
         ack_system.save_msg(MsgHeader::new(1, 0, 12, 0, 0), ReliableNewest, ());
         assert_eq!(ack_system.saved_msgs.len(), 1);
-        ack_system.mark_local(12);
+        ack_system.mark_bitfield(0, 1<<12);
         assert_eq!(ack_system.saved_msgs.len(), 0);
     }
 

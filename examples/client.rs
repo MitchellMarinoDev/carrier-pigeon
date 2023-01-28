@@ -85,10 +85,7 @@ fn main() {
         // They should also be called before default time so that all other systems get called
         // with the updated messages.
 
-        // This clears the message buffer so that messages from last frame are not carried over.
-        client.clear_msgs();
-        // Then get the new messages that came in since the last call to this function.
-        client.get_msgs();
+        client.tick();
 
         // Get messages from the console, and send it to the server.
         while let Ok(text) = receiver.try_recv() {
