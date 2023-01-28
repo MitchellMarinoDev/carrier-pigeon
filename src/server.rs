@@ -1,4 +1,4 @@
-use crate::connection::server::ServerConnection;
+use crate::connection::server_connection::ServerConnection;
 use crate::message_table::{MsgTable, CONNECTION_M_TYPE, RESPONSE_M_TYPE};
 use crate::net::{CId, CIdSpec, ErasedNetMsg, NetMsg, ServerConfig, Status};
 use crate::transport::server_std_udp::UdpServerTransport;
@@ -269,6 +269,7 @@ impl Server {
     pub fn tick(&mut self) {
         self.clear_msgs();
         self.connection.send_ack_msgs();
+        self.connection.send_pings();
         self.connection.resend_reliable();
         self.get_msgs();
     }

@@ -1,5 +1,5 @@
-use crate::connection::client::ClientConnection;
-use crate::connection::server::ServerConnection;
+use crate::connection::client_connection::ClientConnection;
+use crate::connection::server_connection::ServerConnection;
 use crate::transport::client_std_udp::UdpClientTransport;
 use crate::transport::server_std_udp::UdpServerTransport;
 use crate::{Guarantees, MsgTable, MsgTableBuilder};

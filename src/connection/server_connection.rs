@@ -1,6 +1,6 @@
 use crate::connection::reliable::ReliableSystem;
 use crate::connection::{ConnectionList, ConnectionListError};
-use crate::message_table::{ACK_M_TYPE, CONNECTION_M_TYPE, RESPONSE_M_TYPE};
+use crate::message_table::{ACK_M_TYPE, CONNECTION_M_TYPE, PING_M_TYPE, RESPONSE_M_TYPE};
 use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ServerTransport;
 use crate::{CId, MsgTable};
@@ -12,6 +12,8 @@ use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use crate::connection::ping_system::ServerPingSystem;
+use crate::messages::PingMsg;
 
 /// A wrapper around the the [`ServerTransport`] that adds
 /// (de)serialization, reliability and ordering to the messages.
@@ -20,6 +22,8 @@ pub struct ServerConnection<T: ServerTransport> {
     msg_table: MsgTable,
     /// The transport to use to send and receive the messages.
     transport: T,
+    /// The system used to generate ping messages and estimate the RTT.
+    ping_sys: ServerPingSystem,
     /// The [`ReliableSystem`]s to add optional reliability to messages for each connection.
     reliable_sys:
         HashMap<CId, ReliableSystem<(SocketAddr, Arc<Vec<u8>>), (CId, Box<dyn Any + Send + Sync>)>>,
@@ -42,9 +46,10 @@ impl<T: ServerTransport> ServerConnection<T> {
                 .unwrap_or("UNKNOWN".to_owned()),
         );
         Ok(Self {
-            reliable_sys: HashMap::new(),
             msg_table,
             transport,
+            ping_sys: ServerPingSystem::new(),
+            reliable_sys: HashMap::new(),
             connection_list,
             ready: VecDeque::new(),
         })
@@ -100,6 +105,22 @@ impl<T: ServerTransport> ServerConnection<T> {
                 error!("Error sending AckMsg: {}", err);
             }
         }
+    }
+
+    /// Sends a ping messages to the clients if necessary.
+    pub fn send_pings(&mut self) {
+        if let Some(msg) = self.ping_sys.get_ping_msg() {
+            for cid in self.connection_list.cids().collect::<Vec<_>>() {
+                if let Err(err) = self.send_to(cid, &msg) {
+                    error!("Failed to send ping message to {}: {}", cid, err);
+                }
+            }
+        }
+    }
+
+    /// Sends a ping messages to the clients if necessary.
+    fn recv_ping(&mut self, cid: CId, ping_msg: PingMsg) {
+        self.ping_sys.recv_ping_msg(cid, ping_msg);
     }
 
     /// Receives a message from the transport.
@@ -161,6 +182,18 @@ impl<T: ServerTransport> ServerConnection<T> {
                 }
                 Some(cid) => cid,
             };
+
+            if header.m_type == PING_M_TYPE {
+                // handle ping type messages separately
+                match PingMsg::deser(&buf[HEADER_SIZE..]) {
+                    Err(err) => {
+                        warn!("Server: failed to deserialize ping message from {} (CId: {}): {}", from, cid, err);
+                    }
+                    Ok(ping_msg) => {
+                        self.recv_ping(cid, ping_msg);
+                    }
+                }
+            }
 
             let msg = self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..])?;
 
@@ -250,15 +283,19 @@ impl<T: ServerTransport> ServerConnection<T> {
         Ok(count)
     }
 
+    /// Add a new connection with `cid` and `addr`.
     fn new_connection(&mut self, cid: CId, addr: SocketAddr) -> Result<(), ConnectionListError> {
         self.connection_list.new_connection(cid, addr)?;
+        self.ping_sys.add_cid(cid);
         self.reliable_sys
             .insert(cid, ReliableSystem::new(self.msg_table.clone()));
         Ok(())
     }
 
+    /// Remove connection with `cid`.
     pub fn remove_connection(&mut self, cid: CId) -> Result<(), ConnectionListError> {
         self.connection_list.remove_connection(cid)?;
+        self.ping_sys.remove_cid(cid);
         let old_reliable = self.reliable_sys.remove(&cid);
         debug_assert!(old_reliable.is_some(), "since self.connection_list.remove_connection() didn't fail, there should be a corresponding entry for that cid in self.reliable_sys");
         Ok(())

@@ -8,7 +8,9 @@ use std::collections::VecDeque;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use crate::message_table::ACK_M_TYPE;
+use crate::connection::ping_system::ClientPingSystem;
+use crate::message_table::{ACK_M_TYPE, PING_M_TYPE};
+use crate::messages::PingMsg;
 
 /// A wrapper around the the [`ClientTransport`] that adds the reliability and ordering.
 pub(crate) struct ClientConnection<T: ClientTransport> {
@@ -16,7 +18,8 @@ pub(crate) struct ClientConnection<T: ClientTransport> {
     msg_table: MsgTable,
     /// The transport to use to send and receive the messages.
     transport: T,
-
+    /// The system used to generate ping messages and estimate the RTT.
+    ping_sys: ClientPingSystem,
     /// The [`ReliableSystem`] to add optional reliability to messages.
     reliable_sys: ReliableSystem<Arc<Vec<u8>>, Box<dyn Any + Send + Sync>>,
     /// A buffer for messages that are ready to be received.
@@ -41,6 +44,7 @@ impl<T: ClientTransport> ClientConnection<T> {
         Ok(Self {
             msg_table: msg_table.clone(),
             transport,
+            ping_sys: ClientPingSystem::new(),
             reliable_sys: ReliableSystem::new(msg_table),
             ready: VecDeque::new(),
         })
@@ -81,6 +85,20 @@ impl<T: ClientTransport> ClientConnection<T> {
         if let Err(err) = self.transport.send(ACK_M_TYPE, payload) {
             error!("Error sending AckMsg: {}", err);
         }
+    }
+
+    /// Sends a ping message to the server if necessary.
+    pub fn send_ping(&mut self) {
+        if let Some(msg) = self.ping_sys.get_ping_msg() {
+            if let Err(err) = self.send(&msg) {
+                error!("Failed to send ping message: {}", err);
+            }
+        }
+    }
+
+    /// Sends a ping messages to the clients if necessary.
+    fn recv_ping(&mut self, ping_msg: PingMsg) {
+        self.ping_sys.recv_ping_msg(ping_msg);
     }
 
     pub fn recv(&mut self) -> io::Result<(MsgHeader, Box<dyn Any + Send + Sync>)> {
@@ -127,6 +145,18 @@ impl<T: ClientTransport> ClientConnection<T> {
                 n,
                 header.sender_ack_num,
             );
+
+            if header.m_type == PING_M_TYPE {
+                // handle ping type messages separately
+                match PingMsg::deser(&buf[HEADER_SIZE..]) {
+                    Err(err) => {
+                        warn!("Client: failed to deserialize ping message: {}", err);
+                    }
+                    Ok(ping_msg) => {
+                        self.recv_ping(ping_msg);
+                    }
+                }
+            }
 
             let msg = self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..])?;
 

@@ -1,4 +1,4 @@
-use crate::connection::client::ClientConnection;
+use crate::connection::client_connection::ClientConnection;
 use crate::message_table::{MsgTable, CONNECTION_M_TYPE, DISCONNECT_M_TYPE, RESPONSE_M_TYPE};
 use crate::net::{ClientConfig, ErasedNetMsg, NetMsg, Status};
 use crate::transport::client_std_udp::UdpClientTransport;
@@ -212,6 +212,7 @@ impl Client {
     pub fn tick(&mut self) {
         self.clear_msgs();
         self.connection.send_ack_msg();
+        self.connection.send_ping();
         self.connection.resend_reliable();
         self.get_msgs();
     }

@@ -35,12 +35,20 @@ pub(crate) enum PingMsg {
 
 impl PingMsg {
     /// Deserializes the ping message using bincode.
-    pub(crate) fn deserialize(bytes: &[u8]) -> io::Result<Self> {
+    pub(crate) fn deser(bytes: &[u8]) -> io::Result<Self> {
         bincode::deserialize(bytes).map_err(|err| io::Error::new(ErrorKind::InvalidData, format!("deserialization error: {}", err)))
     }
 
     /// Serializes the ping message using bincode.
-    pub(crate) fn serialize(&self, buf: &mut Vec<u8>) -> io::Result<()> {
+    pub(crate) fn ser(&self, buf: &mut Vec<u8>) -> io::Result<()> {
         bincode::serialize_into(buf, self).map_err(|err| io::Error::new(ErrorKind::InvalidData, format!("serialization error: {}", err)))
+    }
+
+    /// Gets the corresponding response message type.
+    pub(crate) fn response(&self) -> Option<Self> {
+        match self {
+            PingMsg::Req(ping_num) => Some(PingMsg::Res(*ping_num)),
+            PingMsg::Res(_) => None,
+        }
     }
 }

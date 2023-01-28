@@ -6,7 +6,6 @@ use std::sync::Arc;
 pub mod client_std_udp;
 pub mod server_std_udp;
 
-// TODO: combine transports.
 pub trait ClientTransport {
     /// Create a new instance of this transport, with the local address `local`
     /// connecting to the peer address `peer`.

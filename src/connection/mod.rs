@@ -1,10 +1,11 @@
 mod ack_system;
-pub mod client;
+pub mod client_connection;
 mod ordering_system;
 mod reliable;
-pub mod server;
+pub mod server_connection;
 #[cfg(test)]
 mod test_connection;
+mod ping_system;
 
 use crate::util::DoubleHashMap;
 use crate::CId;
