@@ -1,4 +1,7 @@
+use crate::connection::ping_system::ClientPingSystem;
 use crate::connection::reliable::ReliableSystem;
+use crate::message_table::{ACK_M_TYPE, PING_M_TYPE};
+use crate::messages::PingMsg;
 use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ClientTransport;
 use crate::MsgTable;
@@ -8,9 +11,6 @@ use std::collections::VecDeque;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use crate::connection::ping_system::ClientPingSystem;
-use crate::message_table::{ACK_M_TYPE, PING_M_TYPE};
-use crate::messages::PingMsg;
 
 /// A wrapper around the the [`ClientTransport`] that adds the reliability and ordering.
 pub(crate) struct ClientConnection<T: ClientTransport> {
@@ -74,12 +74,18 @@ impl<T: ClientTransport> ClientConnection<T> {
 
     /// Sends an [`AckMsg`] to acknowledge all received messages.
     pub fn send_ack_msg(&mut self) {
-        let ack_msg = self.reliable_sys.get_ack_msg();
+        let ack_msg = match self.reliable_sys.get_ack_msg() {
+            None => return,
+            Some(ack_msg) => ack_msg,
+        };
+
+        // TODO: See if this can be a normal send call to reduce code duplication
         let header = self.reliable_sys.get_send_header(ACK_M_TYPE);
 
         // build the payload using the header and the message
         let mut payload = header.to_be_bytes().to_vec();
-        bincode::serialize_into(&mut payload, &ack_msg).expect("ack message should serialize without error");
+        bincode::serialize_into(&mut payload, &ack_msg)
+            .expect("ack message should serialize without error");
         let payload = Arc::new(payload);
 
         if let Err(err) = self.transport.send(ACK_M_TYPE, payload) {
@@ -98,7 +104,14 @@ impl<T: ClientTransport> ClientConnection<T> {
 
     /// Sends a ping messages to the clients if necessary.
     fn recv_ping(&mut self, ping_msg: PingMsg) {
-        self.ping_sys.recv_ping_msg(ping_msg);
+        match ping_msg {
+            PingMsg::Req(ping_num) => {
+                if let Err(err) = self.send(&PingMsg::Res(ping_num)) {
+                    warn!("Error in responding to a ping: {}", err);
+                }
+            }
+            PingMsg::Res(_) => self.ping_sys.recv_ping_msg(ping_msg),
+        }
     }
 
     pub fn recv(&mut self) -> io::Result<(MsgHeader, Box<dyn Any + Send + Sync>)> {
@@ -172,10 +185,7 @@ impl<T: ClientTransport> ClientConnection<T> {
     /// Resends any messages that it needs to for the reliability system to work.
     pub fn resend_reliable(&mut self) {
         for (header, payload) in self.reliable_sys.get_resend() {
-            if let Err(err) = self
-                .transport
-                .send(header.m_type, payload.clone())
-            {
+            if let Err(err) = self.transport.send(header.m_type, payload.clone()) {
                 error!("Error resending msg {}: {}", header.sender_ack_num, err);
             }
         }
@@ -187,5 +197,9 @@ impl<T: ClientTransport> ClientConnection<T> {
 
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.transport.peer_addr()
+    }
+
+    pub fn rtt(&self) -> u32 {
+        self.ping_sys.rtt()
     }
 }

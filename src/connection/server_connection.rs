@@ -1,6 +1,8 @@
+use crate::connection::ping_system::ServerPingSystem;
 use crate::connection::reliable::ReliableSystem;
 use crate::connection::{ConnectionList, ConnectionListError};
 use crate::message_table::{ACK_M_TYPE, CONNECTION_M_TYPE, PING_M_TYPE, RESPONSE_M_TYPE};
+use crate::messages::PingMsg;
 use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ServerTransport;
 use crate::{CId, MsgTable};
@@ -12,8 +14,6 @@ use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use crate::connection::ping_system::ServerPingSystem;
-use crate::messages::PingMsg;
 
 /// A wrapper around the the [`ServerTransport`] that adds
 /// (de)serialization, reliability and ordering to the messages.
@@ -89,7 +89,12 @@ impl<T: ServerTransport> ServerConnection<T> {
     /// Sends an [`AckMsg`] to all clients in order to acknowledge all received messages.
     pub fn send_ack_msgs(&mut self) {
         for (&cid, reliable_sys) in self.reliable_sys.iter_mut() {
-            let ack_msg = reliable_sys.get_ack_msg();
+            let ack_msg = match reliable_sys.get_ack_msg() {
+                None => continue,
+                Some(ack_msg) => ack_msg,
+            };
+
+            // TODO: See if this can be a normal send call to reduce code duplication
             let addr = self
                 .connection_list
                 .addr_of(cid)
@@ -98,7 +103,8 @@ impl<T: ServerTransport> ServerConnection<T> {
 
             // build the payload using the header and the message
             let mut payload = header.to_be_bytes().to_vec();
-            bincode::serialize_into(&mut payload, &ack_msg).expect("ack message should serialize without error");
+            bincode::serialize_into(&mut payload, &ack_msg)
+                .expect("ack message should serialize without error");
             let payload = Arc::new(payload);
 
             if let Err(err) = self.transport.send_to(addr, ACK_M_TYPE, payload) {
@@ -118,9 +124,19 @@ impl<T: ServerTransport> ServerConnection<T> {
         }
     }
 
-    /// Sends a ping messages to the clients if necessary.
+    /// Handles an incoming ping message.
+    ///
+    /// If this is a request type, it will respond to it.
+    /// If it is a response, it is handled accordingly.
     fn recv_ping(&mut self, cid: CId, ping_msg: PingMsg) {
-        self.ping_sys.recv_ping_msg(cid, ping_msg);
+        match ping_msg {
+            PingMsg::Req(ping_num) => {
+                if let Err(err) = self.send_to(cid, &PingMsg::Res(ping_num)) {
+                    warn!("Error in responding to a ping (CId: {}): {}", cid, err);
+                }
+            }
+            PingMsg::Res(_) => self.ping_sys.recv_ping_msg(cid, ping_msg),
+        }
     }
 
     /// Receives a message from the transport.
@@ -187,12 +203,16 @@ impl<T: ServerTransport> ServerConnection<T> {
                 // handle ping type messages separately
                 match PingMsg::deser(&buf[HEADER_SIZE..]) {
                     Err(err) => {
-                        warn!("Server: failed to deserialize ping message from {} (CId: {}): {}", from, cid, err);
+                        warn!(
+                            "Server: failed to deserialize ping message from {} (CId: {}): {}",
+                            from, cid, err
+                        );
                     }
                     Ok(ping_msg) => {
                         self.recv_ping(cid, ping_msg);
                     }
                 }
+                continue;
             }
 
             let msg = self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..])?;
@@ -218,7 +238,7 @@ impl<T: ServerTransport> ServerConnection<T> {
                 .get_mut(&cid)
                 .expect("cid should be valid");
             for (header, (addr, payload)) in reliable_sys.get_resend() {
-                error!("Resending msg {}", header.sender_ack_num);
+                debug!("Resending msg {}", header.sender_ack_num);
                 if let Err(err) = self
                     .transport
                     .send_to(*addr, header.m_type, payload.clone())
@@ -323,5 +343,9 @@ impl<T: ServerTransport> ServerConnection<T> {
 
     pub fn connection_count(&self) -> usize {
         self.connection_list.connection_count()
+    }
+
+    pub fn rtt(&self, cid: CId) -> Option<u32> {
+        self.ping_sys.rtt(cid)
     }
 }

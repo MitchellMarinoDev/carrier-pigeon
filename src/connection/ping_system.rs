@@ -1,10 +1,14 @@
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::collections::VecDeque;
+use crate::messages::PingMsg;
+use crate::CId;
 use hashbrown::HashMap;
 use log::warn;
-use crate::CId;
-use crate::messages::PingMsg;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-const PING_INTERVAL: Duration = Duration::from_millis(1000);
+const PING_INTERVAL: Duration = Duration::from_millis(100);
+const PINGS_TO_RETAIN: usize = 8;
+/// This is 1/ the number to move by for smooth the ping number. Higher number is smoother.
+const PING_LERP_DIST: i32 = 4;
 
 /// Gets the number of microseconds since the unix epoch
 fn unix_micros() -> u128 {
@@ -20,7 +24,7 @@ pub(crate) struct ServerPingSystem {
     /// The incrementing integer to use as an identifier for the [`PingMsg`]
     last_ping_counter: u32,
     /// A list of stored sent ping identifiers with the unix micros for when it was sent.
-    pings: Vec<(u32, u128)>,
+    pings: VecDeque<(u32, u128)>,
     /// The current estimate of the round trip time.
     rtt: HashMap<CId, u32>,
 }
@@ -31,7 +35,7 @@ impl ServerPingSystem {
         ServerPingSystem {
             last_ping_time: Instant::now(),
             last_ping_counter: 0,
-            pings: vec![],
+            pings: VecDeque::new(),
             rtt: HashMap::new(),
         }
     }
@@ -41,7 +45,10 @@ impl ServerPingSystem {
         self.last_ping_time = Instant::now();
         let ping_num = self.last_ping_counter;
         self.last_ping_counter += 1;
-        self.pings.push((ping_num, unix_micros()));
+        if self.pings.len() > PINGS_TO_RETAIN {
+            self.pings.pop_back();
+        }
+        self.pings.push_front((ping_num, unix_micros()));
 
         PingMsg::Req(ping_num)
     }
@@ -58,13 +65,20 @@ impl ServerPingSystem {
     pub(crate) fn recv_ping_msg(&mut self, cid: CId, msg: PingMsg) {
         let ping_num = match msg {
             PingMsg::Res(ping_num) => ping_num,
-            _ => return warn!("`recv_ping_msg` called on a request ping message.")
+            _ => return warn!("`recv_ping_msg` called on a request ping message."),
         };
 
-        if let Some((_, micros)) = self.pings.iter().filter(|(v_ping_num, _)| *v_ping_num == ping_num).next() {
+        if let Some((_, micros)) = self
+            .pings
+            .iter()
+            .filter(|(v_ping_num, _)| *v_ping_num == ping_num)
+            .next()
+        {
             let elapsed = match unix_micros().checked_sub(*micros) {
                 Some(elapsed) => elapsed,
-                None => return warn!("Ping message had a negative RTT. Did the system clock change?"),
+                None => {
+                    return warn!("Ping message had a negative RTT. Did the system clock change?")
+                }
             };
 
             self.mod_rtt(cid, elapsed);
@@ -91,7 +105,7 @@ impl ServerPingSystem {
         };
 
         let dif = micros as i128 - *rtt as i128;
-        *rtt = rtt.saturating_add_signed(dif as i32 / 10);
+        *rtt = rtt.saturating_add_signed(dif as i32 / PING_LERP_DIST);
     }
 
     /// Gets the current estimated round trip time in microseconds for the given connection.
@@ -144,13 +158,20 @@ impl ClientPingSystem {
     pub(crate) fn recv_ping_msg(&mut self, msg: PingMsg) {
         let ping_num = match msg {
             PingMsg::Res(ping_num) => ping_num,
-            _ => return warn!("`recv_ping_msg` called on a request ping message.")
+            _ => return warn!("`recv_ping_msg` called on a request ping message."),
         };
 
-        if let Some((_, micros)) = self.pings.iter().filter(|(v_ping_num, _)| *v_ping_num == ping_num).next() {
+        if let Some((_, micros)) = self
+            .pings
+            .iter()
+            .filter(|(v_ping_num, _)| *v_ping_num == ping_num)
+            .next()
+        {
             let elapsed = match unix_micros().checked_sub(*micros) {
                 Some(elapsed) => elapsed,
-                None => return warn!("Ping message had a negative RTT. Did the system clock change?"),
+                None => {
+                    return warn!("Ping message had a negative RTT. Did the system clock change?")
+                }
             };
 
             self.mod_rtt(elapsed);
@@ -160,7 +181,7 @@ impl ClientPingSystem {
     /// Modifies the RTT time to be closer to `micros`. Any smoothing of values should be done here.
     fn mod_rtt(&mut self, micros: u128) {
         let dif = micros as i128 - self.rtt as i128;
-        self.rtt = self.rtt.saturating_add_signed(dif as i32 / 10);
+        self.rtt = self.rtt.saturating_add_signed(dif as i32 / PING_LERP_DIST);
     }
 
     /// Gets the current estimated round trip time in microseconds.
@@ -171,15 +192,18 @@ impl ClientPingSystem {
 
 #[cfg(test)]
 mod tests {
+    use crate::connection::ping_system::ClientPingSystem;
     use std::thread::sleep;
     use std::time::Duration;
-    use crate::connection::ping_system::ClientPingSystem;
 
     #[test]
     fn test_rtt() {
         let mut ping_sys = ClientPingSystem::new();
         for _ in 0..20 {
-            let ping_msg = ping_sys.next_ping_msg().response().expect("PingMsg should be the request variant");
+            let ping_msg = ping_sys
+                .next_ping_msg()
+                .response()
+                .expect("PingMsg should be the request variant");
             sleep(Duration::from_micros(20_000));
             ping_sys.recv_ping_msg(ping_msg);
         }

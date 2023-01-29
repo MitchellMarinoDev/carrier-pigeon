@@ -1,10 +1,10 @@
 use crate::net::{AckNum, MsgHeader};
 use crate::Guarantees;
 use hashbrown::HashMap;
+use log::warn;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
-use log::warn;
 
 // TODO: add to config
 /// The number of times we need to ack something, to consider it acknowledged enough.
@@ -55,7 +55,7 @@ impl<SD: Debug> AckSystem<SD> {
         AckSystem {
             outgoing_counter: 0,
             ack_offset: 0,
-            current_idx: usize::MAX-1,
+            current_idx: usize::MAX - 1,
             ack_bitfields: deque,
             saved_msgs: HashMap::new(),
         }
@@ -66,7 +66,8 @@ impl<SD: Debug> AckSystem<SD> {
     /// Marks an incoming message as received, so it gets acknowledged in the next message we send.
     pub fn msg_received(&mut self, num: AckNum) {
         // The highest AckNum we can have without shifting.
-        let mut upper_bound = self.ack_offset + (BITFIELD_WIDTH * self.ack_bitfields.len() as AckNum);
+        let mut upper_bound =
+            self.ack_offset + (BITFIELD_WIDTH * self.ack_bitfields.len() as AckNum);
         // shift the ack_bitfields (if needed) to make room for ack_offset
         while num >= upper_bound {
             // if the last element has been acknowledged enough, pop the back to make room.
@@ -84,7 +85,10 @@ impl<SD: Debug> AckSystem<SD> {
         if num < self.ack_offset {
             // num is outside the window. This is unlikely to happen unless a packet stays on the
             // internet for a long time.
-            warn!("Received a message that is outside of the window (AckNum: {})", num);
+            warn!(
+                "Received a message that is outside of the window (AckNum: {})",
+                num
+            );
             return;
         }
         let dif = num - self.ack_offset;
@@ -113,7 +117,10 @@ impl<SD: Debug> AckSystem<SD> {
         self.current_idx = (self.current_idx + 1) % self.ack_bitfields.len();
         let field = self.ack_bitfields[self.current_idx];
         self.ack_bitfields[self.current_idx].send_count += 1;
-        (self.ack_offset + (BITFIELD_WIDTH * self.current_idx as AckNum), field.bitfield)
+        (
+            self.ack_offset + (BITFIELD_WIDTH * self.current_idx as AckNum),
+            field.bitfield,
+        )
     }
 
     /// Gets all the information needed for an ack message.
@@ -164,7 +171,8 @@ impl<SD: Debug> AckSystem<SD> {
         }
 
         // finally, insert the msg
-        self.saved_msgs.insert(header.sender_ack_num, (Instant::now(), header, other_data));
+        self.saved_msgs
+            .insert(header.sender_ack_num, (Instant::now(), header, other_data));
     }
 
     /// Gets messages that are due for a resend. This resets the time sent.
@@ -232,9 +240,9 @@ mod tests {
         assert_eq!(ack_system.saved_msgs.len(), 1);
         ack_system.save_msg(MsgHeader::new(1, 0, 11, 0, 0), Reliable, ());
         assert_eq!(ack_system.saved_msgs.len(), 2);
-        ack_system.mark_bitfield(0, 1<<10);
+        ack_system.mark_bitfield(0, 1 << 10);
         assert_eq!(ack_system.saved_msgs.len(), 1);
-        ack_system.mark_bitfield(0, 1<<11);
+        ack_system.mark_bitfield(0, 1 << 11);
         assert_eq!(ack_system.saved_msgs.len(), 0);
 
         // check out of order ack
@@ -242,11 +250,11 @@ mod tests {
         ack_system.save_msg(MsgHeader::new(1, 0, 21, 0, 0), Reliable, ());
         ack_system.save_msg(MsgHeader::new(1, 0, 22, 0, 0), Reliable, ());
         assert_eq!(ack_system.saved_msgs.len(), 3);
-        ack_system.mark_bitfield(0, 1<<22);
+        ack_system.mark_bitfield(0, 1 << 22);
         assert_eq!(ack_system.saved_msgs.len(), 2);
-        ack_system.mark_bitfield(0, 1<<21);
+        ack_system.mark_bitfield(0, 1 << 21);
         assert_eq!(ack_system.saved_msgs.len(), 1);
-        ack_system.mark_bitfield(0, 1<<20);
+        ack_system.mark_bitfield(0, 1 << 20);
         assert_eq!(ack_system.saved_msgs.len(), 0);
 
         // check mark_bitfield
@@ -269,7 +277,7 @@ mod tests {
         assert_eq!(ack_system.saved_msgs.len(), 1);
         ack_system.save_msg(MsgHeader::new(1, 0, 12, 0, 0), ReliableNewest, ());
         assert_eq!(ack_system.saved_msgs.len(), 1);
-        ack_system.mark_bitfield(0, 1<<12);
+        ack_system.mark_bitfield(0, 1 << 12);
         assert_eq!(ack_system.saved_msgs.len(), 0);
     }
 

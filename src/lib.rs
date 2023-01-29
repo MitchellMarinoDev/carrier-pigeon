@@ -22,10 +22,10 @@ pub mod net;
 mod client;
 mod connection;
 mod message_table;
+pub(crate) mod messages;
 mod server;
 mod transport;
 mod util;
-pub(crate) mod messages;
 
 pub use client::{Client, OptionPendingClient, PendingClient};
 pub use message_table::{Guarantees, MsgRegError, MsgTable, MsgTableBuilder};

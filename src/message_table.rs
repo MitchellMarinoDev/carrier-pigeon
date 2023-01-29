@@ -1,4 +1,5 @@
 use crate::message_table::MsgRegError::TypeAlreadyRegistered;
+use crate::messages::{AckMsg, PingMsg};
 use crate::net::{DeserFn, SerFn};
 use crate::MType;
 use hashbrown::HashMap;
@@ -9,7 +10,6 @@ use std::fmt::{Display, Formatter};
 use std::io;
 use std::io::{Error, ErrorKind};
 use MsgRegError::NonUniqueIdentifier;
-use crate::messages::{AckMsg, PingMsg};
 
 /// Delivery guarantees.
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
@@ -306,8 +306,10 @@ impl MsgTableBuilder {
             self.get_ordered_registration::<C>(Guarantees::Reliable)?,
             self.get_ordered_registration::<R>(Guarantees::Reliable)?,
             self.get_ordered_registration::<D>(Guarantees::Reliable)?,
-            self.get_ordered_registration::<AckMsg>(Guarantees::Unreliable).expect("failed to create registration for AckMsg"),
-            self.get_ordered_registration::<PingMsg>(Guarantees::Unreliable).expect("failed to create registration for AckMsg"),
+            self.get_ordered_registration::<AckMsg>(Guarantees::Unreliable)
+                .expect("failed to create registration for AckMsg"),
+            self.get_ordered_registration::<PingMsg>(Guarantees::Unreliable)
+                .expect("failed to create registration for AckMsg"),
         ];
 
         let registration_count = self.ordered.len() + self.sorted.len() + 3;
@@ -425,8 +427,8 @@ impl Display for MsgRegError {
 
 #[cfg(test)]
 mod tests {
-    use serde::{Serialize, Deserialize};
     use super::*;
+    use serde::{Deserialize, Serialize};
 
     #[derive(Serialize, Deserialize)]
     struct Connection;

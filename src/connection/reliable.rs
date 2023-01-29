@@ -1,9 +1,14 @@
-use std::fmt::Debug;
 use crate::connection::ack_system::AckSystem;
 use crate::connection::ordering_system::OrderingSystem;
+use crate::messages::AckMsg;
 use crate::net::MsgHeader;
 use crate::{Guarantees, MType, MsgTable};
-use crate::messages::AckMsg;
+use std::fmt::Debug;
+use std::time::{Duration, Instant};
+
+/// A minimum time for ack messages to be sent.
+/// [`AckMsg`]s are sent once per frame, limited by this number.
+const ACK_MSG_LIMIT: Option<Duration> = Some(Duration::from_millis(100));
 
 /// A system that handles the reliablility and ordering of incoming messages based on their
 /// [`Guarantees`].
@@ -13,6 +18,7 @@ use crate::messages::AckMsg;
 /// If this is used by a server, this can store the payload and from address.
 pub(crate) struct ReliableSystem<SD: Debug, RD: Debug> {
     msg_table: MsgTable,
+    last_ack_msg: Instant,
     ack_sys: AckSystem<SD>,
     ordering_sys: OrderingSystem<RD>,
 }
@@ -23,6 +29,7 @@ impl<SD: Debug, RD: Debug> ReliableSystem<SD, RD> {
         let m_table_count = msg_table.mtype_count();
         ReliableSystem {
             msg_table,
+            last_ack_msg: Instant::now(),
             ack_sys: AckSystem::new(),
             ordering_sys: OrderingSystem::new(m_table_count),
         }
@@ -30,16 +37,24 @@ impl<SD: Debug, RD: Debug> ReliableSystem<SD, RD> {
 
     pub fn push_received(&mut self, header: MsgHeader, receive_data: RD) {
         self.ack_sys.msg_received(header.sender_ack_num);
-        self.ack_sys.mark_bitfield(header.receiver_acking_offset, header.ack_bits);
+        self.ack_sys
+            .mark_bitfield(header.receiver_acking_offset, header.ack_bits);
 
         let guarantees = self.msg_table.guarantees[header.m_type];
         self.ordering_sys.push(header, guarantees, receive_data);
     }
 
-    /// Gets an [`AckMsg`] for acknowledging all received messages in the window.
-    pub fn get_ack_msg(&mut self) -> AckMsg {
+    /// Gets an [`AckMsg`] for acknowledging all received messages in the window if one needs to be
+    /// sent.
+    pub fn get_ack_msg(&mut self) -> Option<AckMsg> {
+        if let Some(limit) = ACK_MSG_LIMIT {
+            if self.last_ack_msg.elapsed() < limit {
+                return None;
+            }
+            self.last_ack_msg = Instant::now();
+        }
         let (offset, flags) = self.ack_sys.ack_msg_info();
-        AckMsg::new(offset, flags)
+        Some(AckMsg::new(offset, flags))
     }
 
     pub fn get_received(&mut self) -> Option<(MsgHeader, RD)> {

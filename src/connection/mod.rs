@@ -1,11 +1,11 @@
 mod ack_system;
 pub mod client_connection;
 mod ordering_system;
+mod ping_system;
 mod reliable;
 pub mod server_connection;
 #[cfg(test)]
 mod test_connection;
-mod ping_system;
 
 use crate::util::DoubleHashMap;
 use crate::CId;
@@ -125,4 +125,3 @@ impl ConnectionList {
         self.cid_addr.pairs().map(|(&cid, &addr)| (cid, addr))
     }
 }
-

@@ -236,7 +236,7 @@ impl Client {
                 Err(e) if e.kind() == ErrorKind::WouldBlock => break,
                 // IO Error occurred.
                 Err(e) => {
-                    error!("IO error occurred while receiving data. {}", e);
+                    error!("Error receiving data: {}", e);
                 }
                 // Successfully got a message.
                 Ok((header, msg)) => {
@@ -269,6 +269,14 @@ impl Client {
     /// Gets the address of the peer.
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.connection.peer_addr()
+    }
+
+    /// Gets the estimated round trip time (RTT) of the connection
+    /// in microseconds (divide by 1000 for ms).
+    ///
+    /// Returns `None` iff `cid` is an invalid Connection ID.
+    pub fn rtt(&self) -> u32 {
+        self.connection.rtt()
     }
 }
 

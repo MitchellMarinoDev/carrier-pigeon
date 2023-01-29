@@ -5,6 +5,7 @@ use crate::transport::server_std_udp::UdpServerTransport;
 use log::*;
 use std::any::{Any, TypeId};
 use std::collections::VecDeque;
+use std::fmt::{Debug, Formatter};
 use std::io;
 use std::io::ErrorKind::WouldBlock;
 use std::io::{Error, ErrorKind};
@@ -235,7 +236,7 @@ impl Server {
             match self.connection.recv_from() {
                 Err(e) if e.kind() == WouldBlock => break,
                 Err(e) => {
-                    error!("IO error occurred while receiving data. {}", e);
+                    error!("Error receiving data: {}", e);
                 }
                 Ok((cid, header, msg)) => {
                     // TODO: handle special message types here
@@ -308,5 +309,22 @@ impl Server {
     /// Gets the address of the given [`CId`].
     pub fn cid_of(&self, addr: SocketAddr) -> Option<CId> {
         self.connection.cid_of(addr)
+    }
+
+    /// Gets the estimated round trip time (RTT) of the connection
+    /// in microseconds (divide by 1000 for ms).
+    ///
+    /// Returns `None` iff `cid` is an invalid Connection ID.
+    pub fn rtt(&self, cid: CId) -> Option<u32> {
+        self.connection.rtt(cid)
+    }
+}
+
+impl Debug for Server {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Server")
+            .field("listen_addr", &self.listen_addr())
+            .field("connection_count", &self.connection_count())
+            .finish()
     }
 }
