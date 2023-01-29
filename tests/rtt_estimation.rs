@@ -1,9 +1,7 @@
-use std::process::Command;
-use std::thread::sleep;
-use std::time::{Duration, Instant};
-use simple_logger::SimpleLogger;
-use crate::helper::test_messages::{get_msg_table, Connection, Response, UnreliableMsg};
 use crate::helper::create_client_server_pair;
+use simple_logger::SimpleLogger;
+use std::process::Command;
+use std::time::{Duration, Instant};
 
 mod helper;
 
@@ -26,10 +24,12 @@ fn test_rtt_calculation() {
         .expect("failed to run `tc` to emulate an unstable network on the `lo` adapter");
 
     let start = Instant::now();
-    // run for 2 seconds.
-    let time = Duration::from_millis(2_000);
+    // run for a second.
+    let time = Duration::from_millis(1_000);
     loop {
-        if start.elapsed() > time { break; }
+        if start.elapsed() > time {
+            break;
+        }
         server.tick();
         client.tick();
     }
@@ -41,7 +41,17 @@ fn test_rtt_calculation() {
         .output()
         .expect("failed to run `tc` to remove the emulated network conditions on the `lo` adapter");
 
-    assert!(server.rtt(1).unwrap() as i32 - 5_000 < 100, "Server rtt was {} (expected 5_000 +/- 100)", server.rtt(1).unwrap());
-    assert!(client.rtt() as i32 - 5_000 < 100,  "Client rtt was {} (expected 5_000 +/- 100)", client.rtt());
-
+    let server_rtt = server.rtt(1).unwrap() as i32;
+    let client_rtt = client.rtt() as i32;
+    // Double the 5ms would be 10_000 us.
+    assert!(
+        server_rtt - 10_000 < 100,
+        "Server rtt was {} (expected 10_000 +/- 100)",
+        server_rtt
+    );
+    assert!(
+        client_rtt - 10_000 < 100,
+        "Client rtt was {} (expected 10_000 +/- 100)",
+        client_rtt
+    );
 }

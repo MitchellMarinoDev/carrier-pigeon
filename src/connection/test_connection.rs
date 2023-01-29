@@ -12,7 +12,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 #[test]
-#[ignore]
+#[cfg(target_os = "linux")]
 fn test_reliability() {
     SimpleLogger::new()
         .with_level(LevelFilter::Trace)

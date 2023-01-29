@@ -1,8 +1,8 @@
-use std::collections::VecDeque;
 use crate::messages::PingMsg;
 use crate::CId;
 use hashbrown::HashMap;
 use log::warn;
+use std::collections::VecDeque;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const PING_INTERVAL: Duration = Duration::from_millis(100);
