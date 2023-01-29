@@ -1,6 +1,6 @@
 use crate::connection::ping_system::ClientPingSystem;
 use crate::connection::reliable::ReliableSystem;
-use crate::message_table::{ACK_M_TYPE, PING_M_TYPE};
+use crate::message_table::PING_M_TYPE;
 use crate::messages::PingMsg;
 use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ClientTransport;
@@ -79,16 +79,7 @@ impl<T: ClientTransport> ClientConnection<T> {
             Some(ack_msg) => ack_msg,
         };
 
-        // TODO: See if this can be a normal send call to reduce code duplication
-        let header = self.reliable_sys.get_send_header(ACK_M_TYPE);
-
-        // build the payload using the header and the message
-        let mut payload = header.to_be_bytes().to_vec();
-        bincode::serialize_into(&mut payload, &ack_msg)
-            .expect("ack message should serialize without error");
-        let payload = Arc::new(payload);
-
-        if let Err(err) = self.transport.send(ACK_M_TYPE, payload) {
+        if let Err(err) = self.send(&ack_msg) {
             error!("Error sending AckMsg: {}", err);
         }
     }
