@@ -14,19 +14,13 @@
 use crate::shared::{Connection, Disconnect, Msg, Response, SERVER_ADDR_LOCAL};
 use carrier_pigeon::net::{CIdSpec, ServerConfig};
 use carrier_pigeon::{Guarantees, MsgTableBuilder, Server};
-use log::LevelFilter;
-use simple_logger::SimpleLogger;
 use std::env;
 use std::time::Duration;
 
 mod shared;
 
 fn main() {
-    // Create a simple logger
-    SimpleLogger::new()
-        .with_level(LevelFilter::Trace)
-        .init()
-        .unwrap();
+    env_logger::init();
 
     let mut args = env::args().skip(1);
     // Get the address from the command line args, or use loopback on port 7777.

@@ -3,9 +3,7 @@ use crate::connection::server_connection::ServerConnection;
 use crate::transport::client_std_udp::UdpClientTransport;
 use crate::transport::server_std_udp::UdpServerTransport;
 use crate::{Guarantees, MsgTable, MsgTableBuilder};
-use log::LevelFilter;
 use serde::{Deserialize, Serialize};
-use simple_logger::SimpleLogger;
 use std::io::ErrorKind;
 use std::process::Command;
 use std::thread::sleep;
@@ -14,10 +12,7 @@ use std::time::Duration;
 #[test]
 #[cfg(target_os = "linux")]
 fn test_reliability() {
-    SimpleLogger::new()
-        .with_level(LevelFilter::Trace)
-        .init()
-        .unwrap();
+    env_logger::init();
 
     let msg_table = get_msg_table();
 

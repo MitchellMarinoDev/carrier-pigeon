@@ -16,8 +16,6 @@
 use crate::shared::{Connection, Disconnect, Msg, Response, CLIENT_ADDR_LOCAL, SERVER_ADDR_LOCAL};
 use carrier_pigeon::net::ClientConfig;
 use carrier_pigeon::{Client, Guarantees, MsgTableBuilder};
-use log::LevelFilter;
-use simple_logger::SimpleLogger;
 use std::io::stdin;
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::time::Duration;
@@ -26,11 +24,7 @@ use std::{env, thread};
 mod shared;
 
 fn main() {
-    // Create a simple logger
-    SimpleLogger::new()
-        .with_level(LevelFilter::Trace)
-        .init()
-        .unwrap();
+    env_logger::init();
 
     let mut args = env::args().skip(1);
     // Get the address from the command line args, or use loopback on port 7777.
@@ -121,7 +115,7 @@ fn main() {
         }
 
         // approx 60 Hz
-        std::thread::sleep(Duration::from_millis(16));
+        thread::sleep(Duration::from_millis(16));
     }
 }
 

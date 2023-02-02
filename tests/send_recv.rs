@@ -2,18 +2,13 @@
 use crate::helper::create_client_server_pair;
 use crate::helper::test_messages::{ReliableMsg, UnreliableMsg};
 use log::info;
-use simple_logger::SimpleLogger;
 use std::time::Duration;
 
 mod helper;
 
 #[test]
 fn send_recv() {
-    // Create a simple logger
-    SimpleLogger::new()
-        .with_level(log::LevelFilter::Trace)
-        .init()
-        .unwrap();
+    env_logger::init();
 
     // CLIENT TO SERVER
     let (mut client, mut server) = create_client_server_pair();

@@ -1,5 +1,4 @@
 use crate::helper::create_client_server_pair;
-use simple_logger::SimpleLogger;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
@@ -8,11 +7,7 @@ mod helper;
 #[test]
 #[cfg(target_os = "linux")]
 fn test_rtt_calculation() {
-    // Create a simple logger
-    SimpleLogger::new()
-        .with_level(log::LevelFilter::Trace)
-        .init()
-        .unwrap();
+    env_logger::init();
 
     let (mut client, mut server) = create_client_server_pair();
 

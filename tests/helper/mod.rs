@@ -8,7 +8,7 @@ use log::debug;
 
 pub mod test_messages;
 
-pub const SERVER_ADDR_LOCAL: &str = "127.0.0.1:7777";
+pub const SERVER_ADDR_LOCAL: &str = "127.0.0.1:7778";
 pub const CLIENT_ADDR_LOCAL: &str = "127.0.0.1:7776";
 
 /// Creates a client and server that are connected to each other.
@@ -23,8 +23,9 @@ pub fn create_client_server_pair() -> (Client, Server) {
         ServerConfig::default(),
     )
     .unwrap();
+    debug!("Server created!");
     let addr = server.listen_addr().unwrap();
-    debug!("Server created on addr: {}", addr);
+    debug!("Server listening on addr: {}", addr);
 
     debug!("Creating client.");
     // Start client connection.

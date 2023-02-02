@@ -23,7 +23,7 @@ name = "client"
 name = "server"
 
 [dev-dependencies]
-simple_logger = "4.0"
+env_logger = "0.10"
 
 [dependencies]
 bevy = { version = "0.9", optional = true }

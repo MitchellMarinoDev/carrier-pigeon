@@ -2,18 +2,13 @@
 use crate::helper::create_client_server_pair;
 use crate::helper::test_messages::Disconnect;
 use log::debug;
-use simple_logger::SimpleLogger;
 use std::time::Duration;
 
 mod helper;
 
 #[test]
 fn graceful_disconnect() {
-    // Create a simple logger
-    SimpleLogger::new()
-        .with_level(log::LevelFilter::Trace)
-        .init()
-        .unwrap();
+    env_logger::init();
 
     {
         // Client Disconnect Test
@@ -59,11 +54,7 @@ fn graceful_disconnect() {
 
 #[test]
 fn drop_test() {
-    // Create a simple logger
-    SimpleLogger::new()
-        .with_level(log::LevelFilter::Trace)
-        .init()
-        .unwrap();
+    env_logger::init();
 
     {
         // Server Drop Client.
