@@ -1,86 +1,162 @@
 use crate::message_table::MsgRegError::TypeAlreadyRegistered;
-use crate::net::{DeserFn, SerFn, Transport};
-use crate::MId;
+use crate::messages::{AckMsg, PingMsg};
+use crate::net::{DeserFn, SerFn};
+use crate::MType;
 use hashbrown::HashMap;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::any::{Any, TypeId};
+use std::any::{type_name, Any, TypeId};
 use std::fmt::{Display, Formatter};
 use std::io;
+use std::io::{Error, ErrorKind};
 use MsgRegError::NonUniqueIdentifier;
 
-/// A type for collecting the parts needed to send a struct over the network.
-///
-/// IMPORTANT: The Message tables on all clients and the server **need** to have exactly the same
-/// types registered **in the same order**. If this is not possible, use [`SortedMsgTable`].
-#[derive(Clone, Default)]
-#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
-pub struct MsgTable {
-    table: Vec<(TypeId, Transport, SerFn, DeserFn)>,
+/// Delivery guarantees.
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+pub enum Guarantees {
+    /// Messages are guaranteed to arrive. Not necessarily in order.
+    Reliable,
+    /// Messages are guaranteed to arrive in order.
+    ReliableOrdered,
+    /// The most recent (newest) message is guaranteed to arrive.
+    /// You might not get all the messages if they arrive out of order.
+    ReliableNewest,
+    /// No guarantees about delivery. Messages might or might not arrive.
+    Unreliable,
+    /// No delivery guarantee, but you will only get the newest message.
+    /// If an older message arrives after a newer one, it will be discarded.
+    UnreliableNewest,
 }
 
-/// A type for collecting the parts needed to send a struct over the network.
-///
-/// This is a variation of [`MsgTable`]. You should use this type only when you don't know the
-/// order of registration. In place of a constant registration order, types must be registered
-/// with a unique string identifier. The list is then sorted on this identifier when built.
-///
-/// If a type is registered with the same name, it will be ignored, therefore namespacing is
-/// encouraged if you are allowing mods or external plugins to add networking types.
-///
-/// IMPORTANT: The Message tables on all clients and the server **need** to have exactly the
-/// same types registered, although they do **not** need to be registered in the same order.
-#[derive(Clone, Default)]
-#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
-pub struct SortedMsgTable {
-    table: Vec<(String, TypeId, Transport, SerFn, DeserFn)>,
+impl Guarantees {
+    /// Weather this guarantee is reliable.
+    pub fn reliable(&self) -> bool {
+        use Guarantees::*;
+        match self {
+            Reliable | ReliableOrdered | ReliableNewest => true,
+            Unreliable | UnreliableNewest => false,
+        }
+    }
+
+    /// Weather this guarantee is unreliable.
+    pub fn unreliable(&self) -> bool {
+        !self.reliable()
+    }
+
+    /// Weather this guarantee is ordered.
+    pub fn ordered(&self) -> bool {
+        use Guarantees::*;
+        match self {
+            ReliableOrdered => true,
+            Reliable | ReliableNewest | Unreliable | UnreliableNewest => false,
+        }
+    }
+
+    /// Weather this guarantee is newest.
+    pub fn newest(&self) -> bool {
+        use Guarantees::*;
+        match self {
+            ReliableNewest | UnreliableNewest => true,
+            Reliable | ReliableOrdered | Unreliable => false,
+        }
+    }
+
+    /// Weather this guarantee is ordered or newest.
+    pub fn some_ordering(&self) -> bool {
+        use Guarantees::*;
+        match self {
+            ReliableOrdered | ReliableNewest | UnreliableNewest => true,
+            Reliable | Unreliable => false,
+        }
+    }
+
+    /// Weather this guarantee is not ordered or newest.
+    pub fn no_ordering(&self) -> bool {
+        use Guarantees::*;
+        match self {
+            Reliable | Unreliable => true,
+            ReliableOrdered | ReliableNewest | UnreliableNewest => false,
+        }
+    }
 }
 
-/// The useful parts of the [`MsgTable`] (or [`SortedMsgTable`]).
+/// A registration in the [`MsgTableBuilder`].
+#[derive(Copy, Clone)]
+struct Registration {
+    tid: TypeId,
+    guarantees: Guarantees,
+    ser: SerFn,
+    deser: DeserFn,
+}
+
+/// A type for building a [`MsgTable`].
 ///
-/// You can build this by registering your types with a [`MsgTable`], then building it with
-/// [`MsgTable::build()`].
+/// This helps get the parts needed to send a struct over the network
+#[derive(Clone, Default)]
+#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
+pub struct MsgTableBuilder {
+    /// The registrations where the user guarantees constant registration order.
+    ordered: Vec<Registration>,
+    /// The registrations where the user guarantees constant message identifiers.
+    sorted: Vec<(String, Registration)>,
+}
+
+/// The table mapping [`TypeId`]s to [`MType`](crate::MType)s and [`Guarantees`].
+///
+/// You can build this by registering your types with a [`MsgTableBuilder`] or [`SortedMsgTableBuilder`], then building it with
+/// [`MsgTableBuilder::build()`] or [`SortedMsgTableBuilder::build()`].
 #[derive(Clone)]
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
-pub struct MsgTableParts {
+pub struct MsgTable {
     /// The mapping from TypeId to MessageId.
-    pub tid_map: HashMap<TypeId, MId>,
+    pub tid_map: HashMap<TypeId, MType>,
     /// The transport associated with each message type.
-    pub transports: Vec<Transport>,
+    pub guarantees: Vec<Guarantees>,
     /// The serialization functions associated with each message type.
     pub ser: Vec<SerFn>,
     /// The deserialization functions associated with each message type.
     pub deser: Vec<DeserFn>,
 }
 
-pub const CONNECTION_TYPE_MID: MId = 0;
-pub const RESPONSE_TYPE_MID: MId = 1;
-pub const DISCONNECT_TYPE_MID: MId = 2;
+pub const CONNECTION_M_TYPE: MType = 0;
+pub const RESPONSE_M_TYPE: MType = 1;
+pub const DISCONNECT_M_TYPE: MType = 2;
+pub const ACK_M_TYPE: MType = 3;
+pub const PING_M_TYPE: MType = 4;
 
-impl MsgTable {
-    /// Creates a new [`MsgTable`].
+impl MsgTableBuilder {
+    /// Creates a new [`MsgTableBuilder`].
     pub fn new() -> Self {
-        MsgTable::default()
+        MsgTableBuilder::default()
     }
 
     /// Adds all registrations from `other` into this table.
-
+    ///
     /// All errors are thrown before mutating self. If no errors are thrown, all entries are added;
     /// if an error is thrown, no entries are added.
-    pub fn join(&mut self, other: &MsgTable) -> Result<(), MsgRegError> {
-        // Validate
-        if other
-            .table
+    pub fn join(&mut self, other: &MsgTableBuilder) -> Result<(), MsgRegError> {
+        // validate
+        // check for unique [`TypeId`]s
+        for tid in other
+            .ordered
             .iter()
-            .any(|(tid, _, _, _)| self.tid_registered(*tid))
+            .map(|r| r.tid)
+            .chain(other.sorted.iter().map(|(_id, r)| r.tid))
         {
-            return Err(TypeAlreadyRegistered);
+            if self.tid_registered(tid) {
+                return Err(TypeAlreadyRegistered(tid));
+            }
+        }
+        // check for unique registration identifiers
+        for identifier in other.sorted.iter().map(|(id, _r)| id) {
+            if self.identifier_registered(identifier) {
+                return Err(NonUniqueIdentifier(identifier.clone()));
+            }
         }
 
         // Join
-        for entry in other.table.iter() {
-            self.table.push(*entry);
-        }
+        self.ordered.extend(other.ordered.iter().cloned());
+        self.sorted.extend(other.sorted.iter().cloned());
         Ok(())
     }
 
@@ -95,32 +171,62 @@ impl MsgTable {
 
     /// If the type with [`TypeId`] `tid` has been registered or not.
     pub fn tid_registered(&self, tid: TypeId) -> bool {
-        self.table.iter().any(|(o_tid, _, _, _)| tid == *o_tid)
+        self.ordered.iter().any(|r| r.tid == tid) || self.sorted.iter().any(|(_id, r)| r.tid == tid)
+    }
+
+    /// If the message with `identifier` has been registered or not.
+    pub fn identifier_registered(&self, identifier: &str) -> bool {
+        self.sorted.iter().any(|(id, _r)| id == identifier)
     }
 
     /// Registers a message type so that it can be sent over the network.
-    pub fn register<T>(&mut self, transport: Transport) -> Result<(), MsgRegError>
+    ///
+    /// You must guarantee constant registration order for all messages
+    /// between all clients and the server. If you cannot make this guarantee,
+    /// use the [`register_sorted`] method. That method does not require a constant
+    /// registration order, but instead requires a unique string identifier to be
+    /// registered with each message.
+    pub fn register_ordered<T>(&mut self, guarantees: Guarantees) -> Result<(), MsgRegError>
     where
         T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
-        self.table.push(self.get_registration::<T>(transport)?);
+        self.ordered
+            .push(self.get_ordered_registration::<T>(guarantees)?);
         Ok(())
     }
 
-    /// Builds the things needed for the registration.
-    fn get_registration<T>(
-        &self,
-        transport: Transport,
-    ) -> Result<(TypeId, Transport, SerFn, DeserFn), MsgRegError>
+    /// Registers a message type so that it can be sent over the network.
+    ///
+    /// You must guarantee that the identifier is unique for all messages you register.
+    /// You must also guarantee that the same messages are registered with the same
+    /// identifier on all clients and the server.
+    /// If you cannot make this guarantee, use the [`register_ordered`] method. That method
+    /// requires constant registration order, but does not require a unique string identifier.
+    pub fn register_sorted<T>(
+        &mut self,
+        guarantees: Guarantees,
+        identifier: impl ToString,
+    ) -> Result<(), MsgRegError>
     where
         T: Any + Send + Sync + DeserializeOwned + Serialize,
     {
-        // Get the type.
-        let tid = TypeId::of::<T>();
+        self.sorted
+            .push(self.get_sorted_registration::<T>(guarantees, identifier)?);
+        Ok(())
+    }
 
+    /// Builds the things needed for an ordered registration.
+    fn get_ordered_registration<T>(
+        &self,
+        guarantees: Guarantees,
+    ) -> Result<Registration, MsgRegError>
+    where
+        T: Any + Send + Sync + DeserializeOwned + Serialize,
+    {
         // Check if it has been registered already.
+        let tid = TypeId::of::<T>();
         if self.tid_registered(tid) {
-            return Err(TypeAlreadyRegistered);
+            return Err(TypeAlreadyRegistered(tid));
         }
 
         // Get the serialize and deserialize functions
@@ -128,21 +234,57 @@ impl MsgTable {
             bincode::deserialize::<T>(bytes)
                 .map(|d| Box::new(d) as Box<dyn Any + Send + Sync>)
                 .map_err(|o| {
-                    io::Error::new(io::ErrorKind::InvalidData, format!("Deser Error: {}", o))
+                    Error::new(
+                        ErrorKind::InvalidData,
+                        format!("deserialization error: {}", o),
+                    )
                 })
         };
-        let ser: SerFn = |m: &(dyn Any + Send + Sync)| {
-            bincode::serialize(m.downcast_ref::<T>().unwrap()).map_err(|o| {
-                io::Error::new(io::ErrorKind::InvalidData, format!("Ser Error: {}", o))
+        let ser: SerFn = |m: &(dyn Any + Send + Sync), buf| {
+            bincode::serialize_into(
+                buf,
+                m.downcast_ref::<T>()
+                    .expect("wrong type passed to the message serialization function"),
+            )
+            .map_err(|o| {
+                Error::new(
+                    ErrorKind::InvalidData,
+                    format!("serialization error: {}", o),
+                )
             })
         };
 
-        Ok((tid, transport, ser, deser))
+        Ok(Registration {
+            tid,
+            guarantees,
+            ser,
+            deser,
+        })
     }
 
-    /// Builds the [`MsgTable`] into useful parts.
+    /// Builds the things needed for a sorted registration.
+    fn get_sorted_registration<T>(
+        &self,
+        guarantees: Guarantees,
+        identifier: impl ToString,
+    ) -> Result<(String, Registration), MsgRegError>
+    where
+        T: Any + Send + Sync + DeserializeOwned + Serialize,
+    {
+        let identifier = identifier.to_string();
+        // Check if the identifier has been registered already.
+        if self.identifier_registered(&identifier) {
+            return Err(NonUniqueIdentifier(identifier));
+        }
+
+        let registration = self.get_ordered_registration::<T>(guarantees)?;
+
+        Ok((identifier, registration))
+    }
+
+    /// Builds the [`MsgTable`].
     ///
-    /// Consumes the Message table, and turns it into a [`MsgTableParts`].
+    /// Consumes the [`MsgTableBuilder`], and turns it into a [`MsgTable`].
     ///
     /// This should be called with the generic parameters:
     ///  - `C` is the connection message type.
@@ -150,234 +292,428 @@ impl MsgTable {
     ///  - `D` is the disconnect message type.
     ///
     /// The generic parameters should **not** be registered before hand.
-    pub fn build<C, R, D>(self) -> Result<MsgTableParts, MsgRegError>
+    ///
+    /// This fails iff the generic parameters have already been registered.
+    pub fn build<C, R, D>(mut self) -> Result<MsgTable, MsgRegError>
     where
         C: Any + Send + Sync + DeserializeOwned + Serialize,
         R: Any + Send + Sync + DeserializeOwned + Serialize,
         D: Any + Send + Sync + DeserializeOwned + Serialize,
     {
         // Always prepend the Connection and Disconnect types first.
-        // This gives them universal MIds.
+        // This gives them universal MTypes.
         let con_discon_types = [
-            self.get_registration::<C>(Transport::TCP)?,
-            self.get_registration::<R>(Transport::TCP)?,
-            self.get_registration::<D>(Transport::TCP)?,
+            self.get_ordered_registration::<C>(Guarantees::Reliable)?,
+            self.get_ordered_registration::<R>(Guarantees::Reliable)?,
+            self.get_ordered_registration::<D>(Guarantees::Reliable)?,
+            self.get_ordered_registration::<AckMsg>(Guarantees::Unreliable)
+                .expect("failed to create registration for AckMsg"),
+            self.get_ordered_registration::<PingMsg>(Guarantees::Unreliable)
+                .expect("failed to create registration for AckMsg"),
         ];
 
-        let mut tid_map = HashMap::with_capacity(self.table.len() + 3);
-        let mut transports = Vec::with_capacity(self.table.len() + 3);
-        let mut ser = Vec::with_capacity(self.table.len() + 3);
-        let mut deser = Vec::with_capacity(self.table.len() + 3);
-
-        // Add all types to parts. Connect type first, disconnect type second, all other types after
-        for (idx, (tid, transport, s_fn, d_fn)) in con_discon_types
-            .into_iter()
-            .chain(self.table.into_iter())
-            .enumerate()
-        {
-            tid_map.insert(tid, idx);
-            transports.push(transport);
-            ser.push(s_fn);
-            deser.push(d_fn);
-        }
-
-        Ok(MsgTableParts {
-            tid_map,
-            transports,
-            ser,
-            deser,
-        })
-    }
-}
-
-impl SortedMsgTable {
-    /// Creates a new [`SortedMsgTable`].
-    pub fn new() -> Self {
-        SortedMsgTable::default()
-    }
-
-    /// Adds all registrations from `other` into this table.
-    ///
-    /// All errors are thrown before mutating self. If no errors are thrown, all entries are added;
-    /// if an error is thrown, no entries are added.
-    pub fn join(&mut self, other: &SortedMsgTable) -> Result<(), MsgRegError> {
-        // Validate
-        if other
-            .table
-            .iter()
-            .any(|(_, tid, _, _, _)| self.tid_registered(*tid))
-        {
-            return Err(TypeAlreadyRegistered);
-        }
-
-        if other
-            .table
-            .iter()
-            .any(|(id, _, _, _, _)| self.identifier_registered(id))
-        {
-            return Err(NonUniqueIdentifier);
-        }
-
-        // Join
-        for entry in other.table.iter() {
-            self.table.push(entry.clone());
-        }
-        Ok(())
-    }
-
-    /// If type `T` has been registered or not.
-    pub fn is_registered<T>(&self) -> bool
-    where
-        T: Any + Send + Sync + DeserializeOwned + Serialize,
-    {
-        let tid = TypeId::of::<T>();
-        self.tid_registered(tid)
-    }
-
-    /// If the type with [`TypeId`] `tid` has been registered or not.
-    pub fn tid_registered(&self, tid: TypeId) -> bool {
-        self.table.iter().any(|(_, o_tid, _, _, _)| tid == *o_tid)
-    }
-
-    /// If the type with [`TypeId`] `tid` has been registered or not.
-    pub fn identifier_registered(&self, identifier: &str) -> bool {
-        self.table.iter().any(|(id, _, _, _, _)| identifier == *id)
-    }
-
-    /// Registers a message type so that it can be sent over the network.
-    pub fn register<T>(&mut self, transport: Transport, identifier: &str) -> Result<(), MsgRegError>
-    where
-        T: Any + Send + Sync + DeserializeOwned + Serialize,
-    {
-        self.table
-            .push(self.get_registration::<T>(identifier.into(), transport)?);
-        Ok(())
-    }
-
-    /// Builds the things needed for the registration.
-    fn get_registration<T>(
-        &self,
-        identifier: String,
-        transport: Transport,
-    ) -> Result<(String, TypeId, Transport, SerFn, DeserFn), MsgRegError>
-    where
-        T: Any + Send + Sync + DeserializeOwned + Serialize,
-    {
-        // Get the serialize and deserialize functions
-        let deser: DeserFn = |bytes: &[u8]| {
-            bincode::deserialize::<T>(bytes)
-                .map(|d| Box::new(d) as Box<dyn Any + Send + Sync>)
-                .map_err(|o| {
-                    io::Error::new(io::ErrorKind::InvalidData, format!("Deser Error: {}", o))
-                })
-        };
-        let ser: SerFn = |m: &(dyn Any + Send + Sync)| {
-            bincode::serialize(m.downcast_ref::<T>().unwrap()).map_err(|o| {
-                io::Error::new(io::ErrorKind::InvalidData, format!("Ser Error: {}", o))
-            })
-        };
-
-        // Check if the identifier has been registered already.
-        if self.identifier_registered(&identifier) {
-            return Err(NonUniqueIdentifier);
-        }
-
-        // Get the type.
-        let tid = TypeId::of::<T>();
-
-        // Check if it has been registered already.
-        if self.tid_registered(tid) {
-            return Err(TypeAlreadyRegistered);
-        }
-
-        Ok((identifier, tid, transport, ser, deser))
-    }
-
-    /// Builds the [`SortedMsgTable`] into useful parts.
-    ///
-    /// Consumes the Message table, and turns it into a [`MsgTableParts`].
-    ///
-    /// This should be called with the generic parameters:
-    ///  - `C` is the connection message type.
-    ///  - `R` is the response message type.
-    ///  - `f` is the disconnect message type.
-    ///
-    /// The generic parameters should **not** be registered before hand.
-    pub fn build<C, R, D>(mut self) -> Result<MsgTableParts, MsgRegError>
-    where
-        C: Any + Send + Sync + DeserializeOwned + Serialize,
-        R: Any + Send + Sync + DeserializeOwned + Serialize,
-        D: Any + Send + Sync + DeserializeOwned + Serialize,
-    {
-        // Always prepend the Connection and Disconnect types first.
-        // This gives them universal MIds.
-        let con_discon_types = [
-            self.get_registration::<C>("carrier-pigeon::connection".to_owned(), Transport::TCP)?,
-            self.get_registration::<R>("carrier-pigeon::response".to_owned(), Transport::TCP)?,
-            self.get_registration::<D>("carrier-pigeon::disconnect".to_owned(), Transport::TCP)?,
-        ];
+        let registration_count = self.ordered.len() + self.sorted.len() + 3;
+        let mut tid_map = HashMap::with_capacity(registration_count);
+        let mut guarantees = Vec::with_capacity(registration_count);
+        let mut ser = Vec::with_capacity(registration_count);
+        let mut deser = Vec::with_capacity(registration_count);
 
         // Sort by identifier string so that registration order doesn't matter.
-        self.table
-            .sort_by(|(id0, _, _, _, _), (id1, _, _, _, _)| id0.cmp(id1));
+        self.sorted.sort_by(|(id0, _r0), (id1, _r1)| id0.cmp(id1));
 
-        let mut tid_map = HashMap::with_capacity(self.table.len() + 3);
-        let mut transports = Vec::with_capacity(self.table.len() + 3);
-        let mut ser = Vec::with_capacity(self.table.len() + 3);
-        let mut deser = Vec::with_capacity(self.table.len() + 3);
-
-        // Add all types to parts. Connect type first, disconnect type second, all other types after
-        for (idx, (_identifier, tid, transport, s_fn, d_fn)) in con_discon_types
+        // Add all types to parts.
+        // Connection type first, Response type second, Disconnection type third
+        // then all user defined messages.
+        for (idx, registration) in con_discon_types
             .into_iter()
-            .chain(self.table.into_iter())
+            .chain(self.ordered.into_iter())
+            .chain(self.sorted.into_iter().map(|(_id, r)| r))
             .enumerate()
         {
-            tid_map.insert(tid, idx);
-            transports.push(transport);
-            ser.push(s_fn);
-            deser.push(d_fn);
+            tid_map.insert(registration.tid, idx);
+            guarantees.push(registration.guarantees);
+            ser.push(registration.ser);
+            deser.push(registration.deser);
         }
 
-        Ok(MsgTableParts {
+        Ok(MsgTable {
             tid_map,
-            transports,
+            guarantees,
             ser,
             deser,
         })
     }
 }
 
-impl MsgTableParts {
-    /// Gets the number of registered `MId`s.
-    pub fn mid_count(&self) -> usize {
-        self.transports.len()
+impl MsgTable {
+    /// Gets the number of registered [`MType`](crate::MType)s.
+    #[inline]
+    pub fn mtype_count(&self) -> usize {
+        self.guarantees.len()
     }
 
-    /// Checks if the [`MId`] `mid` is valid.
-    pub fn valid_mid(&self, mid: MId) -> bool {
-        mid <= self.mid_count()
+    /// Checks if the [`MType`](crate::MType) `m_type` is valid.
+    #[inline]
+    pub fn valid_m_type(&self, m_type: MType) -> bool {
+        m_type <= self.mtype_count()
     }
 
     /// Checks if the [`TypeId`] `tid` is registered.
+    #[inline]
     pub fn valid_tid(&self, tid: TypeId) -> bool {
         self.tid_map.contains_key(&tid)
+    }
+
+    /// Checks if the [`TypeId`] `tid` is registered. If it is not, it returns an error.
+    ///
+    /// If you have the type as a generic, use [`check_type`](Self::check_type) instead. It gives
+    /// a better error message.
+    pub fn check_tid(&self, tid: TypeId) -> io::Result<()> {
+        if !self.valid_tid(tid) {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("Type ({:?}) not registered as a message.", tid),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Checks if the type `T` is registered. If it is not, it returns an error.
+    pub fn check_type<T: Any + Send + Sync>(&self) -> io::Result<()> {
+        let tid = TypeId::of::<T>();
+        if !self.valid_tid(tid) {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("Type ({}) not registered as a message.", type_name::<T>()),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn check_m_type(&self, m_type: MType) -> io::Result<()> {
+        if !self.valid_m_type(m_type) {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "Message specified MType: {}, but the maximum MType is {}.",
+                    m_type,
+                    self.mtype_count()
+                ),
+            ));
+        }
+        Ok(())
     }
 }
 
 /// The possible errors when registering a type.
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+#[derive(Eq, PartialEq, Clone, Debug)]
 pub enum MsgRegError {
     /// The type was already registered.
-    TypeAlreadyRegistered,
+    TypeAlreadyRegistered(TypeId),
     /// The identifier string was already used.
-    NonUniqueIdentifier,
+    NonUniqueIdentifier(String),
 }
 
 impl Display for MsgRegError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            TypeAlreadyRegistered => write!(f, "Type was already registered."),
-            NonUniqueIdentifier => write!(f, "The identifier was not unique."),
+            TypeAlreadyRegistered(tid) => write!(f, "Type ({:?}) was already registered.", tid),
+            NonUniqueIdentifier(identifier) => {
+                write!(f, "The identifier ({}) was not unique.", identifier)
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Serialize, Deserialize)]
+    struct Connection;
+    #[derive(Serialize, Deserialize)]
+    struct Response;
+    #[derive(Serialize, Deserialize)]
+    struct Disconnect;
+    #[derive(Serialize, Deserialize)]
+    struct ReliableMsg;
+    #[derive(Serialize, Deserialize)]
+    struct UnreliableMsg;
+
+    /// Tests the [`TypeAlreadyRegistered`], and [`NonUniqueIdentifier`]
+    /// errors for both MsgTable variants.
+    #[test]
+    fn errors() {
+        let mut builder = MsgTableBuilder::new();
+        builder
+            .register_ordered::<ReliableMsg>(Guarantees::Reliable)
+            .unwrap();
+        assert_eq!(
+            builder.register_ordered::<ReliableMsg>(Guarantees::Reliable),
+            Err(TypeAlreadyRegistered(TypeId::of::<ReliableMsg>()))
+        );
+
+        let mut table = MsgTableBuilder::new();
+        table
+            .register_sorted::<ReliableMsg>(Guarantees::Reliable, "test::ReliableMsg")
+            .unwrap();
+        assert_eq!(
+            table.register_sorted::<ReliableMsg>(Guarantees::Reliable, "test::ReliableMsg2"),
+            Err(TypeAlreadyRegistered(TypeId::of::<ReliableMsg>()))
+        );
+
+        let mut table = MsgTableBuilder::new();
+        table
+            .register_sorted::<ReliableMsg>(Guarantees::Reliable, "test::ReliableMsg")
+            .unwrap();
+        assert_eq!(
+            table.register_sorted::<UnreliableMsg>(Guarantees::Unreliable, "test::ReliableMsg"),
+            Err(NonUniqueIdentifier("test::ReliableMsg".to_owned()))
+        );
+    }
+
+    /// Tests [`MsgTableParts`] generation.
+    #[test]
+    fn parts_gen() {
+        let mut table = MsgTableBuilder::new();
+        table
+            .register_ordered::<ReliableMsg>(Guarantees::Reliable)
+            .unwrap();
+        table
+            .register_ordered::<UnreliableMsg>(Guarantees::Unreliable)
+            .unwrap();
+
+        // Expected result:
+        // TODO: extract this to common fn
+        let mut expected_tid_map = HashMap::new();
+        expected_tid_map.insert(TypeId::of::<Connection>(), 0);
+        expected_tid_map.insert(TypeId::of::<Response>(), 1);
+        expected_tid_map.insert(TypeId::of::<Disconnect>(), 2);
+        expected_tid_map.insert(TypeId::of::<AckMsg>(), 3);
+        expected_tid_map.insert(TypeId::of::<PingMsg>(), 4);
+        expected_tid_map.insert(TypeId::of::<ReliableMsg>(), 5);
+        expected_tid_map.insert(TypeId::of::<UnreliableMsg>(), 6);
+
+        let guarantees = vec![
+            Guarantees::Reliable,   // Connection
+            Guarantees::Reliable,   // Response
+            Guarantees::Reliable,   // Disconnect
+            Guarantees::Unreliable, // AckMsg
+            Guarantees::Unreliable, // PingMsg
+            Guarantees::Reliable,   // ReliableMsg
+            Guarantees::Unreliable, // UnreliableMsg
+        ];
+
+        let parts = table.build::<Connection, Response, Disconnect>().unwrap();
+
+        // Make sure the tid_map and transports generated correctly.
+        assert_eq!(parts.tid_map, expected_tid_map);
+        assert_eq!(parts.guarantees, guarantees);
+        // Can't check ser and deser functions.
+        assert_eq!(parts.ser.len(), 7);
+        assert_eq!(parts.deser.len(), 7);
+    }
+
+    /// Tests [`MsgTableParts`] generation.
+    #[test]
+    fn parts_gen_sorted() {
+        let mut builder1 = MsgTableBuilder::new();
+        builder1
+            .register_sorted::<ReliableMsg>(Guarantees::Reliable, "tests::ReliableMsg")
+            .unwrap();
+        builder1
+            .register_sorted::<UnreliableMsg>(Guarantees::Unreliable, "tests::UnreliableMsg")
+            .unwrap();
+
+        // Different order.
+        let mut builder2 = MsgTableBuilder::new();
+        builder2
+            .register_sorted::<UnreliableMsg>(Guarantees::Unreliable, "tests::UnreliableMsg")
+            .unwrap();
+        builder2
+            .register_sorted::<ReliableMsg>(Guarantees::Reliable, "tests::ReliableMsg")
+            .unwrap();
+
+        // Expected result:
+        let mut expected_tid_map = HashMap::new();
+        expected_tid_map.insert(TypeId::of::<Connection>(), 0);
+        expected_tid_map.insert(TypeId::of::<Response>(), 1);
+        expected_tid_map.insert(TypeId::of::<Disconnect>(), 2);
+        expected_tid_map.insert(TypeId::of::<AckMsg>(), 3);
+        expected_tid_map.insert(TypeId::of::<PingMsg>(), 4);
+        expected_tid_map.insert(TypeId::of::<ReliableMsg>(), 5);
+        expected_tid_map.insert(TypeId::of::<UnreliableMsg>(), 6);
+
+        let expected_guarantees = vec![
+            Guarantees::Reliable,   // Connection
+            Guarantees::Reliable,   // Response
+            Guarantees::Reliable,   // Disconnect
+            Guarantees::Unreliable, // AckMsg
+            Guarantees::Unreliable, // PingMsg
+            Guarantees::Reliable,   // ReliableMsg
+            Guarantees::Unreliable, // UnreliableMsg
+        ];
+
+        let table1 = builder1
+            .build::<Connection, Response, Disconnect>()
+            .unwrap();
+        let table2 = builder2
+            .build::<Connection, Response, Disconnect>()
+            .unwrap();
+
+        // Make sure the tid_map and transports generated correctly.
+        assert_eq!(table1.tid_map, expected_tid_map);
+        assert_eq!(table1.guarantees, expected_guarantees);
+        // Can't check ser and deser functions.
+        assert_eq!(table1.ser.len(), 7);
+        assert_eq!(table1.deser.len(), 7);
+
+        // Make sure the tables generated the same.
+        assert_eq!(table1.tid_map, table2.tid_map);
+        assert_eq!(table1.guarantees, table2.guarantees);
+    }
+
+    /// Tests [`MsgTable`] joining.
+    #[test]
+    fn join() {
+        // MsgTable
+        let mut builder1 = MsgTableBuilder::new();
+        builder1
+            .register_ordered::<ReliableMsg>(Guarantees::Reliable)
+            .unwrap();
+        let mut builder2 = MsgTableBuilder::new();
+        builder2
+            .register_ordered::<UnreliableMsg>(Guarantees::Unreliable)
+            .unwrap();
+
+        builder1.join(&builder2).unwrap();
+
+        // Expected result:
+        let mut expected_tid_map = HashMap::new();
+        expected_tid_map.insert(TypeId::of::<Connection>(), 0);
+        expected_tid_map.insert(TypeId::of::<Response>(), 1);
+        expected_tid_map.insert(TypeId::of::<Disconnect>(), 2);
+        expected_tid_map.insert(TypeId::of::<AckMsg>(), 3);
+        expected_tid_map.insert(TypeId::of::<PingMsg>(), 4);
+        expected_tid_map.insert(TypeId::of::<ReliableMsg>(), 5);
+        expected_tid_map.insert(TypeId::of::<UnreliableMsg>(), 6);
+
+        let expected_guarantees = vec![
+            Guarantees::Reliable,   // Connection
+            Guarantees::Reliable,   // Response
+            Guarantees::Reliable,   // Disconnect
+            Guarantees::Unreliable, // AckMsg
+            Guarantees::Unreliable, // PingMsg
+            Guarantees::Reliable,   // ReliableMsg
+            Guarantees::Unreliable, // UnreliableMsg
+        ];
+
+        let parts = builder1
+            .build::<Connection, Response, Disconnect>()
+            .unwrap();
+
+        // Make sure the tid_map and transports generated correctly.
+        assert_eq!(parts.tid_map, expected_tid_map);
+        assert_eq!(parts.guarantees, expected_guarantees);
+        // Can't check ser and deser functions.
+        assert_eq!(parts.ser.len(), 7);
+        assert_eq!(parts.deser.len(), 7);
+    }
+
+    /// Tests [`SortedMsgTable`] joining.
+    #[test]
+    fn join_sorted() {
+        // MsgTable
+        let mut builder1 = MsgTableBuilder::new();
+        builder1
+            .register_sorted::<ReliableMsg>(Guarantees::Reliable, "tests::ReliableMsg")
+            .unwrap();
+        let mut builder2 = MsgTableBuilder::new();
+        builder2
+            .register_sorted::<UnreliableMsg>(Guarantees::Unreliable, "tests::UnreliableMsg")
+            .unwrap();
+
+        builder1.join(&builder2).unwrap();
+
+        // Expected result:
+        let mut expected_tid_map = HashMap::new();
+        expected_tid_map.insert(TypeId::of::<Connection>(), 0);
+        expected_tid_map.insert(TypeId::of::<Response>(), 1);
+        expected_tid_map.insert(TypeId::of::<Disconnect>(), 2);
+        expected_tid_map.insert(TypeId::of::<AckMsg>(), 3);
+        expected_tid_map.insert(TypeId::of::<PingMsg>(), 4);
+        expected_tid_map.insert(TypeId::of::<ReliableMsg>(), 5);
+        expected_tid_map.insert(TypeId::of::<UnreliableMsg>(), 6);
+
+        let expected_guarantees = vec![
+            Guarantees::Reliable,   // Connection
+            Guarantees::Reliable,   // Response
+            Guarantees::Reliable,   // Disconnect
+            Guarantees::Unreliable, // AckMsg
+            Guarantees::Unreliable, // PingMsg
+            Guarantees::Reliable,   // ReliableMsg
+            Guarantees::Unreliable, // UnreliableMsg
+        ];
+
+        let table = builder1
+            .build::<Connection, Response, Disconnect>()
+            .unwrap();
+
+        // Make sure the tid_map and transports generated correctly.
+        assert_eq!(table.tid_map, expected_tid_map);
+        assert_eq!(table.guarantees, expected_guarantees);
+        // Can't check ser and deser functions.
+        assert_eq!(table.ser.len(), 7);
+        assert_eq!(table.deser.len(), 7);
+    }
+
+    /// Tests [`MsgTable`] joining.
+    #[test]
+    fn join_error() {
+        // ordered
+        let mut builder1 = MsgTableBuilder::new();
+        builder1
+            .register_ordered::<ReliableMsg>(Guarantees::Reliable)
+            .unwrap();
+        let mut builder2 = MsgTableBuilder::new();
+        builder2
+            .register_ordered::<ReliableMsg>(Guarantees::Unreliable)
+            .unwrap();
+
+        assert_eq!(
+            builder1.join(&builder2),
+            Err(TypeAlreadyRegistered(TypeId::of::<ReliableMsg>()))
+        );
+
+        // sorted
+        let mut builder1 = MsgTableBuilder::new();
+        builder1
+            .register_sorted::<ReliableMsg>(Guarantees::Reliable, "tests::ReliableMsg")
+            .unwrap();
+        let mut builder2 = MsgTableBuilder::new();
+        builder2
+            .register_sorted::<ReliableMsg>(Guarantees::Unreliable, "tests::DifferentMsg")
+            .unwrap();
+
+        assert_eq!(
+            builder1.join(&builder2),
+            Err(TypeAlreadyRegistered(TypeId::of::<ReliableMsg>()))
+        );
+
+        // sorted
+        let mut builder1 = MsgTableBuilder::new();
+        builder1
+            .register_sorted::<ReliableMsg>(Guarantees::Reliable, "tests::ReliableMsg")
+            .unwrap();
+        let mut builder2 = MsgTableBuilder::new();
+        builder2
+            .register_sorted::<UnreliableMsg>(Guarantees::Unreliable, "tests::ReliableMsg")
+            .unwrap();
+
+        assert_eq!(
+            builder1.join(&builder2).unwrap_err(),
+            NonUniqueIdentifier("tests::ReliableMsg".to_owned())
+        );
     }
 }

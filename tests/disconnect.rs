@@ -2,17 +2,13 @@
 use crate::helper::create_client_server_pair;
 use crate::helper::test_messages::Disconnect;
 use log::debug;
-use simple_logger::SimpleLogger;
 use std::time::Duration;
 
 mod helper;
 
 #[test]
 fn graceful_disconnect() {
-    // Create a simple logger
-    let _ = SimpleLogger::new()
-        .with_level(log::LevelFilter::Trace)
-        .init();
+    env_logger::init();
 
     {
         // Client Disconnect Test
@@ -26,7 +22,7 @@ fn graceful_disconnect() {
         // Give the client enough time to send the disconnect message.
         std::thread::sleep(Duration::from_millis(100));
 
-        let recv_count = server.recv_msgs();
+        server.tick();
         let discon_count = server.handle_disconnects(|_cid, status| {
             assert_eq!(
                 status.disconnected(),
@@ -34,7 +30,6 @@ fn graceful_disconnect() {
             );
         });
 
-        assert_eq!(recv_count, 1);
         assert_eq!(discon_count, 1);
     }
 
@@ -49,8 +44,7 @@ fn graceful_disconnect() {
         // Give the server enough time to send the disconnect message.
         std::thread::sleep(Duration::from_millis(100));
 
-        let count = client.recv_msgs();
-        assert_eq!(count, 1);
+        client.tick();
         assert_eq!(
             client.status().disconnected::<Disconnect>().unwrap(),
             &Disconnect::new("Testing Disconnect Server.")
@@ -60,10 +54,7 @@ fn graceful_disconnect() {
 
 #[test]
 fn drop_test() {
-    // Create a simple logger
-    let _ = SimpleLogger::new()
-        .with_level(log::LevelFilter::Trace)
-        .init();
+    env_logger::init();
 
     {
         // Server Drop Client.
@@ -73,7 +64,7 @@ fn drop_test() {
         // Give the server enough time for the connection to sever.
         std::thread::sleep(Duration::from_millis(100));
 
-        client.recv_msgs();
+        client.tick();
         // Make sure the client is dropped abruptly
         assert!(client.status().dropped().is_some());
     }
@@ -86,7 +77,7 @@ fn drop_test() {
         // Give the server enough time for the connection to sever.
         std::thread::sleep(Duration::from_millis(100));
 
-        server.recv_msgs();
+        server.tick();
         let counts = server.handle_disconnects(|_cid, status| {
             assert!(status.dropped().is_some(), "Expected status to be dropped");
         });

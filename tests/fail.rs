@@ -1,5 +1,5 @@
-use crate::helper::test_messages::{get_table_parts, Connection, Response};
-use carrier_pigeon::net::Config;
+use crate::helper::test_messages::{get_msg_table, Connection, Response};
+use carrier_pigeon::net::ClientConfig;
 use carrier_pigeon::Client;
 use std::io::ErrorKind;
 
@@ -7,12 +7,13 @@ mod helper;
 
 #[test]
 fn client_fail() {
-    let parts = get_table_parts();
+    let parts = get_msg_table();
 
     let client = Client::new(
-        "127.0.0.1:7778",
+        "127.0.0.1:7776".parse().unwrap(),
+        "127.0.0.1:7777".parse().unwrap(),
         parts,
-        Config::default(),
+        ClientConfig::default(),
         Connection::new("John Smith"),
     );
     let result = client.block::<Response>();

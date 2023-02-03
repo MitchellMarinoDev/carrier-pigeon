@@ -15,18 +15,20 @@
 //! [`examples/` directory](https://github.com/MitchellMarinoDev/carrier-pigeon/blob/main/examples)
 //! on the GitHub repo.
 
+extern crate core;
+
 pub mod net;
-pub mod tcp;
-pub mod udp;
 
 mod client;
-mod header;
+mod connection;
 mod message_table;
+pub(crate) mod messages;
 mod server;
-mod time;
+mod transport;
+mod util;
 
 pub use client::{Client, OptionPendingClient, PendingClient};
-pub use header::TcpHeader;
-pub use message_table::{MsgRegError, MsgTable, MsgTableParts, SortedMsgTable};
-pub use net::{CId, MId, Transport};
+pub use message_table::{Guarantees, MsgRegError, MsgTable, MsgTableBuilder};
+pub use net::{CId, MType};
+pub use net::{ClientConfig, ServerConfig};
 pub use server::Server;

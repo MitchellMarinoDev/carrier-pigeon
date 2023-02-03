@@ -1,106 +1,62 @@
-use crate::message_table::{
-    MsgTableParts, CONNECTION_TYPE_MID, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID,
-};
-use crate::net::{CId, CIdSpec, Config, DeserFn, ErasedNetMsg, NetMsg, Status, Transport};
-use crate::tcp::TcpCon;
-use crate::udp::UdpCon;
-use crate::MId;
-use hashbrown::HashMap;
-use log::{debug, error, trace};
-use std::any::{type_name, Any, TypeId};
+use crate::connection::server_connection::ServerConnection;
+use crate::message_table::{MsgTable, CONNECTION_M_TYPE, RESPONSE_M_TYPE};
+use crate::net::{CId, CIdSpec, ErasedNetMsg, NetMsg, ServerConfig, Status};
+use crate::transport::server_std_udp::UdpServerTransport;
+use log::*;
+use std::any::{Any, TypeId};
 use std::collections::VecDeque;
+use std::fmt::{Debug, Formatter};
 use std::io;
-use std::io::ErrorKind::{InvalidData, WouldBlock};
+use std::io::ErrorKind::WouldBlock;
 use std::io::{Error, ErrorKind};
-use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
-use std::time::{Duration, Instant};
+use std::net::SocketAddr;
 
-/// A server.
+/// A server that manages connections to multiple clients.
 ///
 /// Listens on a address and port, allowing for clients to connect. Newly connected clients will
-/// be given a client ID (CId) starting at `1` that is unique for the session.
-///
-/// This will manage multiple connections to clients. Each connection will have a TCP and UDP
-/// connection on the same address and port.
+/// be given a connection ID ([`CId`]) starting at `1` that is unique for the session.
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct Server {
-    /// The current cid. incremented then assigned to new connections.
-    current_cid: CId,
     /// The configuration of the server.
-    config: Config,
+    config: ServerConfig,
     /// The received message buffer.
     ///
-    /// Each [`MId`] has its own vector.
-    msg_buff: Vec<Vec<ErasedNetMsg>>,
+    /// Each [`MType`](crate::MType) has its own vector.
+    msg_buf: Vec<Vec<ErasedNetMsg>>,
 
-    /// The pending connections (Connections that are established but have
-    /// not sent a connection message yet).
-    new_cons: Vec<(TcpCon, CId, Instant)>,
     /// Disconnected connections.
     disconnected: VecDeque<(CId, Status)>,
-    /// The listener for new connections.
-    listener: TcpListener,
-    /// The TCP connection for this client.
-    tcp: HashMap<CId, TcpCon>,
-    /// The UDP connection for this client.
-    udp: UdpCon,
+    /// The connection for this server.
+    connection: ServerConnection<UdpServerTransport>,
 
-    /// The map from CId to SocketAddr for the UDP messages to be sent to.
-    ///
-    /// This needs to be a mirror of `addr_cid`, and needs to be added and removed with the TCP
-    /// connections. Because of these things, ***ALWAYS*** use the `add_tcp_con` and `rm_tcp_con`
-    /// functions to mutate these maps.
-    cid_addr: HashMap<CId, SocketAddr>,
-    /// The map from SocketAddr to CId for the UDP messages to be sent to.
-    ///
-    /// This needs to be a mirror of `cid_addr`, and needs to be added and removed with the TCP
-    /// connections. Because of these things, ***ALWAYS*** use the `add_tcp_con` and `rm_tcp_con`
-    /// functions to mutate these maps.
-    addr_cid: HashMap<SocketAddr, CId>,
-
-    /// The [`MsgTableParts`] to use for sending messages.
-    parts: MsgTableParts,
+    /// The [`MsgTable`] to use for sending messages.
+    msg_table: MsgTable,
 }
 
 impl Server {
     /// Creates a new [`Server`].
-    ///
-    /// Creates a new [`Server`] listening on the address `listen_addr`.
-    pub fn new<A: ToSocketAddrs>(
-        listen_addr: A,
-        parts: MsgTableParts,
-        config: Config,
+    pub fn new(
+        listen_addr: SocketAddr,
+        msg_table: MsgTable,
+        config: ServerConfig,
     ) -> io::Result<Self> {
-        let listener = TcpListener::bind(listen_addr)?;
-        let listen_addr = listener.local_addr().unwrap();
-        listener.set_nonblocking(true)?;
-        let udp = UdpCon::new(listen_addr, None, config.max_msg_size)?;
+        let connection = ServerConnection::new(msg_table.clone(), listen_addr)?;
+        debug!("Creating server listening on {}", connection.listen_addr().map(|addr| addr.to_string()).unwrap_or("UNKNOWN".into()));
 
-        debug!("New server created at {}.", listen_addr);
-
-        let mid_count = parts.tid_map.len();
-        let mut msg_buff = Vec::with_capacity(mid_count);
-        for _i in 0..mid_count {
-            msg_buff.push(vec![]);
-        }
+        let m_type_count = msg_table.tid_map.len();
+        let msg_buf = (0..m_type_count).map(|_| vec![]).collect();
 
         Ok(Server {
-            current_cid: 0,
             config,
-            msg_buff,
-            new_cons: vec![],
+            msg_buf,
             disconnected: VecDeque::new(),
-            listener,
-            tcp: HashMap::new(),
-            udp,
-            cid_addr: Default::default(),
-            addr_cid: Default::default(),
-            parts,
+            connection,
+            msg_table,
         })
     }
 
     /// Gets the config of the server.
-    pub fn config(&self) -> &Config {
+    pub fn config(&self) -> &ServerConfig {
         &self.config
     }
 
@@ -108,289 +64,43 @@ impl Server {
     /// the server to let the clients know that you intentionally disconnected. The `discon_msg`
     /// allows you to give a reason for the disconnect.
     pub fn disconnect<T: Any + Send + Sync>(&mut self, discon_msg: &T, cid: CId) -> io::Result<()> {
-        if !self.alive(cid) {
-            return Err(io::Error::new(ErrorKind::InvalidData, "Invalid CId."));
+        if !self.cid_connected(cid) {
+            return Err(Error::new(ErrorKind::InvalidData, "Invalid CId."));
         }
         debug!("Disconnecting CId {}", cid);
         self.send_to(cid, discon_msg)?;
-        // Close the TcpCon
-        self.tcp.get_mut(&cid).unwrap().close()?;
-        // No shutdown method on udp.
         self.disconnected.push_back((cid, Status::Closed));
         Ok(())
     }
 
-    /// Handles all available new connection attempts in a loop, calling the given hook for each.
+    /// Handles all available new connection attempts in a loop, calling the `hook` for each.
     ///
     /// The hook function should return `(should_accept, response_msg)`.
-    ///
-    /// Types `C` and `R` need to match the `C` and `R` types that you passed into
-    /// [`MsgTable::build()`](MsgTable::build).
-    ///
-    /// Returns whether a connection was handled.
-    pub fn handle_new_con<C: Any + Send + Sync, R: Any + Send + Sync>(
-        &mut self,
-        mut hook: impl FnMut(CId, C) -> (bool, R),
-    ) -> bool {
-        // Start handling incoming connections.
-        self.start_incoming();
-
-        // If we have no active connections, we don't have to continue.
-        if self.new_cons.is_empty() {
-            return false;
-        }
-
-        // Handle the new connections.
-        let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
-
-        // List of accepted connections.
-        let mut accepted = vec![];
-        // List of rejected connections.
-        let mut rejected = vec![];
-        // List of connections that errored out.
-        let mut dead = vec![];
-
-        for (idx, (con, cid, time)) in self.new_cons.iter_mut().enumerate() {
-            match Self::handle_con_helper::<C>(deser_fn, con, self.config.timeout, time) {
-                // Done connecting.
-                Ok(c) => {
-                    // Call hook
-                    let (acc, resp) = hook(*cid, c);
-                    if acc {
-                        accepted.push((idx, resp));
-                    } else {
-                        rejected.push((idx, resp));
-                    }
-                    break; // Only handle 1 connection max.
-                }
-                // Not done yet.
-                Err(e) if e.kind() == ErrorKind::WouldBlock => {}
-                // Error in connecting.
-                Err(e) => {
-                    error!(
-                        "IO error occurred while handling a pending connection. {}",
-                        e
-                    );
-                    dead.push(idx);
-                }
-            }
-        }
-
-        // Dead connections do not count as handled; they do not call the hook.
-        let handled = !(accepted.is_empty() && rejected.is_empty());
-
-        // Handle accepted.
-        for (idx, resp) in accepted {
-            let (con, cid, _) = self.new_cons.remove(idx);
-            self.accept_incoming(cid, con, &resp);
-        }
-
-        // Handle rejected.
-        for (idx, resp) in rejected {
-            let (con, cid, _) = self.new_cons.remove(idx);
-            self.reject_incoming(cid, con, &resp);
-        }
-
-        // Handle dead.
-        for idx in dead {
-            self.new_cons.remove(idx);
-        }
-
-        handled
-    }
-
-    /// Handles all available new connection attempts in a loop, calling the given hook for each.
-    ///
-    /// The hook function should return `(should_accept, response_msg)`.
-    ///
-    /// Types `C` and `R` need to match the `C` and `R` types that you passed into
-    /// [`MsgTable::build()`](MsgTable::build).
     ///
     /// Returns the number of handled connections.
+    ///
+    /// ### Panics
+    /// Panics if the generic parameters `C` and `R` are not the same `C` and `R`
+    /// that you passed into [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
     pub fn handle_new_cons<C: Any + Send + Sync, R: Any + Send + Sync>(
         &mut self,
-        mut hook: impl FnMut(CId, C) -> (bool, R),
+        hook: impl FnMut(CId, SocketAddr, C) -> (bool, R),
     ) -> u32 {
-        // Start handling incoming connections.
-        self.start_incoming();
-
-        // If we have no active connections, we don't have to continue.
-        if self.new_cons.is_empty() {
-            return 0;
-        }
-
-        // Handle the new connections.
-        let deser_fn = self.parts.deser[CONNECTION_TYPE_MID];
-
-        // List of accepted connections.
-        let mut accepted = vec![];
-        // List of rejected connections.
-        let mut rejected = vec![];
-        // List of connections that errored out.
-        let mut dead = vec![];
-
-        for (idx, (con, cid, time)) in self.new_cons.iter_mut().enumerate() {
-            match Self::handle_con_helper::<C>(deser_fn, con, self.config.timeout, time) {
-                // Done connecting.
-                Ok(c) => {
-                    // Call hook
-                    let (acc, resp) = hook(*cid, c);
-                    if acc {
-                        accepted.push((idx, resp));
-                    } else {
-                        rejected.push((idx, resp));
-                    }
-                }
-                // Not done yet.
-                Err(e) if e.kind() == ErrorKind::WouldBlock => {}
-                // Error in connecting.
-                Err(e) => {
-                    error!(
-                        "IO error occurred while handling a pending connection. {}",
-                        e
-                    );
-                    dead.push(idx);
-                }
-            }
-        }
-
-        // Dead connections do not count as handled; they do not call the hook.
-        let handled = accepted.len() + rejected.len();
-
-        // Handle accepted.
-        for (idx, resp) in accepted {
-            let (con, cid, _) = self.new_cons.remove(idx);
-            self.accept_incoming(cid, con, &resp);
-        }
-
-        // Handle rejected.
-        for (idx, resp) in rejected {
-            let (con, cid, _) = self.new_cons.remove(idx);
-            self.reject_incoming(cid, con, &resp);
-        }
-
-        // Handle dead.
-        for idx in dead {
-            self.new_cons.remove(idx);
-        }
-
-        handled as u32
-    }
-
-    /// Encapsulates new connection handling logic by trying to read the connection message.
-    ///
-    /// If there is an error in connection (including timeout) this will return `Err(e)`. If the
-    /// connection opened successfully, it will return `Ok(c)`.
-    ///
-    /// If this returns an error other than a `WouldBlock` error, it should be removed from the
-    /// list of pending connections. If it returns `Ok(c)` it should also be removed, as it has
-    /// finished connecting successfully.
-    fn handle_con_helper<C: Any + Send + Sync>(
-        deser_fn: DeserFn,
-        con: &mut TcpCon,
-        timeout: Duration,
-        time: &Instant,
-    ) -> io::Result<C> {
-        if time.elapsed() > timeout {
-            return Err(Error::new(
-                ErrorKind::TimedOut,
-                "The new connection did not send a connection message in time.",
-            ));
-        }
-
-        let (mid, msg) = con.recv()?;
-
-        if mid != CONNECTION_TYPE_MID {
-            let e_msg = format!("Expected MId {}, got MId {}.", CONNECTION_TYPE_MID, mid);
-            return Err(Error::new(ErrorKind::InvalidData, e_msg));
-        }
-
-        let con_msg = deser_fn(msg).map_err(|o| {
-            Error::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "Encountered a deserialization error when handling a new connection. {}",
-                    o
-                ),
-            )
-        })?;
-
-        let con_msg = *con_msg.downcast::<C>().unwrap();
-        Ok(con_msg)
-    }
-
-    /// Helper function that start handling the incoming tcp connections.
-    fn start_incoming(&mut self) {
-        while self.new_cons.len() < self.config.max_con_handle {
-            if let Ok((stream, _addr)) = self.listener.accept() {
-                debug!("New connection attempt.");
-                stream.set_nonblocking(true).unwrap();
-                let tcp_con = TcpCon::from_stream(stream, self.config.max_msg_size);
-                let cid = self.new_cid();
-                self.new_cons.push((tcp_con, cid, Instant::now()));
-            } else {
-                break;
-            }
-        }
-    }
-
-    /// A helper function that accepts the incoming connection.
-    fn accept_incoming<R: Any + Send + Sync>(&mut self, cid: CId, con: TcpCon, resp: &R) {
-        let addr = con.peer_addr().unwrap();
-        self.add_tcp_con_cid(cid, con);
-        if let Err(e) = self.send_to(cid, resp) {
-            error!(
-                "IO error occurred while responding to a pending connection. {} at {}",
-                e, addr
+        // verify that `C` and `R` are the right type.
+        let c_tid = TypeId::of::<C>();
+        let r_tid = TypeId::of::<R>();
+        if self.msg_table.tid_map.get(&c_tid) != Some(&CONNECTION_M_TYPE)
+            || self.msg_table.tid_map.get(&r_tid) != Some(&RESPONSE_M_TYPE)
+        {
+            panic!(
+                "generic parameters `C` and `R` need to match the generic parameters \
+            that you passed into `MsgTableBuilder::build()`"
             );
-        } else {
-            debug!("Accepted new connection {} at {}.", cid, addr);
         }
-    }
 
-    /// A helper function that rejects the incoming connection.
-    fn reject_incoming<R: Any + Send + Sync>(&self, cid: CId, con: TcpCon, resp: &R) {
-        // Get items necessary to send.
-        let ser = self.parts.ser[RESPONSE_TYPE_MID];
-        let payload = match ser(resp) {
-            Ok(p) => p,
-            Err(e) => {
-                error!("{}", e);
-                return;
-            }
-        };
-
-        // Send.
-        let addr = con.peer_addr().unwrap();
-        if let Err(e) = con.send(RESPONSE_TYPE_MID, &payload) {
-            error!(
-                "IO error occurred while responding to a pending connection. {} at {}",
-                e, addr
-            );
-        } else {
-            debug!("Rejected new connection {} at {}.", cid, addr);
-        }
-    }
-
-    /// Handles a single disconnect, if there is one available to handle.
-    ///
-    /// If there is no disconnects to handle, `hook` will not be called.
-    ///
-    /// Returns weather it handled a disconnect.
-    pub fn handle_disconnect(&mut self, mut hook: impl FnMut(CId, Status)) -> bool {
-        while let Some((cid, status)) = self.disconnected.pop_front() {
-            // If the disconnect is a live connection
-            if !self.alive(cid) {
-                continue;
-            }
-
-            // call hook.
-            hook(cid, status);
-            debug!("Removing CId {}", cid);
-            self.rm_tcp_con(cid).unwrap();
-            return true;
-        }
-        false
+        self.connection
+            .handle_pending(hook)
+            .expect("already checked generic parameters")
     }
 
     /// Handles all remaining disconnects.
@@ -398,399 +108,224 @@ impl Server {
     /// Returns the number of disconnects handled.
     pub fn handle_disconnects(&mut self, mut hook: impl FnMut(CId, Status)) -> u32 {
         // disconnect counts.
-        let mut i = 0;
+        let mut count = 0;
 
         while let Some((cid, status)) = self.disconnected.pop_front() {
-            // If the disconnect is a live connection
-            if !self.alive(cid) {
-                continue;
-            }
-
-            // call hook.
             hook(cid, status);
             debug!("Removing CId {}", cid);
-            self.rm_tcp_con(cid).unwrap();
-            i += 1;
+            // TODO: validate expect
+            self.connection
+                .remove_connection(cid)
+                .expect("cid to be connected");
+            count += 1;
         }
-
-        i
-    }
-
-    /// A function that encapsulates the sending logic for the TCP transport.
-    fn send_tcp(&self, cid: CId, mid: MId, payload: &[u8]) -> io::Result<()> {
-        let tcp = match self.tcp.get(&cid) {
-            Some(tcp) => tcp,
-            None => return Err(Error::new(ErrorKind::InvalidData, "Invalid CId.")),
-        };
-
-        tcp.send(mid, payload)
-    }
-
-    /// A function that encapsulates the sending logic for the UDP transport.
-    fn send_udp(&self, cid: CId, mid: MId, payload: &[u8]) -> io::Result<()> {
-        let addr = match self.cid_addr.get(&cid) {
-            Some(addr) => *addr,
-            None => return Err(Error::new(ErrorKind::InvalidData, "Invalid CId.")),
-        };
-
-        self.udp.send_to(addr, mid, payload)
-    }
-
-    /// A function that encapsulates the receiving logic for the TCP transport.
-    ///
-    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means no more
-    /// messages can be yielded without blocking.
-    fn recv_tcp(&mut self, cid: CId) -> io::Result<(MId, ErasedNetMsg)> {
-        let tcp = match self.tcp.get_mut(&cid) {
-            Some(tcp) => tcp,
-            None => return Err(Error::new(ErrorKind::InvalidData, "Invalid CId.")),
-        };
-
-        let (mid, bytes) = tcp.recv()?;
-
-        if !self.parts.valid_mid(mid) {
-            let e_msg = format!(
-                "TCP: Got a message specifying MId {}, but the maximum MId is {}.",
-                mid,
-                self.parts.mid_count()
-            );
-            return Err(Error::new(ErrorKind::InvalidData, e_msg));
-        }
-
-        let deser_fn = self.parts.deser[mid];
-        let msg = deser_fn(bytes)?;
-
-        let net_msg = ErasedNetMsg {
-            cid,
-            time: None,
-            msg,
-        };
-
-        Ok((mid, net_msg))
-    }
-
-    /// A function that encapsulates the receiving logic for the `UDP` transport.
-    ///
-    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means no more
-    /// messages can be yielded without blocking. [`InvalidData`] likely means carrier-pigeon
-    /// got bad data.
-    fn recv_udp(&mut self) -> io::Result<(MId, ErasedNetMsg)> {
-        let (from, mid, time, bytes) = self.udp.recv_from()?;
-
-        if !self.parts.valid_mid(mid) {
-            let e_msg = format!(
-                "TCP: Got a message specifying MId {}, but the maximum MId is {}.",
-                mid,
-                self.parts.mid_count()
-            );
-            return Err(Error::new(ErrorKind::InvalidData, e_msg));
-        }
-
-        let deser_fn = self.parts.deser[mid];
-        let msg = deser_fn(bytes)?;
-
-        let cid = match self.addr_cid.get(&from) {
-            Some(&cid) if self.alive(cid) => cid,
-            _ => {
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    "Received data from a address that is not connected.",
-                ))
-            }
-        };
-
-        let net_msg = ErasedNetMsg {
-            cid,
-            time: Some(time),
-            msg,
-        };
-
-        Ok((mid, net_msg))
+        count
     }
 
     /// Sends a message to the [`CId`] `cid`.
-    pub fn send_to<T: Any + Send + Sync>(&self, cid: CId, msg: &T) -> io::Result<()> {
-        let tid = TypeId::of::<T>();
-        if !self.valid_tid(tid) {
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                "Type not registered.",
-            ));
-        }
-        let mid = self.parts.tid_map[&tid];
-        let transport = self.parts.transports[mid];
-        let ser_fn = self.parts.ser[mid];
-        let b = ser_fn(msg)?;
-
-        trace!(
-            "Sending message of MId {}, len {}, to CId {}",
-            mid,
-            b.len(),
-            cid
-        );
-        match transport {
-            Transport::TCP => self.send_tcp(cid, mid, &b[..]),
-            Transport::UDP => self.send_udp(cid, mid, &b[..]),
-        }?;
-
-        Ok(())
+    pub fn send_to<M: Any + Send + Sync>(&mut self, cid: CId, msg: &M) -> io::Result<()> {
+        self.connection.send_to(cid, msg)
     }
 
     /// Broadcasts a message to all connected clients.
-    pub fn broadcast<T: Any + Send + Sync>(&self, msg: &T) -> io::Result<()> {
-        for cid in self.cids() {
+    pub fn broadcast<T: Any + Send + Sync>(&mut self, msg: &T) -> io::Result<()> {
+        for cid in self.cids().collect::<Vec<_>>() {
             self.send_to(cid, msg)?;
         }
         Ok(())
     }
 
     /// Sends a message to all [`CId`]s that match `spec`.
-    pub fn send_spec<T: Any + Send + Sync>(&self, spec: CIdSpec, msg: &T) -> io::Result<()> {
-        for cid in self.cids().filter(|cid| spec.matches(*cid)) {
+    pub fn send_spec<T: Any + Send + Sync>(&mut self, spec: CIdSpec, msg: &T) -> io::Result<()> {
+        for cid in self
+            .cids()
+            .filter(|cid| spec.matches(*cid))
+            .collect::<Vec<_>>()
+        {
             self.send_to(cid, msg)?;
         }
         Ok(())
     }
 
-    /// Gets an iterator for the messages of type `T`.
+    /// Gets an iterator for the messages of type `M`.
     ///
-    /// Make sure to call [`recv_msgs()`](Self::recv_msgs) before calling this.
+    /// Make sure to call [`get_msgs()`](Self::get_msgs) before calling this.
     ///
     /// ### Panics
-    /// Panics if the type `T` was not registered.
+    /// Panics if the type `M` was not registered.
     /// For a non-panicking version, see [try_recv()](Self::try_recv).
-    pub fn recv<T: Any + Send + Sync>(&self) -> impl Iterator<Item = NetMsg<T>> {
-        let tid = TypeId::of::<T>();
-        if !self.parts.valid_tid(tid) {
-            panic!("Type ({}) not registered.", type_name::<T>());
-        }
-        let mid = self.parts.tid_map[&tid];
+    pub fn recv<M: Any + Send + Sync>(&self) -> impl Iterator<Item = NetMsg<M>> {
+        self.msg_table.check_type::<M>().expect(
+            "`recv` panics if generic type `M` is not registered in the MsgTable. \
+            For a non panicking version, use `try_recv`",
+        );
+        let tid = TypeId::of::<M>();
+        let m_type = self.msg_table.tid_map[&tid];
 
-        self.msg_buff[mid]
+        self.msg_buf[m_type]
             .iter()
-            .map(|m| m.to_typed::<T>().unwrap())
+            .map(|m| m.get_typed::<M>().unwrap())
     }
 
-    /// Gets an iterator for the messages of type `T`.
+    /// Gets an iterator for the messages of type `M`.
     ///
-    /// Make sure to call [`recv_msgs()`](Self::recv_msgs) before calling this.
+    /// Make sure to call [`get_msgs()`](Self::get_msgs) before calling this.
     ///
-    /// Returns `None` if the type `T` was not registered.
-    pub fn try_recv<T: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = NetMsg<T>>> {
-        let tid = TypeId::of::<T>();
-        let mid = *self.parts.tid_map.get(&tid)?;
+    /// Returns `None` if the type `M` was not registered.
+    pub fn try_recv<M: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = NetMsg<M>>> {
+        let tid = TypeId::of::<M>();
+        let m_type = *self.msg_table.tid_map.get(&tid)?;
 
         Some(
-            self.msg_buff[mid]
+            self.msg_buf[m_type]
                 .iter()
-                .map(|m| m.to_typed::<T>().unwrap()),
+                .map(|m| m.get_typed::<M>().unwrap()),
         )
     }
 
-    /// Gets an iterator for the messages of type `T` that have been received from [`CId`]s that
+    /// Gets an iterator for the messages of type `M` that have been received from [`CId`]s that
     /// match `spec`.
     ///
-    /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
+    /// Make sure to call [`get_msgs()`](Self::get_msgs)
     ///
     /// ### Panics
-    /// Panics if the type `T` was not registered.
+    /// Panics if the type `M` was not registered.
     /// For a non-panicking version, see [try_recv_spec()](Self::try_recv_spec).
-    pub fn recv_spec<T: Any + Send + Sync>(
+    pub fn recv_spec<M: Any + Send + Sync>(
         &self,
         spec: CIdSpec,
-    ) -> impl Iterator<Item = NetMsg<T>> + '_ {
-        let tid = TypeId::of::<T>();
-        if !self.parts.valid_tid(tid) {
-            panic!("Type ({}) not registered.", type_name::<T>());
-        }
-        let mid = self.parts.tid_map[&tid];
+    ) -> impl Iterator<Item = NetMsg<M>> + '_ {
+        self.msg_table.check_type::<M>().expect(
+            "`recv_spec` panics if generic type `M` is not registered in the MsgTable. \
+            For a non panicking version, use `try_recv_spec`",
+        );
+        let tid = TypeId::of::<M>();
+        let m_type = self.msg_table.tid_map[&tid];
 
-        self.msg_buff[mid]
+        self.msg_buf[m_type]
             .iter()
             .filter(move |net_msg| spec.matches(net_msg.cid))
-            .map(|net_msg| net_msg.to_typed().unwrap())
+            .map(|net_msg| net_msg.get_typed().unwrap())
     }
 
-    /// Gets an iterator for the messages of type `T` that have been received from [`CId`]s that
+    /// Gets an iterator for the messages of type `M` that have been received from [`CId`]s that
     /// match `spec`.
     ///
-    /// Make sure to call [`recv_msgs()`](Self::recv_msgs)
+    /// Make sure to call [`get_msgs()`](Self::get_msgs)
     ///
-    /// Returns `None` if the type `T` was not registered.
-    pub fn try_recv_spec<T: Any + Send + Sync>(
+    /// Returns `None` if the type `M` was not registered.
+    pub fn try_recv_spec<M: Any + Send + Sync>(
         &self,
         spec: CIdSpec,
-    ) -> Option<impl Iterator<Item = NetMsg<T>> + '_> {
-        let tid = TypeId::of::<T>();
-        let mid = *self.parts.tid_map.get(&tid)?;
+    ) -> Option<impl Iterator<Item = NetMsg<M>> + '_> {
+        let tid = TypeId::of::<M>();
+        let m_type = *self.msg_table.tid_map.get(&tid)?;
 
         Some(
-            self.msg_buff[mid]
+            self.msg_buf[m_type]
                 .iter()
                 .filter(move |net_msg| spec.matches(net_msg.cid))
-                .map(|net_msg| net_msg.to_typed().unwrap()),
+                .map(|net_msg| net_msg.get_typed().unwrap()),
         )
     }
 
-    /// Receives the messages from the connections. This should be done before calling `recv<T>()`.
-    ///
-    /// When done in a game loop, you should call `clear_msgs()`, then `recv_msgs()` before default
-    /// time. This will clear the messages between frames.
-    pub fn recv_msgs(&mut self) -> u32 {
-        let mut i = 0;
+    /// Receives the messages from the connections. This is called in `server.tick()`.
+    fn get_msgs(&mut self) -> u32 {
+        let mut count = 0;
 
-        // TCP
-        for cid in self.cids().collect::<Vec<_>>() {
-            loop {
-                let msg = self.recv_tcp(cid);
-                if self.handle_tcp_msg(&mut i, cid, msg) {
-                    // Done yielding messages.
-                    break;
-                }
-            }
-        }
-
-        // UDP
         loop {
-            let msg = self.recv_udp();
-            if self.handle_udp_msg(&mut i, msg) {
-                // Done yielding messages.
-                break;
-            }
-        }
-        i
-    }
-
-    /// Logic for handling a new `TCP` message.
-    ///
-    /// Increments `count` when it successfully got a message including a disconnect message.
-    ///
-    /// When getting an error, this will disconnect the peer. When getting a disconnection message,
-    /// this will add it to the disconnection que. Otherwise it adds it to the msg buffer.
-    ///
-    /// returns weather the tcp connection is done yielding messages.
-    fn handle_tcp_msg(
-        &mut self,
-        count: &mut u32,
-        cid: CId,
-        msg: io::Result<(MId, ErasedNetMsg)>,
-    ) -> bool {
-        match msg {
-            Err(e) if e.kind() == WouldBlock => true,
-            // Other error occurred.
-            Err(e) => {
-                error!(
-                    "TCP({}): IO error occurred while receiving data. {}",
-                    cid, e
-                );
-                self.disconnected.push_back((cid, Status::Dropped(e)));
-                true
-            }
-            // Got a message.
-            Ok((mid, net_msg)) => {
-                *count += 1;
-                if mid == DISCONNECT_TYPE_MID {
-                    debug!("Disconnecting peer {}", cid);
-                    self.disconnected
-                        .push_back((cid, Status::Disconnected(net_msg.msg)));
-                    return true;
+            match self.connection.recv_from() {
+                Err(e) if e.kind() == WouldBlock => break,
+                Err(e) => {
+                    error!("Error receiving data: {}", e);
                 }
-
-                self.msg_buff[mid].push(net_msg);
-                false
+                Ok((cid, header, msg)) => {
+                    // TODO: handle special message types here
+                    count += 1;
+                    self.msg_buf[header.m_type].push(ErasedNetMsg {
+                        cid,
+                        order_num: header.order_num,
+                        ack_num: header.sender_ack_num,
+                        msg,
+                    });
+                }
             }
         }
-    }
-
-    /// Logic for handling a new `UDP` message.
-    ///
-    /// Increments `count` when it successfully got a message
-    ///
-    /// When getting an error, this will log and ignore it. Otherwise it adds it to the msg buffer.
-    ///
-    /// returns weather the udp connection is done yielding messages.
-    fn handle_udp_msg(&mut self, count: &mut u32, msg: io::Result<(MId, ErasedNetMsg)>) -> bool {
-        match msg {
-            Err(e) if e.kind() == WouldBlock => true,
-            // Other error occurred.
-            Err(e) => {
-                error!("UDP: IO error occurred while receiving data. {}", e);
-                true
-            }
-            // Got a message.
-            Ok((mid, net_msg)) => {
-                *count += 1;
-                self.msg_buff[mid].push(net_msg);
-                false
-            }
-        }
+        count
     }
 
     /// Clears messages from the buffer.
-    pub fn clear_msgs(&mut self) {
-        for buff in self.msg_buff.iter_mut() {
+    fn clear_msgs(&mut self) {
+        for buff in self.msg_buf.iter_mut() {
             buff.clear();
         }
     }
 
+    /// This handles everything that the server needs to do each frame.
+    ///
+    /// This includes:
+    ///
+    ///  - Clearing the message buffer. This gets rid of all the messages from last frame.
+    ///  - (Re)sending messages that are needed for the reliability layer.
+    ///  - Getting the messages for this frame.
+    pub fn tick(&mut self) {
+        self.clear_msgs();
+        self.connection.send_ack_msgs();
+        self.connection.send_pings();
+        self.connection.resend_reliable();
+        self.get_msgs();
+    }
+
     /// Gets the address that the server is listening on.
-    pub fn listen_addr(&self) -> SocketAddr {
-        self.listener.local_addr().unwrap()
+    pub fn listen_addr(&self) -> io::Result<SocketAddr> {
+        self.connection.listen_addr()
     }
 
     /// An iterator of the [`CId`]s.
     pub fn cids(&self) -> impl Iterator<Item = CId> + '_ {
-        self.cid_addr.keys().copied()
+        self.connection.cids()
     }
 
-    /// Returns whether the connection of the given [`CId`] is alive.
-    pub fn alive(&self, cid: CId) -> bool {
-        self.cid_addr.contains_key(&cid)
+    /// Returns whether the connection of the given [`CId`] is connected.
+    pub fn cid_connected(&self, cid: CId) -> bool {
+        self.connection.cid_connected(cid)
     }
 
     /// Returns whether a message of type `tid` can be sent.
     pub fn valid_tid(&self, tid: TypeId) -> bool {
-        self.parts.valid_tid(tid)
+        self.msg_table.valid_tid(tid)
     }
 
     /// The number of active connections. To ensure an accurate count, it is best to call this
     /// after calling [`handle_disconnects()`](Self::handle_disconnects).
     pub fn connection_count(&self) -> usize {
-        self.cid_addr.len()
+        self.connection.connection_count()
     }
 
     /// Gets the address of the given [`CId`].
     pub fn addr_of(&self, cid: CId) -> Option<SocketAddr> {
-        self.cid_addr.get(&cid).copied()
+        self.connection.addr_of(cid)
     }
 
     /// Gets the address of the given [`CId`].
     pub fn cid_of(&self, addr: SocketAddr) -> Option<CId> {
-        self.addr_cid.get(&addr).copied()
+        self.connection.cid_of(addr)
     }
 
-    // Private:
-    fn new_cid(&mut self) -> CId {
-        self.current_cid += 1;
-        self.current_cid
+    /// Gets the estimated round trip time (RTT) of the connection
+    /// in microseconds (divide by 1000 for ms).
+    ///
+    /// Returns `None` iff `cid` is an invalid Connection ID.
+    pub fn rtt(&self, cid: CId) -> Option<u32> {
+        self.connection.rtt(cid)
     }
+}
 
-    /// Adds a `TCP` connection with the [`CId`] `cid`. The cid needs to be unique, generate one
-    /// with `new_cid()`.
-    fn add_tcp_con_cid(&mut self, cid: CId, con: TcpCon) {
-        let peer_addr = con.peer_addr().unwrap();
-        self.tcp.insert(cid, con);
-        self.addr_cid.insert(peer_addr, cid);
-        self.cid_addr.insert(cid, peer_addr);
-    }
-
-    /// Removes a `TCP` connection.
-    fn rm_tcp_con(&mut self, cid: CId) -> io::Result<()> {
-        self.tcp
-            .remove(&cid)
-            .ok_or_else(|| Error::new(InvalidData, "Invalid CId."))?;
-        let addr = self.cid_addr.remove(&cid).unwrap();
-        self.addr_cid.remove(&addr);
-        Ok(())
+impl Debug for Server {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Server")
+            .field("listen_addr", &self.listen_addr())
+            .field("connection_count", &self.connection_count())
+            .finish()
     }
 }

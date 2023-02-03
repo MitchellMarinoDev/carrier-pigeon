@@ -11,46 +11,43 @@
 //! they will be disconnected, and their message will
 //! not be broadcast to the other clients.
 
-use crate::shared::{Connection, Disconnect, Msg, Response, ADDR_LOCAL};
-use carrier_pigeon::net::{CIdSpec, Config};
-use carrier_pigeon::{MsgTable, Server, Transport};
-use log::LevelFilter;
-use simple_logger::SimpleLogger;
+use crate::shared::{Connection, Disconnect, Msg, Response, SERVER_ADDR_LOCAL};
+use carrier_pigeon::net::{CIdSpec, ServerConfig};
+use carrier_pigeon::{Guarantees, MsgTableBuilder, Server};
 use std::env;
 use std::time::Duration;
 
 mod shared;
 
 fn main() {
-    // Create a simple logger
-    SimpleLogger::new()
-        .with_level(LevelFilter::Debug)
-        .init()
-        .unwrap();
+    env_logger::init();
 
     let mut args = env::args().skip(1);
-    // Get the address from the command line args, or use loopback on port 7799.
-    let addr = args.next().unwrap_or(ADDR_LOCAL.to_owned());
+    // Get the address from the command line args, or use loopback on port 7777.
+    let listen = args
+        .next()
+        .unwrap_or(SERVER_ADDR_LOCAL.to_owned())
+        .parse()
+        .expect("failed to parse the first arg as a SocketAddr");
 
     // Create the message table.
     // This should be the same on the client and server.
-    let mut table = MsgTable::new();
-    table.register::<Msg>(Transport::UDP).unwrap();
+    let mut builder = MsgTableBuilder::new();
+    builder
+        .register_ordered::<Msg>(Guarantees::Unreliable)
+        .unwrap();
 
-    let parts = table.build::<Connection, Response, Disconnect>().unwrap();
+    let table = builder.build::<Connection, Response, Disconnect>().unwrap();
 
     // Start the server.
-    let mut server = Server::new(addr, parts, Config::default()).expect("Failed to create server.");
+    let mut server =
+        Server::new(listen, table, ServerConfig::default()).expect("Failed to create server.");
 
     let blacklisted_users = vec!["john", "jane"];
 
     // This represents the game loop in your favorite game engine.
     loop {
-        // These 2 methods should generally be called at the start of every frame.
-        // This clears the message buffer so that messages from last frame are not carried over.
-        server.clear_msgs();
-        // Then get the new messages that came in since the last call to this function.
-        server.recv_msgs();
+        server.tick();
 
         // This should be called every once in a while to clean up so that the
         // server doesn't send messages to disconnected clients.
@@ -59,7 +56,7 @@ fn main() {
         });
 
         // This handles the new connections with whatever logic you want.
-        server.handle_new_cons(|_cid, con_msg: Connection| {
+        server.handle_new_cons(|_cid, _addr, con_msg: Connection| {
             // You can capture variables from the context to decide if you want
             // to accept or reject the connection request.
             let blacklisted = blacklisted_users.contains(&&*con_msg.user.to_lowercase());
@@ -75,6 +72,7 @@ fn main() {
 
         let mut cids_to_disconnect = vec![];
 
+        let mut msgs = vec![];
         for msg in server.recv::<Msg>() {
             println!(
                 "Client {} sent message: {}: \"{}\"",
@@ -88,7 +86,10 @@ fn main() {
             }
 
             // Broadcast the message to all other clients.
-            server.send_spec(CIdSpec::Except(msg.cid), msg.m).unwrap();
+            msgs.push((msg.cid, msg.m.clone()));
+        }
+        for (cid, msg) in msgs {
+            server.send_spec(CIdSpec::Except(cid), &msg).unwrap();
         }
 
         for cid in cids_to_disconnect {

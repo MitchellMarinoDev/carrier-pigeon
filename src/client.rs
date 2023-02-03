@@ -1,17 +1,16 @@
-use crate::message_table::{MsgTableParts, DISCONNECT_TYPE_MID, RESPONSE_TYPE_MID};
-use crate::net::{Config, ErasedNetMsg, NetMsg, Status, Transport};
-use crate::tcp::TcpCon;
-use crate::udp::UdpCon;
-use crate::MId;
+use crate::connection::client_connection::ClientConnection;
+use crate::message_table::{MsgTable, CONNECTION_M_TYPE, DISCONNECT_M_TYPE, RESPONSE_M_TYPE};
+use crate::net::{ClientConfig, ErasedNetMsg, NetMsg, Status};
+use crate::transport::client_std_udp::UdpClientTransport;
 use crossbeam_channel::internal::SelectHandle;
 use crossbeam_channel::Receiver;
 use log::{debug, error, trace};
-use std::any::{type_name, Any, TypeId};
+use std::any::{Any, TypeId};
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::ErrorKind::InvalidData;
 use std::io::{Error, ErrorKind};
-use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+use std::net::SocketAddr;
 
 /// A Client connection.
 ///
@@ -21,21 +20,20 @@ use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct Client {
     /// The configuration of the client.
-    config: Config,
+    config: ClientConfig,
     /// The status of the client. Whether it is connected/disconnected etc.
     status: Status,
     /// The received message buffer.
     ///
-    /// Each [`MId`] has its own vector.
+    /// Each [`MType`](crate::MType) has its own vector.
     msg_buff: Vec<Vec<ErasedNetMsg>>,
 
-    /// The TCP connection for this client.
-    tcp: TcpCon,
+    // TODO: make this generic/behind a feature flag somehow.
     /// The UDP connection for this client.
-    udp: UdpCon,
+    connection: ClientConnection<UdpClientTransport>,
 
-    /// The [`MsgTableParts`] to use for sending messages.
-    parts: MsgTableParts,
+    /// The [`MsgTable`] to use for sending messages.
+    msg_table: MsgTable,
 }
 
 impl Client {
@@ -45,59 +43,54 @@ impl Client {
     /// This [`PendingClient`] allows you to wait for the client to send the connection
     /// message, and for the server to send back the response message.
     #[allow(clippy::new_ret_no_self)]
-    pub fn new<C: Any + Send + Sync, A: ToSocketAddrs + Send + 'static>(
-        peer: A,
-        parts: MsgTableParts,
-        config: Config,
+    pub fn new<C: Any + Send + Sync>(
+        local: SocketAddr,
+        peer: SocketAddr,
+        msg_table: MsgTable,
+        config: ClientConfig,
         con_msg: C,
     ) -> PendingClient {
         let (client_tx, client_rx) = crossbeam_channel::bounded(1);
 
         std::thread::spawn(move || {
-            client_tx.send(Self::new_blocking(peer, parts, config, con_msg))
+            client_tx.send(Self::new_blocking(local, peer, msg_table, config, con_msg))
         });
 
         PendingClient { channel: client_rx }
     }
 
     /// Creates a new [`Client`] by blocking.
-    fn new_blocking<C: Any + Send + Sync, A: ToSocketAddrs>(
-        peer: A,
-        parts: MsgTableParts,
-        config: Config,
+    fn new_blocking<C: Any + Send + Sync>(
+        local: SocketAddr,
+        peer: SocketAddr,
+        msg_table: MsgTable,
+        config: ClientConfig,
         con_msg: C,
     ) -> io::Result<(Self, Box<dyn Any + Send + Sync>)> {
-        debug!("Attempting to create a client connection.");
-        // TCP & UDP Connections.
-        let tcp = TcpStream::connect(peer)?;
-        tcp.set_read_timeout(Some(config.timeout))?;
-        let tcp = TcpCon::from_stream(tcp, config.max_msg_size);
-        let local_addr = tcp.local_addr().unwrap();
-        let peer = tcp.peer_addr().unwrap();
-        trace!(
-            "TcpStream established from {} to {}",
-            local_addr,
-            tcp.peer_addr().unwrap()
-        );
-        let udp = UdpCon::new(local_addr, Some(peer), config.max_msg_size)?;
-        trace!(
-            "UdpSocket connected from {} to {}",
-            udp.local_addr().unwrap(),
-            udp.peer_addr().unwrap()
-        );
+        // verify that `con_msg` is the correct type.
+        let tid = TypeId::of::<C>();
+        let con_msg_m_type = msg_table.tid_map.get(&tid);
+        match con_msg_m_type {
+            Some(&CONNECTION_M_TYPE) => Ok(()),
+            _ => Err(Error::new(
+                InvalidData,
+                "the type of `con_msg` passed into `Client::new` or `Client::new_blocking` \
+                    should match the first type parameter of the `MsgTable::build` function."
+                    .to_string(),
+            )),
+        }?;
 
-        let mut msg_buff = Vec::with_capacity(parts.mid_count());
-        for _ in 0..parts.mid_count() {
-            msg_buff.push(vec![]);
-        }
+        debug!("Attempting to create a client connection");
+        let connection = ClientConnection::new(msg_table.clone(), local, peer)?;
+
+        let msg_buff = (0..msg_table.mtype_count()).map(|_| vec![]).collect();
 
         let mut client = Client {
             config,
             status: Status::Connected,
             msg_buff,
-            tcp,
-            udp,
-            parts,
+            connection,
+            msg_table,
         };
 
         // Send connection message
@@ -105,100 +98,44 @@ impl Client {
         trace!("Client connection message sent. Awaiting response...");
 
         // Get response message.
-        let (mid, net_msg) = client.recv_tcp()?;
+        let (header, response_msg) = client.connection.recv_blocking()?;
         trace!("Got response message from the server.");
 
-        if mid != RESPONSE_TYPE_MID {
-            let msg = format!(
-                "Client: First received message was MId: {} not MId: {} (Response message)",
-                mid, RESPONSE_TYPE_MID
-            );
-            return Err(Error::new(ErrorKind::InvalidData, msg));
+        if header.m_type != RESPONSE_M_TYPE {
+            return Err(io::Error::new(
+                InvalidData,
+                format!(
+                    "Client: First received message was MType: {} not MType: {} (Response message)",
+                    header.m_type, RESPONSE_M_TYPE
+                ),
+            ));
         }
 
         debug!(
             "New Client created at {}, to {}.",
-            client.tcp.local_addr().unwrap(),
-            client.tcp.peer_addr().unwrap(),
+            client
+                .connection
+                .local_addr()
+                .map(|addr| addr.to_string())
+                .unwrap_or("UNKNOWN".to_owned()),
+            client
+                .connection
+                .peer_addr()
+                .map(|addr| addr.to_string())
+                .unwrap_or("UNKNOWN".to_owned()),
         );
 
-        client.tcp.set_nonblocking(true)?;
-        client.udp.set_nonblocking(true)?;
-
-        Ok((client, net_msg.msg))
+        Ok((client, response_msg))
     }
 
-    /// A function that encapsulates the sending logic for the TCP transport.
-    fn send_tcp(&self, mid: MId, payload: &[u8]) -> io::Result<()> {
-        self.tcp.send(mid, payload)
-    }
-
-    /// A function that encapsulates the sending logic for the UDP transport.
-    fn send_udp(&self, mid: MId, payload: &[u8]) -> io::Result<()> {
-        self.udp.send(mid, payload)
-    }
-
-    /// A function that encapsulates the receiving logic for the TCP transport.
-    ///
-    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
-    /// no more messages can be yielded without blocking. [`InvalidData`] likely means
-    /// carrier-pigeon got bad data.
-    fn recv_tcp(&mut self) -> io::Result<(MId, ErasedNetMsg)> {
-        let (mid, bytes) = self.tcp.recv()?;
-
-        if !self.parts.valid_mid(mid) {
-            let e_msg = format!(
-                "TCP: Got a message specifying MId {}, but the maximum MId is {}.",
-                mid,
-                self.parts.mid_count()
-            );
-            return Err(Error::new(ErrorKind::InvalidData, e_msg));
-        }
-
-        let deser_fn = self.parts.deser[mid];
-        let msg = deser_fn(bytes)?;
-
-        let net_msg = ErasedNetMsg {
-            cid: 0,
-            time: None,
-            msg,
-        };
-
-        Ok((mid, net_msg))
-    }
-
-    /// A function that encapsulates the receiving logic for the UDP transport.
-    ///
-    /// Any errors in receiving are returned. An error of type [`WouldBlock`] means
-    /// no more messages can be yielded without blocking. [`InvalidData`] likely means
-    /// carrier-pigeon got bad data.
-    fn recv_udp(&mut self) -> io::Result<(MId, ErasedNetMsg)> {
-        let (mid, time, bytes) = self.udp.recv()?;
-
-        if !self.parts.valid_mid(mid) {
-            let e_msg = format!(
-                "TCP: Got a message specifying MId {}, but the maximum MId is {}.",
-                mid,
-                self.parts.mid_count()
-            );
-            return Err(Error::new(ErrorKind::InvalidData, e_msg));
-        }
-
-        let deser_fn = self.parts.deser[mid];
-        let msg = deser_fn(bytes)?;
-
-        let net_msg = ErasedNetMsg {
-            cid: 0,
-            time: Some(time),
-            msg,
-        };
-
-        Ok((mid, net_msg))
-    }
-
-    /// Gets the config of the client.
-    pub fn config(&self) -> &Config {
+    /// Gets the [`NetConfig`] of the client.
+    pub fn config(&self) -> &ClientConfig {
         &self.config
+    }
+
+    /// Gets the [`MsgTable`] of the client.
+    pub fn msg_table(&self) -> &MsgTable {
+        &self.msg_table
     }
 
     /// Disconnects from the server. You should call this
@@ -207,13 +144,17 @@ impl Client {
     /// give a reason for the disconnect.
     pub fn disconnect<D: Any + Send + Sync>(&mut self, discon_msg: &D) -> io::Result<()> {
         let tid = TypeId::of::<D>();
-        if self.parts.tid_map[&tid] != DISCONNECT_TYPE_MID {
-            return Err(Error::new(InvalidData, "The generic parameter `D` must be the disconnection message type (the same `D` that you passed into `MsgTable::build`)."));
+        if self.msg_table.tid_map[&tid] != DISCONNECT_M_TYPE {
+            return Err(Error::new(
+                InvalidData,
+                "The `discon_msg` type must be the disconnection message type \
+                (the same `D` that you passed into `MsgTable::build`).",
+            ));
         }
         debug!("Disconnecting client.");
         self.send(discon_msg)?;
-        self.tcp.close()?;
-        // No shutdown method on udp.
+        // TODO: start to close the udp connection.
+        //       It needs to stay open long enough to reliably send the disconnection message.
         self.status = Status::Closed;
         Ok(())
     }
@@ -231,39 +172,24 @@ impl Client {
     /// Sends a message to the peer.
     ///
     /// `T` must be registered in the [`MsgTable`].
-    pub fn send<T: Any + Send + Sync>(&self, msg: &T) -> io::Result<()> {
-        let tid = TypeId::of::<T>();
-        if !self.parts.valid_tid(tid) {
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                "Type not registered.",
-            ));
-        }
-        let mid = self.parts.tid_map[&tid];
-        let transport = self.parts.transports[mid];
-        let ser_fn = self.parts.ser[mid];
-        let b = ser_fn(msg)
-            .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Serialization Error."))?;
-
-        match transport {
-            Transport::TCP => self.send_tcp(mid, &b),
-            Transport::UDP => self.send_udp(mid, &b),
-        }
+    pub fn send<T: Any + Send + Sync>(&mut self, msg: &T) -> io::Result<()> {
+        self.connection.send(msg)
     }
 
     /// Gets an iterator for the messages of type `T`.
     ///
     /// ### Panics
     /// Panics if the type `T` was not registered.
-    /// For a non-panicking version, see [try_recv()](Self::try_recv).
+    /// For a non-panicking version, see [try_get_msgs()](Self::try_get_msgs).
     pub fn recv<T: Any + Send + Sync>(&self) -> impl Iterator<Item = NetMsg<T>> + '_ {
+        self.msg_table.check_type::<T>().expect(
+            "`get_msgs` panics if generic type `T` is not registered in the MsgTable. \
+            For a non panicking version, use `try_get_msgs`",
+        );
         let tid = TypeId::of::<T>();
-        if !self.parts.valid_tid(tid) {
-            panic!("Type ({}) not registered.", type_name::<T>());
-        }
-        let mid = self.parts.tid_map[&tid];
+        let m_type = self.msg_table.tid_map[&tid];
 
-        self.msg_buff[mid].iter().map(|m| m.to_typed().unwrap())
+        self.msg_buff[m_type].iter().map(|m| m.get_typed().unwrap())
     }
 
     /// Gets an iterator for the messages of type `T`.
@@ -271,64 +197,56 @@ impl Client {
     /// Returns `None` if the type `T` was not registered.
     pub fn try_recv<T: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = NetMsg<T>> + '_> {
         let tid = TypeId::of::<T>();
-        let mid = *self.parts.tid_map.get(&tid)?;
+        let m_type = *self.msg_table.tid_map.get(&tid)?;
 
-        Some(self.msg_buff[mid].iter().map(|m| m.to_typed().unwrap()))
+        Some(self.msg_buff[m_type].iter().map(|m| m.get_typed().unwrap()))
+    }
+
+    /// This handles everything that the client needs to do each frame.
+    ///
+    /// This includes:
+    ///
+    ///  - Clearing the message buffer. This gets rid of all the messages from last frame.
+    ///  - (Re)sending messages that are needed for the reliability layer.
+    ///  - Getting the messages for this frame.
+    pub fn tick(&mut self) {
+        self.clear_msgs();
+        self.connection.send_ack_msg();
+        self.connection.send_ping();
+        self.connection.resend_reliable();
+        self.get_msgs();
     }
 
     /// Receives the messages from the connections.
     /// This should be done before calling `recv<T>()`.
     ///
-    /// When done in a game loop, you should call `clear_msgs()`, then `recv_msgs()`
+    /// When done in a game loop, you should call `clear_msgs()`, then `get_msgs()`
     /// before default time. This will clear the messages between frames.
-    pub fn recv_msgs(&mut self) -> u32 {
+    fn get_msgs(&mut self) -> u32 {
         let mut i = 0;
 
-        // TCP
         loop {
             if !self.status.connected() {
                 break;
             }
 
-            let recv = self.recv_tcp();
+            let recv = self.connection.recv();
             match recv {
                 // No more data.
                 Err(e) if e.kind() == ErrorKind::WouldBlock => break,
                 // IO Error occurred.
                 Err(e) => {
-                    error!("TCP: IO error occurred while receiving data. {}", e);
-                    self.status = Status::Dropped(e);
+                    error!("Error receiving data: {}", e);
                 }
                 // Successfully got a message.
-                Ok((mid, net_msg)) => {
+                Ok((header, msg)) => {
                     i += 1;
-                    if mid == DISCONNECT_TYPE_MID {
-                        self.status = Status::Disconnected(net_msg.msg);
-                    } else {
-                        self.msg_buff[mid].push(net_msg);
-                    }
-                }
-            }
-        }
-
-        // UDP
-        loop {
-            if !self.status.connected() {
-                break;
-            }
-
-            let recv = self.recv_udp();
-            match recv {
-                // No more data.
-                Err(e) if e.kind() == ErrorKind::WouldBlock => break,
-                // IO Error occurred.
-                Err(e) => {
-                    error!("UDP: IO error occurred while receiving data. {}", e);
-                }
-                // Successfully got a message.
-                Ok((mid, net_msg)) => {
-                    i += 1;
-                    self.msg_buff[mid].push(net_msg);
+                    self.msg_buff[header.m_type].push(ErasedNetMsg::new(
+                        0,
+                        header.sender_ack_num,
+                        header.order_num,
+                        msg,
+                    ));
                 }
             }
         }
@@ -337,7 +255,7 @@ impl Client {
     }
 
     /// Clears messages from the buffer.
-    pub fn clear_msgs(&mut self) {
+    fn clear_msgs(&mut self) {
         for buff in self.msg_buff.iter_mut() {
             buff.clear();
         }
@@ -345,12 +263,20 @@ impl Client {
 
     /// Gets the local address.
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.tcp.local_addr()
+        self.connection.local_addr()
     }
 
     /// Gets the address of the peer.
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
-        self.tcp.peer_addr()
+        self.connection.peer_addr()
+    }
+
+    /// Gets the estimated round trip time (RTT) of the connection
+    /// in microseconds (divide by 1000 for ms).
+    ///
+    /// Returns `None` iff `cid` is an invalid Connection ID.
+    pub fn rtt(&self) -> u32 {
+        self.connection.rtt()
     }
 }
 
@@ -359,7 +285,7 @@ impl Debug for Client {
         f.debug_struct("Client")
             .field("status", self.status())
             .field("local", &self.local_addr())
-            .field("peer", &self.peer_addr())
+            .field("peer_addr", &self.peer_addr())
             .finish()
     }
 }

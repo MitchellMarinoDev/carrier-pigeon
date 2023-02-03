@@ -1,40 +1,142 @@
 //! Networking things that are not specific to either transport.
 
-pub use crate::header::TcpHeader;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::Error;
 use std::ops::Deref;
-use std::time::Duration;
 
 /// The maximum safe message size that can be sent on udp,
 /// after taking off the possible overheads from the transport.
 ///
-/// The data must be `MAX_SAFE_MESSAGE_SIZE` or less to be guaranteed to
+/// The data must be [`MAX_SAFE_MESSAGE_SIZE`] or less to be guaranteed to
 /// be deliverable on udp.
 /// [source](https://newbedev.com/what-is-the-largest-safe-udp-packet-size-on-the-internet/)
-pub const MAX_SAFE_MESSAGE_SIZE: usize = 504;
+pub const MAX_SAFE_MESSAGE_SIZE: usize = 508;
 
-/// An enum representing the 2 possible transports.
+/// The absolute maximum size that udp supports.
 ///
-/// - TCP is reliable but slower.
-/// - UDP is unreliable but quicker.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Transport {
-    TCP,
-    UDP,
+/// The data must be less than [`MAX_MESSAGE_SIZE`] or it will be dropped.
+pub const MAX_MESSAGE_SIZE: usize = 65507;
+
+/// The size of carrier-pigeon's header.
+pub const HEADER_SIZE: usize = 12;
+
+/// A header to be sent before the message contents of a message.
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
+pub struct MsgHeader {
+    /// The message type of this message.
+    pub m_type: MType,
+    /// An incrementing integer specific to this `m_type`. This allows us to order messages
+    /// on arrival.
+    pub order_num: OrderNum,
+    /// The [`AckNumber`] of this outgoing message.
+    pub sender_ack_num: AckNum,
+    /// The header also contains a place to acknowledge the previously received messages that were
+    /// from the destination of this message.
+    ///
+    /// This number is a offset for the `ack_bits`. Read `acknowledgements.md` and look at
+    /// [AckSystem](crate::connection::ack_system::AckSystem) for more.
+    pub receiver_acking_offset: AckNum,
+    /// 32 bits representing weather the 32 ack numbers before the `receiver_acking_num` are acked.
+    ///
+    /// This allows us to acknowledge up to 32 messages at once.
+    ///
+    /// For example, with an `receiver_acking_num` of 32
+    pub ack_bits: u32,
+}
+
+impl MsgHeader {
+    /// Creates a [`MsgHeader`] with the given [`MType`], `ack_number` and `order_num`.
+    pub fn new(
+        m_type: MType,
+        order_num: OrderNum,
+        sender_ack_num: AckNum,
+        receiver_acking_num: AckNum,
+        ack_bits: u32,
+    ) -> Self {
+        MsgHeader {
+            m_type,
+            order_num,
+            sender_ack_num,
+            receiver_acking_offset: receiver_acking_num,
+            ack_bits,
+        }
+    }
+
+    /// Converts the [`MsgHeader`] to big endian bytes to be sent over the internet.
+    pub fn to_be_bytes(&self) -> [u8; HEADER_SIZE] {
+        let m_type_b = (self.m_type as u16).to_be_bytes();
+        let order_num_b = self.order_num.to_be_bytes();
+        let sender_ack_num_b = self.sender_ack_num.to_be_bytes();
+        let receiver_acking_num_b = self.receiver_acking_offset.to_be_bytes();
+        let ack_bits_b = self.ack_bits.to_be_bytes();
+        debug_assert_eq!(m_type_b.len(), 2);
+        debug_assert_eq!(order_num_b.len(), 2);
+        debug_assert_eq!(sender_ack_num_b.len(), 2);
+        debug_assert_eq!(receiver_acking_num_b.len(), 2);
+        debug_assert_eq!(ack_bits_b.len(), 4);
+        debug_assert_eq!(
+            m_type_b.len()
+                + order_num_b.len()
+                + sender_ack_num_b.len()
+                + receiver_acking_num_b.len()
+                + ack_bits_b.len(),
+            HEADER_SIZE
+        );
+
+        [
+            m_type_b[0],
+            m_type_b[1],
+            order_num_b[0],
+            order_num_b[1],
+            sender_ack_num_b[0],
+            sender_ack_num_b[1],
+            receiver_acking_num_b[0],
+            receiver_acking_num_b[1],
+            ack_bits_b[0],
+            ack_bits_b[1],
+            ack_bits_b[2],
+            ack_bits_b[3],
+        ]
+    }
+
+    /// Converts the big endian bytes back into a [`MsgHeader`].
+    ///
+    /// You **must** pass in a slice that is [`HEADER_LEN`] long.
+    pub fn from_be_bytes(bytes: &[u8]) -> Self {
+        assert_eq!(
+            bytes.len(),
+            HEADER_SIZE,
+            "The length of the buffer passed into `from_be_bytes` should have a length of {}",
+            HEADER_SIZE
+        );
+
+        let m_type = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
+        let order_num = u16::from_be_bytes(bytes[2..4].try_into().unwrap());
+        let sender_ack_num = u16::from_be_bytes(bytes[4..6].try_into().unwrap());
+        let receiver_acking_num = u16::from_be_bytes(bytes[6..8].try_into().unwrap());
+        let ack_bits = u32::from_be_bytes(bytes[8..12].try_into().unwrap());
+
+        MsgHeader {
+            m_type,
+            order_num,
+            sender_ack_num,
+            receiver_acking_offset: receiver_acking_num,
+            ack_bits,
+        }
+    }
 }
 
 /// The function used to deserialize a message.
 ///
-/// fn(&[u8]) -> Result<Box<dyn Any + Send + Sync>, io::Error>
-pub type DeserFn = fn(&[u8]) -> Result<Box<dyn Any + Send + Sync>, io::Error>;
+/// fn(&[[u8]]) -> [`io::Result`]<[`Box`]<dyn [`Any`] + [`Send`] + [`Sync`]>>
+pub type DeserFn = fn(&[u8]) -> io::Result<Box<dyn Any + Send + Sync>>;
 /// The function used to serialize a message.
 ///
-/// fn(&(dyn Any + Send + Sync)) -> Result<Vec<u8>, io::Error>
-pub type SerFn = fn(&(dyn Any + Send + Sync)) -> Result<Vec<u8>, io::Error>;
+/// fn(&(dyn [`Any`] + [`Send`] + [`Sync`]), &mut [`Vec`]<[`u8`]>) -> [`io::Result`]<()>
+pub type SerFn = fn(&(dyn Any + Send + Sync), &mut Vec<u8>) -> io::Result<()>;
 
 #[derive(Debug)]
 /// An enum for the possible states of a connection.
@@ -100,11 +202,30 @@ impl Status {
     }
 }
 
-/// Message ID.
-pub type MId = usize;
+/// Message Type.
+///
+/// This is an integer unique to each type of message.
+pub type MType = usize;
 
 /// Connection ID.
+///
+/// This is an integer incremented for every connection made to the server, so connections can
+/// be uniquely identified.
 pub type CId = u32;
+
+/// Acknowledgement Number.
+///
+/// This is an integer incremented for every message sent, so messages can be uniquely identified.
+/// This is used as a way to acknowledge reliable messages.
+// TODO: this might need to be a wrapper type, as the comparing logic should consider wrapping
+pub type AckNum = u16;
+
+/// Ordering Number.
+///
+/// This is an integer specific to each [`MType`], incremented for every message sent,
+/// This is so we can order the messages as they come in.
+// TODO: this might need to be a wrapper type, as the comparing logic should consider wrapping
+pub type OrderNum = u16;
 
 /// A way to specify the valid [`CId`]s for an operation.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
@@ -149,42 +270,25 @@ impl CIdSpec {
     }
 }
 
-/// Configuration for a client or server.
-///
-/// This needs to be defined before starting up the server.
-///
-/// Contains all configurable information about the server.
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
-pub struct Config {
-    /// The timeout for handling new connections. The time to wait for a connection message
-    /// after establishing a tcp connection.
-    pub timeout: Duration,
-    /// The maximum number of connections that this can handle at the same time.
-    pub max_con_handle: usize,
-    /// The maximum message size in bytes. This is used for sizing the buffer for TCP and UDP.
-    /// Any attempts to send messages over this size will be discarded. Keep in mind, there is
-    /// still a soft limit for UDP messages (`MAX_SAFE_MSG_SIZE`)
-    pub max_msg_size: usize,
-}
+/// Configuration for a client.
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize, Default)]
+pub struct ClientConfig {}
 
-impl Config {
-    /// Creates a new Server configuration.
-    pub fn new(timeout: Duration, max_con_handle: usize, max_msg_size: usize) -> Self {
-        Config {
-            timeout,
-            max_con_handle,
-            max_msg_size,
-        }
+impl ClientConfig {
+    /// Creates a new client configuration.
+    pub fn new() -> Self {
+        ClientConfig {}
     }
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            timeout: Duration::from_millis(5_000),
-            max_con_handle: 4,
-            max_msg_size: 2048,
-        }
+/// Configuration for a server.
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize, Default)]
+pub struct ServerConfig {}
+
+impl ServerConfig {
+    /// Creates a new server configuration.
+    pub fn new() -> Self {
+        ServerConfig {}
     }
 }
 
@@ -192,22 +296,45 @@ impl Default for Config {
 #[derive(Debug)]
 pub(crate) struct ErasedNetMsg {
     /// The [`CId`] that the message was sent from.
-    pub(crate) cid: CId,
-    /// The timestamp that the message was sent in unix millis.
+    pub cid: CId,
+    /// The acknowledgment number. This is an incrementing integer assigned by the sender for every
+    /// message.
     ///
-    /// This is always `Some` if the message was sent with UDP, and always `None` if sent with TCP.
-    pub(crate) time: Option<u32>,
+    /// This is not necessarily guaranteed to be unique as wrapping can happen after a lot of
+    /// messages.
+    pub ack_num: AckNum,
+    /// The ordering number. This is an incrementing integer assigned by the sender, on a
+    /// per-[`MType`] basis.
+    ///
+    /// This is not necessarily guaranteed to be unique as wrapping can happen after a lot of
+    /// messages.
+    pub order_num: OrderNum,
     /// The actual message.
-    pub(crate) msg: Box<dyn Any + Send + Sync>,
+    pub msg: Box<dyn Any + Send + Sync>,
 }
 
 impl ErasedNetMsg {
+    pub(crate) fn new(
+        cid: CId,
+        ack_num: AckNum,
+        order_num: OrderNum,
+        msg: Box<dyn Any + Send + Sync>,
+    ) -> Self {
+        Self {
+            cid,
+            ack_num,
+            order_num,
+            msg,
+        }
+    }
+
     /// Converts this to NetMsg, borrowed from this.
-    pub(crate) fn to_typed<T: Any + Send + Sync>(&self) -> Option<NetMsg<T>> {
+    pub(crate) fn get_typed<T: Any + Send + Sync>(&self) -> Option<NetMsg<T>> {
         let msg = self.msg.downcast_ref()?;
         Some(NetMsg {
             cid: self.cid,
-            time: self.time,
+            ack_num: self.ack_num,
+            order_num: self.order_num,
             m: msg,
         })
     }
@@ -218,10 +345,18 @@ impl ErasedNetMsg {
 pub struct NetMsg<'n, T: Any + Send + Sync> {
     /// The [`CId`] that the message was sent from.
     pub cid: CId,
-    /// The timestamp that the message was sent in unix millis.
+    /// The acknowledgment number. This is an incrementing integer assigned by the sender for every
+    /// message.
     ///
-    /// This is always `Some` if the message was sent with UDP, and always `None` if sent with TCP.
-    pub time: Option<u32>,
+    /// This is not necessarily guaranteed to be unique as wrapping can happen after a lot of
+    /// messages.
+    pub ack_num: AckNum,
+    /// The ordering number. This is an incrementing integer assigned by the sender, on a
+    /// per-[`MType`] basis.
+    ///
+    /// This is not necessarily guaranteed to be unique as wrapping can happen after a lot of
+    /// messages.
+    pub order_num: OrderNum,
     /// The actual message.
     ///
     /// Borrowed from the client or server.

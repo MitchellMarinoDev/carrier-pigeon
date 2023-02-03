@@ -13,11 +13,9 @@
 //! You may request the server to disconnect you by writing
 //! `disconnect-me`.
 
-use crate::shared::{Connection, Disconnect, Msg, Response, ADDR_LOCAL};
-use carrier_pigeon::net::Config;
-use carrier_pigeon::{Client, MsgTable, Transport};
-use log::LevelFilter;
-use simple_logger::SimpleLogger;
+use crate::shared::{Connection, Disconnect, Msg, Response, CLIENT_ADDR_LOCAL, SERVER_ADDR_LOCAL};
+use carrier_pigeon::net::ClientConfig;
+use carrier_pigeon::{Client, Guarantees, MsgTableBuilder};
 use std::io::stdin;
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::time::Duration;
@@ -26,30 +24,37 @@ use std::{env, thread};
 mod shared;
 
 fn main() {
-    // Create a simple logger
-    SimpleLogger::new()
-        .with_level(LevelFilter::Debug)
-        .init()
-        .unwrap();
+    env_logger::init();
 
     let mut args = env::args().skip(1);
-    // Get the address from the command line args, or use loopback on port 7799.
-    let addr = args.next().unwrap_or(ADDR_LOCAL.to_owned());
+    // Get the address from the command line args, or use loopback on port 7777.
+    let local = args
+        .next()
+        .unwrap_or(CLIENT_ADDR_LOCAL.to_owned())
+        .parse()
+        .expect("failed to parse the first arg as a SocketAddr");
+    let peer = args
+        .next()
+        .unwrap_or(SERVER_ADDR_LOCAL.to_owned())
+        .parse()
+        .expect("failed to parse the second arg as a SocketAddr");
 
     let username = args.next().unwrap_or("MyUser".to_owned());
 
     // Create the message table.
     // This should be the same on the client and server.
-    let mut table = MsgTable::new();
-    table.register::<Msg>(Transport::UDP).unwrap();
-    let parts = table.build::<Connection, Response, Disconnect>().unwrap();
+    let mut builder = MsgTableBuilder::new();
+    builder
+        .register_ordered::<Msg>(Guarantees::Unreliable)
+        .unwrap();
+    let table = builder.build::<Connection, Response, Disconnect>().unwrap();
 
     let con_msg = Connection {
         user: username.clone(),
     };
 
     // Start the connection to the server.
-    let client = Client::new(addr, parts, Config::default(), con_msg);
+    let client = Client::new(local, peer, table, ClientConfig::default(), con_msg);
 
     // Block until the connection is made.
     let (mut client, resp) = client.block().expect("Failed to connect to server.");
@@ -74,10 +79,7 @@ fn main() {
         // They should also be called before default time so that all other systems get called
         // with the updated messages.
 
-        // This clears the message buffer so that messages from last frame are not carried over.
-        client.clear_msgs();
-        // Then get the new messages that came in since the last call to this function.
-        client.recv_msgs();
+        client.tick();
 
         // Get messages from the console, and send it to the server.
         while let Ok(text) = receiver.try_recv() {
@@ -113,7 +115,7 @@ fn main() {
         }
 
         // approx 60 Hz
-        std::thread::sleep(Duration::from_millis(16));
+        thread::sleep(Duration::from_millis(16));
     }
 }
 
