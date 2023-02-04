@@ -41,7 +41,13 @@ impl Server {
         config: ServerConfig,
     ) -> io::Result<Self> {
         let connection = ServerConnection::new(msg_table.clone(), listen_addr)?;
-        debug!("Creating server listening on {}", connection.listen_addr().map(|addr| addr.to_string()).unwrap_or("UNKNOWN".into()));
+        debug!(
+            "Creating server listening on {}",
+            connection
+                .listen_addr()
+                .map(|addr| addr.to_string())
+                .unwrap_or("UNKNOWN".into())
+        );
 
         let m_type_count = msg_table.tid_map.len();
         let msg_buf = (0..m_type_count).map(|_| vec![]).collect();

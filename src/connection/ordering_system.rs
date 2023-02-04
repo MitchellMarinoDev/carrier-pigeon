@@ -7,9 +7,9 @@ use std::collections::{HashMap, VecDeque};
 ///
 /// This buffers messages and orders them according to their [`Guarantees`].
 ///
-/// Generic parameter `RD` is "Receive Data". It should be the data that you get from the transport
-/// other than the header. Since this differs between client and server (server needs to keep track
-/// of a from address), it is made a generic parameter.
+/// Generic parameter `RD` is for "Receive Data". It should be the data that you get from the
+/// transport other than the header. Since this differs between client and server
+/// (server needs to keep track of a from address), it is made a generic parameter.
 pub(crate) struct OrderingSystem<RD> {
     /// Counters for the [`OrderNum`]s of outgoing messages.
     outgoing: Vec<OrderNum>,

@@ -1,7 +1,7 @@
 use crate::connection::ack_system::AckSystem;
 use crate::connection::ordering_system::OrderingSystem;
 use crate::messages::AckMsg;
-use crate::net::MsgHeader;
+use crate::net::{MsgHeader, Status};
 use crate::{Guarantees, MType, MsgTable};
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
@@ -13,9 +13,14 @@ const ACK_MSG_LIMIT: Option<Duration> = Some(Duration::from_millis(100));
 /// A system that handles the reliablility and ordering of incoming messages based on their
 /// [`Guarantees`].
 ///
-/// Generic parameter `O` is for "OtherData", which is the data that should be stored along side
-/// the header. This is so, if this is used by a client, this can store the payload.
-/// If this is used by a server, this can store the payload and from address.
+/// Generic parameter `SD` is for "Send Data". It should be the data that you send to the
+/// transport other than the header.
+///
+/// Generic parameter `RD` is for "Receive Data". It should be the data that you get from the
+/// transport other than the header.
+///
+/// Since these differ between client and server (server needs to keep track of a from address),
+/// these need to be generic parameters.
 pub(crate) struct ReliableSystem<SD: Debug, RD: Debug> {
     msg_table: MsgTable,
     last_ack_msg: Instant,
@@ -24,7 +29,7 @@ pub(crate) struct ReliableSystem<SD: Debug, RD: Debug> {
 }
 
 impl<SD: Debug, RD: Debug> ReliableSystem<SD, RD> {
-    /// Creates a new [`Reliable`] wrapper around a transport.
+    /// Creates a new [`ReliableSystem`].
     pub fn new(msg_table: MsgTable) -> Self {
         let m_table_count = msg_table.mtype_count();
         ReliableSystem {

@@ -15,6 +15,10 @@ use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+/// [`ReliableSystem`] with the generic parameters set for a server.
+type ServerReliableSystem =
+    ReliableSystem<(SocketAddr, Arc<Vec<u8>>), (CId, Box<dyn Any + Send + Sync>)>;
+
 /// A wrapper around the the [`ServerTransport`] that adds
 /// (de)serialization, reliability and ordering to the messages.
 pub struct ServerConnection<T: ServerTransport> {
@@ -25,8 +29,7 @@ pub struct ServerConnection<T: ServerTransport> {
     /// The system used to generate ping messages and estimate the RTT.
     ping_sys: ServerPingSystem,
     /// The [`ReliableSystem`]s to add optional reliability to messages for each connection.
-    reliable_sys:
-        HashMap<CId, ReliableSystem<(SocketAddr, Arc<Vec<u8>>), (CId, Box<dyn Any + Send + Sync>)>>,
+    reliable_sys: HashMap<CId, ServerReliableSystem>,
     /// The connection list for managing the connections to this [`ServerConnection`].
     connection_list: ConnectionList,
     /// A buffer for messages that are ready to be received.

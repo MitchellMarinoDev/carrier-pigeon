@@ -2,15 +2,19 @@ use crate::connection::ping_system::ClientPingSystem;
 use crate::connection::reliable::ReliableSystem;
 use crate::message_table::PING_M_TYPE;
 use crate::messages::PingMsg;
-use crate::net::{MsgHeader, HEADER_SIZE};
+use crate::net::{MsgHeader, Status, HEADER_SIZE};
 use crate::transport::ClientTransport;
 use crate::MsgTable;
 use log::{error, trace, warn};
 use std::any::{Any, TypeId};
 use std::collections::VecDeque;
 use std::io;
+use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
+
+/// [`ReliableSystem`] with the generic parameters set for a server.
+type ClientReliableSystem = ReliableSystem<Arc<Vec<u8>>, Box<dyn Any + Send + Sync>>;
 
 /// A wrapper around the the [`ClientTransport`] that adds the reliability and ordering.
 pub(crate) struct ClientConnection<T: ClientTransport> {
@@ -21,7 +25,7 @@ pub(crate) struct ClientConnection<T: ClientTransport> {
     /// The system used to generate ping messages and estimate the RTT.
     ping_sys: ClientPingSystem,
     /// The [`ReliableSystem`] to add optional reliability to messages.
-    reliable_sys: ReliableSystem<Arc<Vec<u8>>, Box<dyn Any + Send + Sync>>,
+    reliable_sys: ClientReliableSystem,
     /// A buffer for messages that are ready to be received.
     ready: VecDeque<(MsgHeader, Box<dyn Any + Send + Sync>)>,
 }
@@ -42,6 +46,7 @@ impl<T: ClientTransport> ClientConnection<T> {
         );
 
         Ok(Self {
+            status: Status::Connected,
             msg_table: msg_table.clone(),
             transport,
             ping_sys: ClientPingSystem::new(),
@@ -118,6 +123,8 @@ impl<T: ClientTransport> ClientConnection<T> {
         &mut self,
         blocking: bool,
     ) -> io::Result<(MsgHeader, Box<dyn Any + Send + Sync>)> {
+        use ErrorKind::*;
+
         loop {
             // if there is a message that is ready, return it
             if let Some(ready) = self.ready.pop_front() {
@@ -125,11 +132,25 @@ impl<T: ClientTransport> ClientConnection<T> {
             }
             // otherwise, try to get a new one
 
-            let buf = if blocking {
+            let result = if blocking {
                 self.transport.recv_blocking()
             } else {
                 self.transport.recv()
-            }?;
+            };
+
+            let buf = match result {
+                Ok(buf) => buf,
+                Err(error) => {
+                    if matches!(
+                        error.kind(),
+                        ConnectionReset | ConnectionAborted | ConnectionRefused | NotConnected
+                    ) {
+                        self.status = Status::Dropped(error);
+                        return Err(Error::new(NotConnected, "connection dropped"));
+                    }
+                    return Err(error);
+                }
+            };
 
             let n = buf.len();
             if n < HEADER_SIZE {

@@ -222,9 +222,7 @@ impl Client {
     ///
     /// When done in a game loop, you should call `clear_msgs()`, then `get_msgs()`
     /// before default time. This will clear the messages between frames.
-    fn get_msgs(&mut self) -> u32 {
-        let mut i = 0;
-
+    fn get_msgs(&mut self) {
         loop {
             if !self.status.connected() {
                 break;
@@ -240,7 +238,6 @@ impl Client {
                 }
                 // Successfully got a message.
                 Ok((header, msg)) => {
-                    i += 1;
                     self.msg_buff[header.m_type].push(ErasedNetMsg::new(
                         0,
                         header.sender_ack_num,
@@ -250,8 +247,6 @@ impl Client {
                 }
             }
         }
-
-        i
     }
 
     /// Clears messages from the buffer.

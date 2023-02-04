@@ -25,7 +25,7 @@ pub(crate) struct AckBitfields {
 /// This handles generating the acknowledgment part of the header, getting the info needed for the
 /// acknowledgment message, and keeping track of an outgoing ack_number.
 ///
-/// Generic parameter `SD` is "Send Data". It should be the data that you send to the transport
+/// Generic parameter `SD` is for "Send Data". It should be the data that you send to the transport
 /// other than the header. Since this differs between client and server (server needs to keep track
 /// of a to address), it is made a generic parameter.
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
