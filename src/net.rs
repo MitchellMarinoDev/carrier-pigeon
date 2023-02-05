@@ -161,6 +161,8 @@ pub enum Status {
     Accepted(Box<dyn Any + Send + Sync>),
     /// We just got rejected.
     Rejected(Box<dyn Any + Send + Sync>),
+    /// The connection failed.
+    ConnectionFailed(Error),
     /// The connection is established.
     Connected,
     /// The connection is closed because the peer disconnected by sending a disconnection message.
@@ -178,6 +180,7 @@ impl Display for Status {
             Status::Connecting => write!(f, "Connecting..."),
             Status::Accepted(_) => write!(f, "Accepted"),
             Status::Rejected(_) => write!(f, "Rejected"),
+            Status::ConnectionFailed(e) => write!(f, "Connection failed with error {}", e),
             Status::Connected => write!(f, "Connected"),
             Status::Disconnected(_) => write!(f, "Disconnected gracefully"),
             Status::Dropped(e) => write!(f, "Dropped with error {}", e),
@@ -272,8 +275,8 @@ impl Status {
     /// (generic parameter `R` that you passed into
     /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build)) this will return `None`.
     /// For an untyped version, use [`unwrap_accepted_dyn`](Self::unwrap_accepted_dyn).
-    pub fn unwrap_accepted(self) -> Option<R> {
-        self.unwrap_accepted_dyn()?.downcast().ok()
+    pub fn unwrap_accepted<R: Any + Send + Sync>(self) -> Option<R> {
+        self.unwrap_accepted_dyn()?.downcast().ok().map(|msg| *msg)
     }
 
     /// Unwraps the rejection message from the [`Rejected`](Self::Rejected) variant,
@@ -282,7 +285,7 @@ impl Status {
     /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build)) this will return `None`.
     /// For an untyped version, use [`unwrap_rejected_dyn`](Self::unwrap_rejected_dyn).
     pub fn unwrap_rejected<R: Any + Send + Sync>(self) -> Option<R> {
-        self.unwrap_rejected_dyn()?.downcast().ok()
+        self.unwrap_rejected_dyn()?.downcast().ok().map(|msg| *msg)
     }
 
     /// Unwraps the disconnection message from the [`Disconnected`](Self::Disconnected) variant,
@@ -291,7 +294,7 @@ impl Status {
     /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build)) this will return `None`.
     /// For an untyped version, use [`unwrap_disconnected_dyn`](Self::unwrap_disconnected_dyn).
     pub fn unwrap_disconnected<D: Any + Send + Sync>(self) -> Option<D> {
-        *self.unwrap_disconnected_dyn()?.downcast().ok()
+        self.unwrap_disconnected_dyn()?.downcast().ok().map(|msg| *msg)
     }
 
     /// Unwraps the dropped error from the [`Dropped`](Self::Dropped) variant.

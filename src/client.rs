@@ -8,7 +8,7 @@ use log::{debug, trace};
 use std::any::{Any, TypeId};
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
-use std::io::ErrorKind::InvalidData;
+use std::io::ErrorKind::{InvalidData, NotConnected};
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 
@@ -109,6 +109,7 @@ impl Client {
             Connecting => Connecting,
             Accepted(_) => Connected,
             Rejected(_) => NotConnected,
+            ConnectionFailed(_) => NotConnected,
             Connected => Connected,
             Disconnected(_) => NotConnected,
             Dropped(_) => NotConnected,

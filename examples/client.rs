@@ -63,14 +63,29 @@ fn main() {
 
     // Block until the connection is made.
     let mut status = client.status();
-    while status.connecting() {
+    while status.is_connecting() {
         sleep(Duration::from_millis(1));
         status = client.status();
     }
 
-    let (mut client, resp) = client.block().expect("Failed to connect to server.");
 
-    match resp {
+    // Block until the connection is made.
+    let mut status = client.status();
+    while status.is_connecting() {
+        sleep(Duration::from_millis(1));
+        status = client.status();
+    }
+
+
+    // Block until the connection is made.
+    let mut status = client.status();
+    while status.is_connecting() {
+        sleep(Duration::from_millis(1));
+        status = client.status();
+    }
+    let status = client.handle_status();
+
+    match status {
         Response::Accepted => println!("We were accepted!"),
         Response::Rejected(reason) => {
             println!("We were rejected for reason \"{}\"", reason);

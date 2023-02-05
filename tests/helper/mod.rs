@@ -52,7 +52,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
 
     // Block until the connection is made.
     let mut status = client.status();
-    while status.connecting() {
+    while status.is_connecting() {
         sleep(Duration::from_millis(1));
         status = client.status();
     }
