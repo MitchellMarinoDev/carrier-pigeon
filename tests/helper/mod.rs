@@ -1,12 +1,12 @@
 #![allow(unused)]
 //! Helper functions and types to make setting up the tests easier.
 
-use std::thread::sleep;
-use std::time::Duration;
 use crate::helper::test_messages::{get_msg_table, Connection, Disconnect, Response};
 use carrier_pigeon::net::{ClientConfig, ServerConfig};
 use carrier_pigeon::{Client, Server};
 use log::debug;
+use std::thread::sleep;
+use std::time::Duration;
 
 pub mod test_messages;
 
@@ -32,7 +32,11 @@ pub fn create_client_server_pair() -> (Client, Server) {
     debug!("Creating client.");
     // Start client connection.
     let mut client = Client::new(msg_table, ClientConfig::default());
-    client.connect(CLIENT_ADDR_LOCAL.parse().unwrap(), SERVER_ADDR_LOCAL.parse().unwrap(), &Connection::new("John Smith"));
+    client.connect(
+        CLIENT_ADDR_LOCAL.parse().unwrap(),
+        SERVER_ADDR_LOCAL.parse().unwrap(),
+        &Connection::new("John Smith"),
+    );
 
     // Spin until the connection is handled.
     // Normally this would be done in the game loop
@@ -54,7 +58,6 @@ pub fn create_client_server_pair() -> (Client, Server) {
     }
     assert!(status.is_accepted());
     let status = client.handle_status();
-
 
     debug!("Client created on addr: {}", client.local_addr().unwrap());
 

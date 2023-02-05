@@ -54,7 +54,12 @@ impl Client {
     }
 
     // TODO: make a custom error type. Add invalid state.
-    pub fn connect<C: Send + Sync>(&mut self, local_addr: SocketAddr, peer_addr: SocketAddr, con_msg: &C) -> io::Result<()> {
+    pub fn connect<C: Send + Sync>(
+        &mut self,
+        local_addr: SocketAddr,
+        peer_addr: SocketAddr,
+        con_msg: &C,
+    ) -> io::Result<()> {
         if !self.status.is_not_connected() {
             return Err(Error::new(
                 ErrorKind::Other,

@@ -302,7 +302,6 @@ impl Status {
         }
     }
 
-
     /// Turns this into an option with the disconnect message.
     ///
     /// ### Panics
