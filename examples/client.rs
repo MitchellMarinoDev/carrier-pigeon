@@ -20,6 +20,7 @@ use std::io::stdin;
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::time::Duration;
 use std::{env, thread};
+use std::thread::sleep;
 
 mod shared;
 
@@ -54,9 +55,17 @@ fn main() {
     };
 
     // Start the connection to the server.
-    let client = Client::new(local, peer, table, ClientConfig::default(), con_msg);
+    let mut client = Client::new(table, ClientConfig::default());
+
+    client.connect(local, peer, &con_msg).expect("failed to connect");
 
     // Block until the connection is made.
+    let mut status = client.status();
+    while status.connecting() {
+        sleep(Duration::from_millis(1));
+        status = client.status();
+    }
+
     let (mut client, resp) = client.block().expect("Failed to connect to server.");
 
     match resp {

@@ -75,7 +75,7 @@ impl Server {
         }
         debug!("Disconnecting CId {}", cid);
         self.send_to(cid, discon_msg)?;
-        self.disconnected.push_back((cid, Status::Closed));
+        self.disconnected.push_back((cid, Status::Disconnecting));
         Ok(())
     }
 

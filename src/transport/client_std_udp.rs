@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 pub struct UdpClientTransport {
     socket: UdpSocket,
+    // TODO: make this a vec and make the size configurable.
     buf: [u8; MAX_MESSAGE_SIZE],
 }
 

@@ -1,10 +1,10 @@
 use crate::connection::client_connection::ClientConnection;
-use crate::message_table::{MsgTable, CONNECTION_M_TYPE, DISCONNECT_M_TYPE, RESPONSE_M_TYPE};
+use crate::message_table::{MsgTable, DISCONNECT_M_TYPE};
 use crate::net::{ClientConfig, ErasedNetMsg, NetMsg, Status};
 use crate::transport::client_std_udp::UdpClientTransport;
 use crossbeam_channel::internal::SelectHandle;
 use crossbeam_channel::Receiver;
-use log::{debug, error, trace};
+use log::{debug, trace};
 use std::any::{Any, TypeId};
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
@@ -38,94 +38,31 @@ pub struct Client {
 
 impl Client {
     /// Creates a new [`Client`].
-    ///
-    /// Creates a new [`Client`] on another thread, passing back a [`PendingClient`].
-    /// This [`PendingClient`] allows you to wait for the client to send the connection
-    /// message, and for the server to send back the response message.
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new<C: Any + Send + Sync>(
-        local: SocketAddr,
-        peer: SocketAddr,
-        msg_table: MsgTable,
-        config: ClientConfig,
-        con_msg: C,
-    ) -> PendingClient {
-        let (client_tx, client_rx) = crossbeam_channel::bounded(1);
+    pub fn new(msg_table: MsgTable, config: ClientConfig) -> Client {
+        trace!("Creating a Client.");
 
-        std::thread::spawn(move || {
-            client_tx.send(Self::new_blocking(local, peer, msg_table, config, con_msg))
-        });
-
-        PendingClient { channel: client_rx }
-    }
-
-    /// Creates a new [`Client`] by blocking.
-    fn new_blocking<C: Any + Send + Sync>(
-        local: SocketAddr,
-        peer: SocketAddr,
-        msg_table: MsgTable,
-        config: ClientConfig,
-        con_msg: C,
-    ) -> io::Result<(Self, Box<dyn Any + Send + Sync>)> {
-        // verify that `con_msg` is the correct type.
-        let tid = TypeId::of::<C>();
-        let con_msg_m_type = msg_table.tid_map.get(&tid);
-        match con_msg_m_type {
-            Some(&CONNECTION_M_TYPE) => Ok(()),
-            _ => Err(Error::new(
-                InvalidData,
-                "the type of `con_msg` passed into `Client::new` or `Client::new_blocking` \
-                    should match the first type parameter of the `MsgTable::build` function."
-                    .to_string(),
-            )),
-        }?;
-
-        debug!("Attempting to create a client connection");
-        let connection = ClientConnection::new(msg_table.clone(), local, peer)?;
-
+        let connection = ClientConnection::new(msg_table.clone());
         let msg_buff = (0..msg_table.mtype_count()).map(|_| vec![]).collect();
 
-        let mut client = Client {
+        Client {
             config,
             status: Status::Connected,
             msg_buff,
             connection,
             msg_table,
-        };
+        }
+    }
 
-        // Send connection message
-        client.send(&con_msg)?;
-        trace!("Client connection message sent. Awaiting response...");
-
-        // Get response message.
-        let (header, response_msg) = client.connection.recv_blocking()?;
-        trace!("Got response message from the server.");
-
-        if header.m_type != RESPONSE_M_TYPE {
-            return Err(io::Error::new(
-                InvalidData,
-                format!(
-                    "Client: First received message was MType: {} not MType: {} (Response message)",
-                    header.m_type, RESPONSE_M_TYPE
-                ),
+    // TODO: make a custom error type. Add invalid state.
+    pub fn connect<C: Send + Sync>(&mut self, local_addr: SocketAddr, peer_addr: SocketAddr, con_msg: &C) -> io::Result<()> {
+        if !self.status.is_not_connected() {
+            return Err(Error::new(
+                ErrorKind::Other,
+                "the client needs to be in the NotConnected status in order to call connect()",
             ));
         }
 
-        debug!(
-            "New Client created at {}, to {}.",
-            client
-                .connection
-                .local_addr()
-                .map(|addr| addr.to_string())
-                .unwrap_or("UNKNOWN".to_owned()),
-            client
-                .connection
-                .peer_addr()
-                .map(|addr| addr.to_string())
-                .unwrap_or("UNKNOWN".to_owned()),
-        );
-
-        Ok((client, response_msg))
+        self.connection.connect(local_addr, peer_addr)
     }
 
     /// Gets the [`NetConfig`] of the client.
@@ -155,18 +92,30 @@ impl Client {
         self.send(discon_msg)?;
         // TODO: start to close the udp connection.
         //       It needs to stay open long enough to reliably send the disconnection message.
-        self.status = Status::Closed;
+        self.status = Status::NotConnected;
         Ok(())
+    }
+
+    pub fn handle_status(&mut self) -> Status {
+        use Status::*;
+
+        let new_status = match &self.status {
+            NotConnected => NotConnected,
+            Connecting => Connecting,
+            Accepted(_) => Connected,
+            Rejected(_) => NotConnected,
+            Connected => Connected,
+            Disconnected(_) => NotConnected,
+            Dropped(_) => NotConnected,
+            Disconnecting => Disconnecting,
+        };
+
+        std::mem::replace(&mut self.status, new_status)
     }
 
     /// Gets the status of the connection.
     pub fn status(&self) -> &Status {
         &self.status
-    }
-
-    /// Returns whether the connection is open.
-    pub fn open(&self) -> bool {
-        self.status().connected()
     }
 
     /// Sends a message to the peer.
@@ -217,36 +166,24 @@ impl Client {
         self.get_msgs();
     }
 
-    /// Receives the messages from the connections.
-    /// This should be done before calling `recv<T>()`.
+    /// Gets message from the transport, and moves them to this struct's buffer.
     ///
-    /// When done in a game loop, you should call `clear_msgs()`, then `get_msgs()`
-    /// before default time. This will clear the messages between frames.
+    /// This should be called in the `tick()` and should done before calling `recv<T>()`.
     fn get_msgs(&mut self) {
-        loop {
-            if !self.status.connected() {
-                break;
-            }
+        self.connection.get_msgs();
 
-            let recv = self.connection.recv();
-            match recv {
-                // No more data.
-                Err(e) if e.kind() == ErrorKind::WouldBlock => break,
-                // IO Error occurred.
-                Err(e) => {
-                    error!("Error receiving data: {}", e);
-                }
-                // Successfully got a message.
-                Ok((header, msg)) => {
-                    self.msg_buff[header.m_type].push(ErasedNetMsg::new(
-                        0,
-                        header.sender_ack_num,
-                        header.order_num,
-                        msg,
-                    ));
-                }
-            }
+        while let Some((header, msg)) = self.connection.recv() {
+            self.msg_buff[header.m_type].push(ErasedNetMsg::new(
+                0,
+                header.sender_ack_num,
+                header.order_num,
+                msg,
+            ));
         }
+    }
+
+    fn update_status(&mut self) {
+        todo!()
     }
 
     /// Clears messages from the buffer.
@@ -257,12 +194,12 @@ impl Client {
     }
 
     /// Gets the local address.
-    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+    pub fn local_addr(&self) -> Option<SocketAddr> {
         self.connection.local_addr()
     }
 
     /// Gets the address of the peer.
-    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
+    pub fn peer_addr(&self) -> Option<SocketAddr> {
         self.connection.peer_addr()
     }
 

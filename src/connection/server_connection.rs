@@ -1,8 +1,8 @@
 use crate::connection::ping_system::ServerPingSystem;
 use crate::connection::reliable::ReliableSystem;
 use crate::connection::{ConnectionList, ConnectionListError};
-use crate::message_table::{ACK_M_TYPE, CONNECTION_M_TYPE, PING_M_TYPE, RESPONSE_M_TYPE};
-use crate::messages::PingMsg;
+use crate::message_table::{CONNECTION_M_TYPE, PING_M_TYPE, RESPONSE_M_TYPE};
+use crate::messages::{AckMsg, PingMsg, PingType};
 use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ServerTransport;
 use crate::{CId, MsgTable};
@@ -91,26 +91,14 @@ impl<T: ServerTransport> ServerConnection<T> {
 
     /// Sends an [`AckMsg`] to all clients in order to acknowledge all received messages.
     pub fn send_ack_msgs(&mut self) {
-        for (&cid, reliable_sys) in self.reliable_sys.iter_mut() {
-            let ack_msg = match reliable_sys.get_ack_msg() {
-                None => continue,
-                Some(ack_msg) => ack_msg,
-            };
+        let ack_msgs: Vec<(CId, AckMsg)> = self
+            .reliable_sys
+            .iter_mut()
+            .filter_map(|(cid, reliable_sys)| reliable_sys.get_ack_msg().map(|msg| (*cid, msg)))
+            .collect();
 
-            // TODO: See if this can be a normal send call to reduce code duplication
-            let addr = self
-                .connection_list
-                .addr_of(cid)
-                .expect("cid should be valid");
-            let header = reliable_sys.get_send_header(ACK_M_TYPE);
-
-            // build the payload using the header and the message
-            let mut payload = header.to_be_bytes().to_vec();
-            bincode::serialize_into(&mut payload, &ack_msg)
-                .expect("ack message should serialize without error");
-            let payload = Arc::new(payload);
-
-            if let Err(err) = self.transport.send_to(addr, ACK_M_TYPE, payload) {
+        for (cid, ack_msg) in ack_msgs {
+            if let Err(err) = self.send_to(cid, &ack_msg) {
                 error!("Error sending AckMsg: {}", err);
             }
         }
@@ -132,13 +120,13 @@ impl<T: ServerTransport> ServerConnection<T> {
     /// If this is a request type, it will respond to it.
     /// If it is a response, it is handled accordingly.
     fn recv_ping(&mut self, cid: CId, ping_msg: PingMsg) {
-        match ping_msg {
-            PingMsg::Req(ping_num) => {
-                if let Err(err) = self.send_to(cid, &PingMsg::Res(ping_num)) {
+        match ping_msg.ping_type {
+            PingType::Req => {
+                if let Err(err) = self.send_to(cid, &ping_msg.response()) {
                     warn!("Error in responding to a ping (CId: {}): {}", cid, err);
                 }
             }
-            PingMsg::Res(_) => self.ping_sys.recv_ping_msg(cid, ping_msg),
+            PingType::Res => self.ping_sys.recv_ping_msg(cid, ping_msg.ping_num),
         }
     }
 
@@ -242,10 +230,7 @@ impl<T: ServerTransport> ServerConnection<T> {
                 .expect("cid should be valid");
             for (header, (addr, payload)) in reliable_sys.get_resend() {
                 debug!("Resending msg {}", header.sender_ack_num);
-                if let Err(err) = self
-                    .transport
-                    .send_to(*addr, header.m_type, payload.clone())
-                {
+                if let Err(err) = self.transport.send_to(addr, header.m_type, payload) {
                     error!("Error resending msg {}: {}", header.sender_ack_num, err);
                 }
             }

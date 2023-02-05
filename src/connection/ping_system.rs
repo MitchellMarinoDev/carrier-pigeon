@@ -1,4 +1,4 @@
-use crate::messages::PingMsg;
+use crate::messages::{PingMsg, PingType};
 use crate::CId;
 use hashbrown::HashMap;
 use log::warn;
@@ -50,7 +50,10 @@ impl ServerPingSystem {
         }
         self.pings.push_front((ping_num, unix_micros()));
 
-        PingMsg::Req(ping_num)
+        PingMsg {
+            ping_type: PingType::Req,
+            ping_num,
+        }
     }
 
     /// Gets the next [`PingMsg`] to send if needed.
@@ -62,12 +65,7 @@ impl ServerPingSystem {
     }
 
     /// Updates the RTT based on the given [`PingMsg`].
-    pub(crate) fn recv_ping_msg(&mut self, cid: CId, msg: PingMsg) {
-        let ping_num = match msg {
-            PingMsg::Res(ping_num) => ping_num,
-            _ => return warn!("`recv_ping_msg` called on a request ping message."),
-        };
-
+    pub(crate) fn recv_ping_msg(&mut self, cid: CId, ping_num: u32) {
         if let Some((_, micros)) = self
             .pings
             .iter()
@@ -143,7 +141,10 @@ impl ClientPingSystem {
         self.last_ping_counter += 1;
         self.pings.push((ping_num, unix_micros()));
 
-        PingMsg::Req(ping_num)
+        PingMsg {
+            ping_type: PingType::Req,
+            ping_num,
+        }
     }
 
     /// Gets the next [`PingMsg`] to send if needed.
@@ -155,12 +156,7 @@ impl ClientPingSystem {
     }
 
     /// Updates the RTT based on the given [`PingMsg`].
-    pub(crate) fn recv_ping_msg(&mut self, msg: PingMsg) {
-        let ping_num = match msg {
-            PingMsg::Res(ping_num) => ping_num,
-            _ => return warn!("`recv_ping_msg` called on a request ping message."),
-        };
-
+    pub(crate) fn recv_ping_msg(&mut self, ping_num: u32) {
         if let Some((_, micros)) = self
             .pings
             .iter()
@@ -200,12 +196,9 @@ mod tests {
     fn test_rtt() {
         let mut ping_sys = ClientPingSystem::new();
         for _ in 0..20 {
-            let ping_msg = ping_sys
-                .next_ping_msg()
-                .response()
-                .expect("PingMsg should be the request variant");
+            let ping_msg = ping_sys.next_ping_msg();
             sleep(Duration::from_micros(20_000));
-            ping_sys.recv_ping_msg(ping_msg);
+            ping_sys.recv_ping_msg(ping_msg.ping_num);
         }
         // RTT should be about 20_000 micros (20ms)
         assert!(ping_sys.rtt() as i32 - 20_000 < 100);

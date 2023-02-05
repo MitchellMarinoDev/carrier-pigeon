@@ -29,7 +29,7 @@ pub(crate) struct AckBitfields {
 /// other than the header. Since this differs between client and server (server needs to keep track
 /// of a to address), it is made a generic parameter.
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
-pub(crate) struct AckSystem<SD: Debug> {
+pub(crate) struct AckSystem<SD: Debug + Clone> {
     /// The current [`AckNum`] for outgoing messages.
     outgoing_counter: AckNum,
     /// The current ack_offset value for the front end of the buffer.
@@ -47,7 +47,7 @@ pub(crate) struct AckSystem<SD: Debug> {
     saved_msgs: HashMap<AckNum, (Instant, MsgHeader, SD)>,
 }
 
-impl<SD: Debug> AckSystem<SD> {
+impl<SD: Debug + Clone> AckSystem<SD> {
     /// Creates a new [`AckSystem`].
     pub fn new() -> Self {
         let mut deque = VecDeque::new();
@@ -176,20 +176,17 @@ impl<SD: Debug> AckSystem<SD> {
     }
 
     /// Gets messages that are due for a resend. This resets the time sent.
-    pub fn get_resend(&mut self) -> impl Iterator<Item = (&MsgHeader, &SD)> {
+    pub fn get_resend(&mut self) -> Vec<(MsgHeader, SD)> {
         let mut acks = vec![];
-        for (ack, (sent, _, _)) in self.saved_msgs.iter_mut() {
+        for (sent, msg_header, sd) in self.saved_msgs.values_mut() {
             // TODO: add duration to config.
             if sent.elapsed() > Duration::from_millis(100) {
                 *sent = Instant::now();
-                acks.push(*ack);
+                acks.push((*msg_header, sd.clone()));
             }
         }
 
-        acks.into_iter().map(|ack| {
-            let (_, header, other) = &self.saved_msgs[&ack];
-            (header, other)
-        })
+        acks
     }
 }
 

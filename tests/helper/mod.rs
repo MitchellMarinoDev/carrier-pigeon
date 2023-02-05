@@ -1,6 +1,8 @@
 #![allow(unused)]
 //! Helper functions and types to make setting up the tests easier.
 
+use std::thread::sleep;
+use std::time::Duration;
 use crate::helper::test_messages::{get_msg_table, Connection, Disconnect, Response};
 use carrier_pigeon::net::{ClientConfig, ServerConfig};
 use carrier_pigeon::{Client, Server};
@@ -29,13 +31,8 @@ pub fn create_client_server_pair() -> (Client, Server) {
 
     debug!("Creating client.");
     // Start client connection.
-    let client = Client::new(
-        CLIENT_ADDR_LOCAL.parse().unwrap(),
-        SERVER_ADDR_LOCAL.parse().unwrap(),
-        msg_table,
-        ClientConfig::default(),
-        Connection::new("John"),
-    );
+    let mut client = Client::new(msg_table, ClientConfig::default());
+    client.connect(CLIENT_ADDR_LOCAL.parse().unwrap(), SERVER_ADDR_LOCAL.parse().unwrap(), &Connection::new("John Smith"));
 
     // Spin until the connection is handled.
     // Normally this would be done in the game loop
@@ -49,11 +46,19 @@ pub fn create_client_server_pair() -> (Client, Server) {
         }
     }
 
-    // Finish the client connection.
-    let (client, response_msg) = client.block::<Response>().unwrap();
+    // Block until the connection is made.
+    let mut status = client.status();
+    while status.connecting() {
+        sleep(Duration::from_millis(1));
+        status = client.status();
+    }
+    assert!(status.is_accepted());
+    let status = client.handle_status();
+
+
     debug!("Client created on addr: {}", client.local_addr().unwrap());
 
-    assert_eq!(response_msg, Response::Accepted);
+    assert_eq!(status.is_accepted(), Response::Accepted);
 
     (client, server)
 }

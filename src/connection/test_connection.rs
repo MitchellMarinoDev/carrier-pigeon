@@ -18,12 +18,9 @@ fn test_reliability() {
 
     let mut server_connection: ServerConnection<UdpServerTransport> =
         ServerConnection::new(msg_table.clone(), "127.0.0.1:7777".parse().unwrap()).unwrap();
-    let mut client_connection: ClientConnection<UdpClientTransport> = ClientConnection::new(
-        msg_table,
-        "127.0.0.1:7776".parse().unwrap(),
-        "127.0.0.1:7777".parse().unwrap(),
-    )
-    .unwrap();
+    let mut client_connection: ClientConnection<UdpClientTransport> =
+        ClientConnection::new(msg_table);
+
     client_connection.send(&Connection).unwrap();
 
     sleep(Duration::from_millis(10));

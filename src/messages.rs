@@ -25,13 +25,21 @@ impl AckMsg {
     }
 }
 
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(crate) enum PingType {
+    /// A request.
+    Req,
+    /// A response.
+    Res,
+}
+
 /// A type for estimating the RTT of a connection.
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub(crate) enum PingMsg {
-    /// A ping request.
-    Req(u32),
-    /// A ping response.
-    Res(u32),
+pub(crate) struct PingMsg {
+    /// The type of ping.
+    pub ping_type: PingType,
+    /// The ping number identifier.
+    pub ping_num: u32,
 }
 
 impl PingMsg {
@@ -56,10 +64,10 @@ impl PingMsg {
     }
 
     /// Gets the corresponding response message type.
-    pub(crate) fn response(&self) -> Option<Self> {
-        match self {
-            PingMsg::Req(ping_num) => Some(PingMsg::Res(*ping_num)),
-            PingMsg::Res(_) => None,
+    pub(crate) fn response(&self) -> Self {
+        PingMsg {
+            ping_type: PingType::Res,
+            ping_num: self.ping_num,
         }
     }
 }

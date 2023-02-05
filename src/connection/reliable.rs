@@ -1,7 +1,7 @@
 use crate::connection::ack_system::AckSystem;
 use crate::connection::ordering_system::OrderingSystem;
 use crate::messages::AckMsg;
-use crate::net::{MsgHeader, Status};
+use crate::net::MsgHeader;
 use crate::{Guarantees, MType, MsgTable};
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
@@ -21,14 +21,14 @@ const ACK_MSG_LIMIT: Option<Duration> = Some(Duration::from_millis(100));
 ///
 /// Since these differ between client and server (server needs to keep track of a from address),
 /// these need to be generic parameters.
-pub(crate) struct ReliableSystem<SD: Debug, RD: Debug> {
+pub(crate) struct ReliableSystem<SD: Debug + Clone, RD: Debug> {
     msg_table: MsgTable,
     last_ack_msg: Instant,
     ack_sys: AckSystem<SD>,
     ordering_sys: OrderingSystem<RD>,
 }
 
-impl<SD: Debug, RD: Debug> ReliableSystem<SD, RD> {
+impl<SD: Debug + Clone, RD: Debug> ReliableSystem<SD, RD> {
     /// Creates a new [`ReliableSystem`].
     pub fn new(msg_table: MsgTable) -> Self {
         let m_table_count = msg_table.mtype_count();
@@ -85,7 +85,7 @@ impl<SD: Debug, RD: Debug> ReliableSystem<SD, RD> {
     }
 
     /// Gets messages that are due for a resend.
-    pub fn get_resend(&mut self) -> impl Iterator<Item = (&MsgHeader, &SD)> {
+    pub fn get_resend(&mut self) -> Vec<(MsgHeader, SD)> {
         self.ack_sys.get_resend()
     }
 }

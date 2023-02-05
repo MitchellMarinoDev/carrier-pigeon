@@ -140,33 +140,168 @@ pub type SerFn = fn(&(dyn Any + Send + Sync), &mut Vec<u8>) -> io::Result<()>;
 
 #[derive(Debug)]
 /// An enum for the possible states of a connection.
+///
+/// ```mermaid
+/// ---
+/// title: Status State Machine
+/// ---
+/// flowchart LR
+///     NotConnected -- connect() --> Connecting
+///     Connecting -- {{
+///
+/// ```
 pub enum Status {
-    /// The connection is still live.
+    /// Not connected to any peer.
+    NotConnected,
+    /// Currently connecting to a peer.
+    ///
+    /// We have sent a connection message, but have yet to hear a response.
+    Connecting,
+    /// We just got accepted.
+    Accepted(Box<dyn Any + Send + Sync>),
+    /// We just got rejected.
+    Rejected(Box<dyn Any + Send + Sync>),
+    /// The connection is established.
     Connected,
     /// The connection is closed because the peer disconnected by sending a disconnection message.
     Disconnected(Box<dyn Any + Send + Sync>),
-    /// The connection is closed because we chose to close the connection.
-    Closed,
     /// The connection was dropped without sending a disconnection message.
     Dropped(Error),
+    /// Disconnecting from the peer.
+    Disconnecting,
 }
 
 impl Display for Status {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Connected => write!(f, "Connected"),
-            Self::Disconnected(_) => write!(f, "Disconnected gracefully"),
-            Self::Closed => write!(f, "Closed"),
-            Self::Dropped(e) => write!(f, "Dropped with error {}", e),
+            Status::NotConnected => write!(f, "Not connected"),
+            Status::Connecting => write!(f, "Connecting..."),
+            Status::Accepted(_) => write!(f, "Accepted"),
+            Status::Rejected(_) => write!(f, "Rejected"),
+            Status::Connected => write!(f, "Connected"),
+            Status::Disconnected(_) => write!(f, "Disconnected gracefully"),
+            Status::Dropped(e) => write!(f, "Dropped with error {}", e),
+            Status::Disconnecting => write!(f, "Disconnecting..."),
         }
     }
 }
 
 impl Status {
-    /// Returns whether the status is [`Status::Connected`].
-    pub fn connected(&self) -> bool {
+    // matches functions
+
+    /// Weather this status is [`NotConnected`](Self::NotConnected).
+    pub fn is_not_connected(&self) -> bool {
+        matches!(self, Status::NotConnected)
+    }
+
+    /// Weather this status is [`Connecting`](Self::Connecting).
+    pub fn is_connecting(&self) -> bool {
+        matches!(self, Status::Connecting)
+    }
+
+    /// Weather this status is [`Accepted`](Self::Accepted).
+    pub fn is_accepted(&self) -> bool {
+        matches!(self, Status::Accepted(_))
+    }
+
+    /// Weather this status is [`Rejected`](Self::Rejected).
+    pub fn is_rejected(&self) -> bool {
+        matches!(self, Status::Rejected(_))
+    }
+
+    /// Weather this status is [`Connected`](Self::Connected).
+    pub fn is_connected(&self) -> bool {
         matches!(self, Status::Connected)
     }
+
+    /// Weather this status is [`Disconnected`](Self::Disconnected).
+    pub fn is_disconnected(&self) -> bool {
+        matches!(self, Status::Disconnected(_))
+    }
+
+    /// Weather this status is [`Dropped`](Self::Dropped).
+    pub fn is_dropped(&self) -> bool {
+        matches!(self, Status::Dropped(_))
+    }
+
+    /// Weather this status is [`Disconnecting`](Self::Disconnecting).
+    pub fn is_disconnecting(&self) -> bool {
+        matches!(self, Status::Disconnecting)
+    }
+
+    // unwrapping functions
+
+    /// Unwraps the acceptation message from the [`Accepted`](Self::Accepted) variant,
+    /// and returns the boxed message. This is guaranteed to be the response message type
+    /// (generic parameter `R`) that you passed into
+    /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
+    /// For a typed version, use [`unwrap_accepted`](Self::unwrap_accepted).
+    pub fn unwrap_accepted_dyn(self) -> Option<Box<dyn Any + Send + Sync>> {
+        match self {
+            Status::Accepted(msg) => Some(msg),
+            _ => None,
+        }
+    }
+
+    /// Unwraps the rejection message from the [`Rejected`](Self::Rejected) variant,
+    /// and returns the boxed message. This is guaranteed to be the response message type
+    /// (generic parameter `R`) that you passed into
+    /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
+    /// For a typed version, use [`unwrap_rejected`](Self::unwrap_rejected).
+    pub fn unwrap_rejected_dyn(self) -> Option<Box<dyn Any + Send + Sync>> {
+        match self {
+            Status::Rejected(msg) => Some(msg),
+            _ => None,
+        }
+    }
+
+    /// Unwraps the disconnection message from the [`Disconnected`](Self::Disconnected) variant,
+    /// and returns the boxed message. This is guaranteed to be the disconnection message type
+    /// (generic parameter `D`) that you passed into
+    /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
+    /// For a typed version, use [`unwrap_disconnected`](Self::unwrap_disconnected).
+    pub fn unwrap_disconnected_dyn(self) -> Option<Box<dyn Any + Send + Sync>> {
+        match self {
+            Status::Disconnected(msg) => Some(msg),
+            _ => None,
+        }
+    }
+
+    /// Unwraps the acceptation message from the [`Accepted`](Self::Accepted) variant,
+    /// and returns the message. If generic parameter `R` is not the response message type
+    /// (generic parameter `R` that you passed into
+    /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build)) this will return `None`.
+    /// For an untyped version, use [`unwrap_accepted_dyn`](Self::unwrap_accepted_dyn).
+    pub fn unwrap_accepted(self) -> Option<R> {
+        self.unwrap_accepted_dyn()?.downcast().ok()
+    }
+
+    /// Unwraps the rejection message from the [`Rejected`](Self::Rejected) variant,
+    /// and returns the message. If generic parameter `R` is not the response message type
+    /// (generic parameter `R` that you passed into
+    /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build)) this will return `None`.
+    /// For an untyped version, use [`unwrap_rejected_dyn`](Self::unwrap_rejected_dyn).
+    pub fn unwrap_rejected<R: Any + Send + Sync>(self) -> Option<R> {
+        self.unwrap_rejected_dyn()?.downcast().ok()
+    }
+
+    /// Unwraps the disconnection message from the [`Disconnected`](Self::Disconnected) variant,
+    /// and returns the message. If generic parameter `D` is not the disconnection message type
+    /// (generic parameter `D` that you passed into
+    /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build)) this will return `None`.
+    /// For an untyped version, use [`unwrap_disconnected_dyn`](Self::unwrap_disconnected_dyn).
+    pub fn unwrap_disconnected<D: Any + Send + Sync>(self) -> Option<D> {
+        *self.unwrap_disconnected_dyn()?.downcast().ok()
+    }
+
+    /// Unwraps the dropped error from the [`Dropped`](Self::Dropped) variant.
+    pub fn unwrap_dropped(self) -> Option<Error> {
+        match self {
+            Status::Dropped(err) => Some(err),
+            _ => None,
+        }
+    }
+
 
     /// Turns this into an option with the disconnect message.
     ///
@@ -194,11 +329,6 @@ impl Status {
             Status::Dropped(e) => Some(e),
             _ => None,
         }
-    }
-
-    /// Returns whether the status is [`Status::Closed`].
-    pub fn closed(&self) -> bool {
-        matches!(self, Status::Closed)
     }
 }
 
