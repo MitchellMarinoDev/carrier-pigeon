@@ -46,7 +46,7 @@ fn graceful_disconnect() {
 
         client.tick();
         assert_eq!(
-            client.status().disconnected::<Disconnect>().unwrap(),
+            client.get_status().disconnected::<Disconnect>().unwrap(),
             &Disconnect::new("Testing Disconnect Server.")
         );
     }
@@ -66,7 +66,7 @@ fn drop_test() {
 
         client.tick();
         // Make sure the client is dropped abruptly
-        assert!(client.status().dropped().is_some());
+        assert!(client.get_status().dropped().is_some());
     }
 
     {

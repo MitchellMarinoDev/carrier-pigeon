@@ -8,7 +8,7 @@ use log::{debug, trace};
 use std::any::{Any, TypeId};
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
-use std::io::ErrorKind::{InvalidData, NotConnected};
+use std::io::ErrorKind::{InvalidData};
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 
@@ -120,7 +120,7 @@ impl Client {
     }
 
     /// Gets the status of the connection.
-    pub fn status(&self) -> &Status {
+    pub fn get_status(&self) -> &Status {
         &self.status
     }
 
@@ -221,7 +221,7 @@ impl Client {
 impl Debug for Client {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Client")
-            .field("status", self.status())
+            .field("status", self.get_status())
             .field("local", &self.local_addr())
             .field("peer_addr", &self.peer_addr())
             .finish()

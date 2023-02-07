@@ -13,8 +13,8 @@
 //! You may request the server to disconnect you by writing
 //! `disconnect-me`.
 
-use crate::shared::{Connection, Disconnect, Msg, Response, CLIENT_ADDR_LOCAL, SERVER_ADDR_LOCAL};
-use carrier_pigeon::net::ClientConfig;
+use crate::shared::{Connection, Disconnect, Msg, Accepted, Rejected, CLIENT_ADDR_LOCAL, SERVER_ADDR_LOCAL};
+use carrier_pigeon::net::{ClientConfig, Status};
 use carrier_pigeon::{Client, Guarantees, MsgTableBuilder};
 use std::io::stdin;
 use std::sync::mpsc::{sync_channel, Receiver};
@@ -48,7 +48,7 @@ fn main() {
     builder
         .register_ordered::<Msg>(Guarantees::Unreliable)
         .unwrap();
-    let table = builder.build::<Connection, Response, Disconnect>().unwrap();
+    let table = builder.build::<Connection, Accepted, Rejected, Disconnect>().unwrap();
 
     let con_msg = Connection {
         user: username.clone(),
@@ -62,43 +62,40 @@ fn main() {
         .expect("failed to connect");
 
     // Block until the connection is made.
-    let mut status = client.status();
+    let mut status = client.get_status();
     while status.is_connecting() {
         sleep(Duration::from_millis(1));
-        status = client.status();
+        status = client.get_status();
     }
 
-
-    // Block until the connection is made.
-    let mut status = client.status();
-    while status.is_connecting() {
-        sleep(Duration::from_millis(1));
-        status = client.status();
-    }
-
-
-    // Block until the connection is made.
-    let mut status = client.status();
-    while status.is_connecting() {
-        sleep(Duration::from_millis(1));
-        status = client.status();
-    }
-    let status = client.handle_status();
-
-    match status {
-        Response::Accepted => println!("We were accepted!"),
-        Response::Rejected(reason) => {
-            println!("We were rejected for reason \"{}\"", reason);
-            return;
+    match client.handle_status() {
+        Status::Accepted(accepted) => {
+            println!("We were accepted!");
         }
+        Status::Rejected(rejected) => {
+            let rejected = *rejected.downcast::<Rejected>().unwrap();
+            println!("We were rejected for {}.", rejected.reason);
+        }
+        Status::ConnectionFailed(failed) => {
+            println!("Connection failed: {}", failed);
+        }
+        Status::Disconnected(disconnected) => {
+            let disconnected = *disconnected.downcast::<Disconnect>().unwrap();
+            println!("Client disconnected for {}.", disconnected.reason);
+        }
+        Status::Dropped(dropped) => {
+            println!("Client connection dropped: {}", dropped);
+        }
+        _ => {}
     }
+
 
     let receiver = spawn_stdin_thread();
 
     // This represents the game loop in your favorite game engine.
     loop {
         // If the client is closed, stop running.
-        if !client.open() {
+        if !client.get_status().is_connected() {
             break;
         }
         // These 2 methods should generally be called at the start of every frame.
@@ -129,7 +126,7 @@ fn main() {
             }
         }
 
-        if let Some(msg) = client.status().disconnected::<Disconnect>() {
+        if let Some(msg) = client.get_status().disconnected::<Disconnect>() {
             // Client was disconnected.
             println!("Disconnected for reason {}", msg.reason);
             break;

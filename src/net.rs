@@ -212,6 +212,11 @@ impl Status {
         matches!(self, Status::Rejected(_))
     }
 
+    /// Weather this status is [`ConnectionFailed`](Self::ConnectionFailed).
+    pub fn is_connection_failed(&self) -> bool {
+        matches!(self, Status::ConnectionFailed(_))
+    }
+
     /// Weather this status is [`Connected`](Self::Connected).
     pub fn is_connected(&self) -> bool {
         matches!(self, Status::Connected)
@@ -295,6 +300,14 @@ impl Status {
     /// For an untyped version, use [`unwrap_disconnected_dyn`](Self::unwrap_disconnected_dyn).
     pub fn unwrap_disconnected<D: Any + Send + Sync>(self) -> Option<D> {
         self.unwrap_disconnected_dyn()?.downcast().ok().map(|msg| *msg)
+    }
+
+    /// Unwraps the connection error from the [`ConnectionFailed`](Self::ConnectionFailed) variant.
+    pub fn unwrap_connection_failed(self) -> Option<Error> {
+        match self {
+            Status::ConnectionFailed(err) => Some(err),
+            _ => None,
+        }
     }
 
     /// Unwraps the dropped error from the [`Dropped`](Self::Dropped) variant.

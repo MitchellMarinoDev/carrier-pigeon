@@ -10,6 +10,7 @@ use std::io;
 use std::io::ErrorKind::WouldBlock;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
+use crate::messages::Response;
 
 /// A server that manages connections to multiple clients.
 ///
@@ -88,18 +89,18 @@ impl Server {
     /// ### Panics
     /// Panics if the generic parameters `C` and `R` are not the same `C` and `R`
     /// that you passed into [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
-    pub fn handle_new_cons<C: Any + Send + Sync, R: Any + Send + Sync>(
+    pub fn handle_new_cons<C: Any + Send + Sync, A: Any + Send + Sync, R: Any + Send + Sync>(
         &mut self,
-        hook: impl FnMut(CId, SocketAddr, C) -> (bool, R),
+        hook: impl FnMut(CId, SocketAddr, C) -> Response<A, R>,
     ) -> u32 {
         // verify that `C` and `R` are the right type.
         let c_tid = TypeId::of::<C>();
-        let r_tid = TypeId::of::<R>();
+        let r_tid = TypeId::of::<Response<A, R>>();
         if self.msg_table.tid_map.get(&c_tid) != Some(&CONNECTION_M_TYPE)
             || self.msg_table.tid_map.get(&r_tid) != Some(&RESPONSE_M_TYPE)
         {
             panic!(
-                "generic parameters `C` and `R` need to match the generic parameters \
+                "generic parameters `C`, `A`, and `R` need to match the generic parameters \
             that you passed into `MsgTableBuilder::build()`"
             );
         }

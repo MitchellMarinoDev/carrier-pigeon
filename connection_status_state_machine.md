@@ -17,7 +17,7 @@ flowchart TD
         ConnectingDelay --> |Rejected| Rejected:::transition
         ConnectingDelay --> |Failed| ConnectionFailed:::transition
 
-        Accepted --> |"handle_status()"| Connected
+        Accepted --> |"handle_status()"| Connected([Connected])
         Rejected --> |"handle_status()"| 2NotConnected([NotConnected])
         ConnectionFailed --> |"status()"| 2NotConnected([NotConnected])
     end

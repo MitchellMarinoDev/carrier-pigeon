@@ -2,7 +2,7 @@ use crate::connection::ping_system::ServerPingSystem;
 use crate::connection::reliable::ReliableSystem;
 use crate::connection::{ConnectionList, ConnectionListError};
 use crate::message_table::{CONNECTION_M_TYPE, PING_M_TYPE, RESPONSE_M_TYPE};
-use crate::messages::{AckMsg, PingMsg, PingType};
+use crate::messages::{AckMsg, PingMsg, PingType, Response};
 use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ServerTransport;
 use crate::{CId, MsgTable};
@@ -58,6 +58,8 @@ impl<T: ServerTransport> ServerConnection<T> {
         })
     }
 
+    // TODO: rework to not fail due to the transport. Only due to passing in a wrong message type.
+    //      Then a custom error type may be helpful.
     pub fn send_to<M: Any + Send + Sync>(&mut self, cid: CId, msg: &M) -> io::Result<()> {
         // verify type is valid
         self.msg_table.check_type::<M>()?;
@@ -243,9 +245,9 @@ impl<T: ServerTransport> ServerConnection<T> {
     /// ### Errors
     /// Returns an error iff generic parameters `C` and `R` are not the same `C` and `R`
     /// that you passed into [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
-    pub fn handle_pending<C: Any + Send + Sync, R: Any + Send + Sync>(
+    pub fn handle_pending<C: Any + Send + Sync, A: Any + Send + Sync, R: Any + Send + Sync>(
         &mut self,
-        mut hook: impl FnMut(CId, SocketAddr, C) -> (bool, R),
+        mut hook: impl FnMut(CId, SocketAddr, C) -> Response<A, R>,
     ) -> io::Result<u32> {
         let c_tid = TypeId::of::<C>();
         let r_tid = TypeId::of::<R>();
@@ -275,18 +277,19 @@ impl<T: ServerTransport> ServerConnection<T> {
 
             let msg = *msg.downcast().expect("type `C` should be the correct type");
             count += 1;
-            let (accept, response) = hook(cid, addr, msg);
-            if accept {
+            let response = hook(cid, addr, msg);
+            if let Response::Accepted(_) = &response {
                 self.new_connection(cid, addr).expect(
                     "cid and address should be valid, as they came from the connection list",
-                );
-                if let Err(err) = self.send_to(cid, &response) {
-                    warn!(
-                        "failed to send response message to {} (cid: {}): {}",
-                        addr, cid, err
-                    );
-                }
+                )
             }
+            if let Err(err) = self.send_to(cid, &response) {
+                warn!(
+                    "failed to send response message to {} (cid: {}): {}",
+                    addr, cid, err
+                );
+            }
+
         }
         Ok(count)
     }

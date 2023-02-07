@@ -1,9 +1,9 @@
 #![allow(unused)]
 //! Helper functions and types to make setting up the tests easier.
 
-use crate::helper::test_messages::{get_msg_table, Connection, Disconnect, Response};
+use crate::helper::test_messages::{get_msg_table, Connection, Disconnect, Accepted, Rejected};
 use carrier_pigeon::net::{ClientConfig, ServerConfig};
-use carrier_pigeon::{Client, Server};
+use carrier_pigeon::{Client, Response, Server};
 use log::debug;
 use std::thread::sleep;
 use std::time::Duration;
@@ -44,24 +44,24 @@ pub fn create_client_server_pair() -> (Client, Server) {
     loop {
         server.tick();
         let count =
-            server.handle_new_cons(|_cid, _addr, _con_msg: Connection| (true, Response::Accepted));
+            server.handle_new_cons(|_cid, _addr, _con_msg: Connection| Response::Accepted::<Accepted, Rejected>(Accepted));
         if count != 0 {
             break;
         }
     }
 
     // Block until the connection is made.
-    let mut status = client.status();
+    let mut status = client.get_status();
     while status.is_connecting() {
         sleep(Duration::from_millis(1));
-        status = client.status();
+        status = client.get_status();
     }
     assert!(status.is_accepted());
     let status = client.handle_status();
 
     debug!("Client created on addr: {}", client.local_addr().unwrap());
 
-    assert_eq!(status.is_accepted(), Response::Accepted);
+    assert_eq!(status.unwrap_accepted(), Some(Accepted));
 
     (client, server)
 }

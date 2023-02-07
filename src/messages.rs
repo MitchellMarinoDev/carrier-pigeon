@@ -1,10 +1,24 @@
 //! A module for internal messages that are used by carrier pigeon.
 //! This includes [`AckMsg`] and [`PingMsg`].
 
+use std::any::Any;
 use crate::net::AckNum;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::io::ErrorKind;
+
+/// An enum representing the possible responses to a connection request.
+///
+/// Generic types `A` and `R` allow you to give more information
+/// upon being accepted or rejected respectively.
+/// This could be server info or a reason for rejecting.
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum Response<A: Any + Send + Sync, R: Any + Send + Sync> {
+    /// The connection request is accepted.
+    Accepted(A),
+    /// The connection request is rejected.
+    Rejected(R),
+}
 
 /// A packet for acknowledging all received messages in the window.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]

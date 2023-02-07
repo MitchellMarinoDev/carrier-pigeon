@@ -7,28 +7,32 @@ use serde::{Deserialize, Serialize};
 pub const CLIENT_ADDR_LOCAL: &str = "127.0.0.1:7776";
 pub const SERVER_ADDR_LOCAL: &str = "127.0.0.1:7777";
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 /// A message from a user
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
 pub struct Msg {
     pub from: String,
     pub text: String,
 }
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 /// The connection message.
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
 pub struct Connection {
     pub user: String,
 }
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
 /// The disconnection message.
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
 pub struct Disconnect {
     pub reason: String,
 }
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
-/// The response message.
-pub enum Response {
-    Accepted,
-    Rejected(String),
+/// The accepted message.
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
+pub struct Accepted;
+
+/// The rejected message.
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
+pub struct Rejected {
+    pub reason: String,
 }
+

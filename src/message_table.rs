@@ -1,7 +1,7 @@
 use crate::message_table::MsgRegError::TypeAlreadyRegistered;
 use crate::messages::{AckMsg, PingMsg};
 use crate::net::{DeserFn, SerFn};
-use crate::MType;
+use crate::{MType, Response};
 use hashbrown::HashMap;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -123,6 +123,7 @@ pub const RESPONSE_M_TYPE: MType = 1;
 pub const DISCONNECT_M_TYPE: MType = 2;
 pub const ACK_M_TYPE: MType = 3;
 pub const PING_M_TYPE: MType = 4;
+pub const SPECIAL_M_TYPE_COUNT: usize = 5;
 
 impl MsgTableBuilder {
     /// Creates a new [`MsgTableBuilder`].
@@ -288,15 +289,17 @@ impl MsgTableBuilder {
     ///
     /// This should be called with the generic parameters:
     ///  - `C` is the connection message type.
-    ///  - `R` is the response message type.
+    ///  - `A` is the accepted message type.
+    ///  - `R` is the rejected message type.
     ///  - `D` is the disconnect message type.
     ///
     /// The generic parameters should **not** be registered before hand.
     ///
     /// This fails iff the generic parameters have already been registered.
-    pub fn build<C, R, D>(mut self) -> Result<MsgTable, MsgRegError>
+    pub fn build<C, A, R, D>(mut self) -> Result<MsgTable, MsgRegError>
     where
         C: Any + Send + Sync + DeserializeOwned + Serialize,
+        A: Any + Send + Sync + DeserializeOwned + Serialize,
         R: Any + Send + Sync + DeserializeOwned + Serialize,
         D: Any + Send + Sync + DeserializeOwned + Serialize,
     {
@@ -304,7 +307,7 @@ impl MsgTableBuilder {
         // This gives them universal MTypes.
         let con_discon_types = [
             self.get_ordered_registration::<C>(Guarantees::Reliable)?,
-            self.get_ordered_registration::<R>(Guarantees::Reliable)?,
+            self.get_ordered_registration::<Response<A, R>>(Guarantees::Reliable)?,
             self.get_ordered_registration::<D>(Guarantees::Reliable)?,
             self.get_ordered_registration::<AckMsg>(Guarantees::Unreliable)
                 .expect("failed to create registration for AckMsg"),
@@ -312,7 +315,7 @@ impl MsgTableBuilder {
                 .expect("failed to create registration for AckMsg"),
         ];
 
-        let registration_count = self.ordered.len() + self.sorted.len() + 3;
+        let registration_count = self.ordered.len() + self.sorted.len() + SPECIAL_M_TYPE_COUNT;
         let mut tid_map = HashMap::with_capacity(registration_count);
         let mut guarantees = Vec::with_capacity(registration_count);
         let mut ser = Vec::with_capacity(registration_count);
@@ -433,7 +436,9 @@ mod tests {
     #[derive(Serialize, Deserialize)]
     struct Connection;
     #[derive(Serialize, Deserialize)]
-    struct Response;
+    struct Accepted;
+    #[derive(Serialize, Deserialize)]
+    struct Rejected;
     #[derive(Serialize, Deserialize)]
     struct Disconnect;
     #[derive(Serialize, Deserialize)]
@@ -488,7 +493,7 @@ mod tests {
         // TODO: extract this to common fn
         let mut expected_tid_map = HashMap::new();
         expected_tid_map.insert(TypeId::of::<Connection>(), 0);
-        expected_tid_map.insert(TypeId::of::<Response>(), 1);
+        expected_tid_map.insert(TypeId::of::<Response<Accepted, Rejected>>(), 1);
         expected_tid_map.insert(TypeId::of::<Disconnect>(), 2);
         expected_tid_map.insert(TypeId::of::<AckMsg>(), 3);
         expected_tid_map.insert(TypeId::of::<PingMsg>(), 4);
@@ -505,7 +510,7 @@ mod tests {
             Guarantees::Unreliable, // UnreliableMsg
         ];
 
-        let parts = table.build::<Connection, Response, Disconnect>().unwrap();
+        let parts = table.build::<Connection, Accepted, Rejected, Disconnect>().unwrap();
 
         // Make sure the tid_map and transports generated correctly.
         assert_eq!(parts.tid_map, expected_tid_map);
@@ -538,7 +543,7 @@ mod tests {
         // Expected result:
         let mut expected_tid_map = HashMap::new();
         expected_tid_map.insert(TypeId::of::<Connection>(), 0);
-        expected_tid_map.insert(TypeId::of::<Response>(), 1);
+        expected_tid_map.insert(TypeId::of::<Response<Accepted, Rejected>>(), 1);
         expected_tid_map.insert(TypeId::of::<Disconnect>(), 2);
         expected_tid_map.insert(TypeId::of::<AckMsg>(), 3);
         expected_tid_map.insert(TypeId::of::<PingMsg>(), 4);
@@ -556,10 +561,10 @@ mod tests {
         ];
 
         let table1 = builder1
-            .build::<Connection, Response, Disconnect>()
+            .build::<Connection, Accepted, Rejected, Disconnect>()
             .unwrap();
         let table2 = builder2
-            .build::<Connection, Response, Disconnect>()
+            .build::<Connection, Accepted, Rejected, Disconnect>()
             .unwrap();
 
         // Make sure the tid_map and transports generated correctly.
@@ -592,7 +597,7 @@ mod tests {
         // Expected result:
         let mut expected_tid_map = HashMap::new();
         expected_tid_map.insert(TypeId::of::<Connection>(), 0);
-        expected_tid_map.insert(TypeId::of::<Response>(), 1);
+        expected_tid_map.insert(TypeId::of::<Response<Accepted, Rejected>>(), 1);
         expected_tid_map.insert(TypeId::of::<Disconnect>(), 2);
         expected_tid_map.insert(TypeId::of::<AckMsg>(), 3);
         expected_tid_map.insert(TypeId::of::<PingMsg>(), 4);
@@ -610,7 +615,7 @@ mod tests {
         ];
 
         let parts = builder1
-            .build::<Connection, Response, Disconnect>()
+            .build::<Connection, Accepted, Rejected, Disconnect>()
             .unwrap();
 
         // Make sure the tid_map and transports generated correctly.
@@ -639,7 +644,7 @@ mod tests {
         // Expected result:
         let mut expected_tid_map = HashMap::new();
         expected_tid_map.insert(TypeId::of::<Connection>(), 0);
-        expected_tid_map.insert(TypeId::of::<Response>(), 1);
+        expected_tid_map.insert(TypeId::of::<Response<Accepted, Rejected>>(), 1);
         expected_tid_map.insert(TypeId::of::<Disconnect>(), 2);
         expected_tid_map.insert(TypeId::of::<AckMsg>(), 3);
         expected_tid_map.insert(TypeId::of::<PingMsg>(), 4);
@@ -657,7 +662,7 @@ mod tests {
         ];
 
         let table = builder1
-            .build::<Connection, Response, Disconnect>()
+            .build::<Connection, Accepted, Rejected, Disconnect>()
             .unwrap();
 
         // Make sure the tid_map and transports generated correctly.

@@ -8,6 +8,7 @@ use std::io::ErrorKind;
 use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
+use crate::messages::Response;
 
 #[test]
 #[cfg(target_os = "linux")]
@@ -31,7 +32,7 @@ fn test_reliability() {
         ErrorKind::WouldBlock
     );
     let handled = server_connection
-        .handle_pending(|_cid, _addr, _msg: Connection| (true, Response::Accepted))
+        .handle_pending(|_cid, _addr, _msg: Connection| Response::Accepted::<Accepted, Rejected>(Accepted))
         .unwrap();
     assert_eq!(handled, 1);
 
@@ -145,12 +146,12 @@ pub struct Connection;
 /// A test disconnection message.
 pub struct Disconnect;
 
+/// The accepted message.
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
-/// A test response message.
-pub enum Response {
-    Accepted,
-    Rejected,
-}
+pub struct Accepted;
+/// The rejected message.
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
+pub struct Rejected;
 
 /// Builds a table with all these test messages and returns it's parts.
 pub fn get_msg_table() -> MsgTable {
@@ -161,5 +162,5 @@ pub fn get_msg_table() -> MsgTable {
     builder
         .register_ordered::<UnreliableMsg>(Guarantees::Unreliable)
         .unwrap();
-    builder.build::<Connection, Response, Disconnect>().unwrap()
+    builder.build::<Connection, Accepted, Rejected, Disconnect>().unwrap()
 }

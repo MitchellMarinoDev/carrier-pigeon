@@ -104,6 +104,12 @@ impl<T: ClientTransport> ClientConnection<T> {
         transport.send(m_type, payload)
     }
 
+    /// Disconnects this connection due to the error.
+    fn disconnect_err(&mut self, err: Error) {
+        self.disconnect_err = Some(err);
+        self.transport = None;
+    }
+
     /// Sends an [`AckMsg`] to acknowledge all received messages.
     pub fn send_ack_msg(&mut self) {
         let ack_msg = match self.reliable_sys.get_ack_msg() {
@@ -137,7 +143,7 @@ impl<T: ClientTransport> ClientConnection<T> {
             Ok(()) => {}
             Err(err) if err.kind() == ErrorKind::WouldBlock => {}
             Err(err) => {
-                self.connection_dropped(err);
+                self.disconnect_err(err);
             }
         }
     }
@@ -220,15 +226,10 @@ impl<T: ClientTransport> ClientConnection<T> {
         for (header, payload) in self.reliable_sys.get_resend() {
             if let Some(transport) = &self.transport {
                 if let Err(err) = transport.send(header.m_type, payload.clone()) {
-                    self.connection_dropped(err);
+                    self.disconnect_err(err);
                 }
             }
         }
-    }
-
-    fn connection_dropped(&mut self, err: Error) {
-        self.disconnect_err = Some(err);
-        self.transport = None;
     }
 
     fn check_transport(&mut self) -> io::Result<&mut T> {

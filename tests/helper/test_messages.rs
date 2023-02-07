@@ -50,20 +50,16 @@ impl Disconnect {
     }
 }
 
+/// The accepted message.
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
-/// A test response message.
-pub enum Response {
-    Accepted,
-    Rejected(String),
+pub struct Accepted;
+
+/// The rejected message.
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
+pub struct Rejected {
+    pub reason: String,
 }
-impl Response {
-    pub fn rejected<A: Into<String>>(reason: A) -> Self {
-        Response::Rejected(reason.into())
-    }
-    pub fn accepted() -> Self {
-        Response::Accepted
-    }
-}
+
 
 /// Builds a table with all these test messages and returns it's parts.
 pub fn get_msg_table() -> MsgTable {
@@ -74,5 +70,5 @@ pub fn get_msg_table() -> MsgTable {
     builder
         .register_ordered::<UnreliableMsg>(Guarantees::Unreliable)
         .unwrap();
-    builder.build::<Connection, Response, Disconnect>().unwrap()
+    builder.build::<Connection, Accepted, Rejected, Disconnect>().unwrap()
 }
