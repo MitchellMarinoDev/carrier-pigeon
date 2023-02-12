@@ -14,8 +14,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 /// [`ReliableSystem`] with the generic parameters set for a server.
-type ClientReliableSystem<C, A, R, D> =
-    ReliableSystem<Arc<Vec<u8>>, Box<dyn NetMsg>, C, A, R, D>;
+type ClientReliableSystem<C, A, R, D> = ReliableSystem<Arc<Vec<u8>>, Box<dyn NetMsg>, C, A, R, D>;
 
 /// A wrapper around the the [`ClientTransport`] that adds the reliability and ordering.
 pub(crate) struct ClientConnection<T: ClientTransport, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {

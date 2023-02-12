@@ -23,7 +23,6 @@ pub type DeserFn = fn(&[u8]) -> io::Result<Box<dyn NetMsg>>;
 /// fn(&(dyn [`Any`] + [`Send`] + [`Sync`]), &mut [`Vec`]<[`u8`]>) -> [`io::Result`]<()>
 pub type SerFn = fn(&(dyn NetMsg), &mut Vec<u8>) -> io::Result<()>;
 
-
 /// A registration in the [`MsgTableBuilder`].
 #[derive(Copy, Clone)]
 struct Registration {
