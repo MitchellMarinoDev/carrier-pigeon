@@ -1,5 +1,5 @@
 use crate::connection::server_connection::ServerConnection;
-use crate::message_table::{DISCONNECT_M_TYPE, MsgTable, RESPONSE_M_TYPE};
+use crate::message_table::{MsgTable, DISCONNECT_M_TYPE, RESPONSE_M_TYPE};
 use crate::messages::{NetMsg, Response};
 use crate::net::{AckNum, CId, CIdSpec, ErasedNetMsg, Message, ServerConfig, Status};
 use crate::transport::server_std_udp::UdpServerTransport;

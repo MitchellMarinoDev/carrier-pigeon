@@ -3,7 +3,7 @@ use crate::connection::server_connection::ServerConnection;
 use crate::messages::Response;
 use crate::transport::client_std_udp::UdpClientTransport;
 use crate::transport::server_std_udp::UdpServerTransport;
-use crate::{Guarantees, MsgTable, MsgTableBuilder};
+use crate::{ClientConfig, Guarantees, MsgTable, MsgTableBuilder};
 use serde::{Deserialize, Serialize};
 use std::io::ErrorKind;
 use std::process::Command;
@@ -33,13 +33,11 @@ fn test_reliability() {
         Accepted,
         Rejected,
         Disconnect,
-    > = ClientConnection::new(msg_table);
+    > = ClientConnection::new(ClientConfig::default(), msg_table);
 
     client_connection
-        .connect(client_addr, server_addr)
+        .connect(client_addr, server_addr, &Connection)
         .expect("Connection failed");
-
-    client_connection.send(&Connection).unwrap();
 
     sleep(Duration::from_millis(10));
     // recv_from needs to be called in order for the connection to read the client's message.
@@ -66,7 +64,7 @@ fn test_reliability() {
     // send 10 bursts of 10 messages.
     for _ in 0..10 {
         // make sure that the client is receiving the server's acks
-        let _ = client_connection.recv();
+        let _ = client_connection.get_msgs();
         client_connection.resend_reliable();
         for _ in 0..10 {
             client_connection.send(&msg).expect("failed to send");
@@ -93,7 +91,7 @@ fn test_reliability() {
     // do some more receives to get the stragglers
     for _ in 0..10 {
         // make sure that the client is receiving the server's acks
-        let _ = client_connection.recv();
+        client_connection.get_msgs();
         client_connection.resend_reliable();
         sleep(Duration::from_millis(150));
         loop {

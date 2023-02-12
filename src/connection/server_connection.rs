@@ -3,7 +3,7 @@ use crate::connection::reliable::ReliableSystem;
 use crate::connection::{ConnectionList, ConnectionListError};
 use crate::message_table::{CONNECTION_M_TYPE, PING_M_TYPE};
 use crate::messages::{AckMsg, NetMsg, PingMsg, PingType, Response};
-use crate::net::{MsgHeader, HEADER_SIZE, AckNum};
+use crate::net::{AckNum, MsgHeader, HEADER_SIZE};
 use crate::transport::ServerTransport;
 use crate::{CId, MsgTable};
 use hashbrown::HashMap;

@@ -415,23 +415,9 @@ impl CIdSpec {
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize, Default)]
 pub struct ClientConfig {}
 
-impl ClientConfig {
-    /// Creates a new client configuration.
-    pub fn new() -> Self {
-        ClientConfig {}
-    }
-}
-
 /// Configuration for a server.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize, Default)]
 pub struct ServerConfig {}
-
-impl ServerConfig {
-    /// Creates a new server configuration.
-    pub fn new() -> Self {
-        ServerConfig {}
-    }
-}
 
 /// An untyped network message containing the message content, along with the metadata associated.
 pub(crate) struct ErasedNetMsg {

@@ -40,7 +40,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     pub fn new(msg_table: MsgTable<C, A, R, D>, config: ClientConfig) -> Self {
         trace!("Creating a Client.");
 
-        let connection = ClientConnection::new(msg_table.clone());
+        let connection = ClientConnection::new(config, msg_table.clone());
         let msg_buff = (0..msg_table.mtype_count()).map(|_| vec![]).collect();
 
         Client {
@@ -66,7 +66,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
             ));
         }
 
-        self.connection.connect(local_addr, peer_addr)?;
+        self.connection.connect(local_addr, peer_addr, con_msg)?;
         self.send(con_msg)?;
         self.status = Status::Connecting;
         Ok(())
@@ -88,9 +88,15 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     /// give a reason for the disconnect.
     pub fn disconnect(&mut self, discon_msg: &D) -> io::Result<()> {
         // TODO: change to custom error type.
-        if !self.status.is_connected() { return Err(Error::new(ErrorKind::NotConnected, "Client is not connected.")) }
+        if !self.status.is_connected() {
+            return Err(Error::new(
+                ErrorKind::NotConnected,
+                "Client is not connected.",
+            ));
+        }
         debug!("Client disconnecting from server.");
         let discon_ack = self.send(discon_msg)?;
+
         // TODO: start to close the udp connection.
         //       It needs to stay open long enough to reliably send the disconnection message.
         self.status = Status::Disconnecting(discon_ack);
@@ -158,8 +164,9 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     /// This includes:
     ///
     ///  - Clearing the message buffer. This gets rid of all the messages from last frame.
-    ///  - (Re)sending messages that are needed for the reliability layer.
     ///  - Getting the messages for this frame.
+    ///  - Resending messages that are needed for the reliability layer.
+    ///  - Updating the status.
     pub fn tick(&mut self) {
         self.clear_msgs();
         self.connection.send_ack_msg();
@@ -249,8 +256,6 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
 
     /// Gets the estimated round trip time (RTT) of the connection
     /// in microseconds (divide by 1000 for ms).
-    ///
-    /// Returns `None` iff `cid` is an invalid Connection ID.
     pub fn rtt(&self) -> u32 {
         self.connection.rtt()
     }
