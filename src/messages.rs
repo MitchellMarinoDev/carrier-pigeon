@@ -9,7 +9,7 @@ use std::io::ErrorKind;
 use downcast_rs::{Downcast, impl_downcast};
 
 pub trait NetMsg: Downcast + Send + Sync + Debug {}
-impl<T: 'static + Send + Sync + Debug> NetMsg for T {}
+impl<T: Downcast + Send + Sync + Debug> NetMsg for T {}
 impl_downcast!(NetMsg);
 
 /// An enum representing the possible responses to a connection request.

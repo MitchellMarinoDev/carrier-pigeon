@@ -62,7 +62,7 @@ pub struct Rejected {
 
 
 /// Builds a table with all these test messages and returns it's parts.
-pub fn get_msg_table() -> MsgTable {
+pub fn get_msg_table() -> MsgTable<Connection, Accepted, Rejected, Disconnect> {
     let mut builder = MsgTableBuilder::new();
     builder
         .register_ordered::<ReliableMsg>(Guarantees::Reliable)

@@ -9,8 +9,12 @@ use std::any::{type_name, TypeId};
 use std::fmt::{Display, Formatter};
 use std::io;
 use std::io::{Error, ErrorKind};
+use std::marker::PhantomData;
+use std::ops::Deref;
+use std::sync::Arc;
 use MsgRegError::NonUniqueIdentifier;
 
+// TODO: Move to net
 /// Delivery guarantees.
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub enum Guarantees {
@@ -101,13 +105,8 @@ pub struct MsgTableBuilder {
     sorted: Vec<(String, Registration)>,
 }
 
-/// The table mapping [`TypeId`]s to [`MType`](crate::MType)s and [`Guarantees`].
-///
-/// You can build this by registering your types with a [`MsgTableBuilder`] or [`SortedMsgTableBuilder`], then building it with
-/// [`MsgTableBuilder::build()`] or [`SortedMsgTableBuilder::build()`].
-#[derive(Clone)]
-#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
-pub struct MsgTable {
+/// The inner structure of the [`MsgTable`].
+pub struct MsgTableInner{
     /// The mapping from TypeId to MessageId.
     pub tid_map: HashMap<TypeId, MType>,
     /// The transport associated with each message type.
@@ -116,6 +115,34 @@ pub struct MsgTable {
     pub ser: Vec<SerFn>,
     /// The deserialization functions associated with each message type.
     pub deser: Vec<DeserFn>,
+}
+
+/// The table mapping [`TypeId`]s to [`MType`](crate::MType)s and [`Guarantees`].
+///
+/// You can build this by registering your types with a [`MsgTableBuilder`] or [`SortedMsgTableBuilder`], then building it with
+/// [`MsgTableBuilder::build()`] or [`SortedMsgTableBuilder::build()`].
+#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
+pub struct MsgTable<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
+    /// The message type data wrapped in an [`Arc`].
+    inner: Arc<MsgTableInner>,
+    _pd: PhantomData<(C, A, R, D)>,
+}
+
+impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Clone for MsgTable<C, A, R, D>  {
+    fn clone(&self) -> Self {
+        MsgTable {
+            inner: self.inner.clone(),
+            _pd: PhantomData,
+        }
+    }
+}
+
+impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Deref for MsgTable<C, A, R, D>  {
+    type Target = MsgTableInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 pub const CONNECTION_M_TYPE: MType = 0;
@@ -296,7 +323,7 @@ impl MsgTableBuilder {
     /// The generic parameters should **not** be registered before hand.
     ///
     /// This fails iff the generic parameters have already been registered.
-    pub fn build<C, A, R, D>(mut self) -> Result<MsgTable, MsgRegError>
+    pub fn build<C, A, R, D>(mut self) -> Result<MsgTable<C, A, R, D>, MsgRegError>
     where
         C: NetMsg + Serialize + DeserializeOwned,
         A: NetMsg + Serialize + DeserializeOwned,
@@ -340,15 +367,18 @@ impl MsgTableBuilder {
         }
 
         Ok(MsgTable {
-            tid_map,
-            guarantees,
-            ser,
-            deser,
+            inner: Arc::new(MsgTableInner {
+                tid_map,
+                guarantees,
+                ser,
+                deser,
+            }),
+            _pd: PhantomData
         })
     }
 }
 
-impl MsgTable {
+impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> MsgTable<C, A, R, D> {
     /// Gets the number of registered [`MType`](crate::MType)s.
     #[inline]
     pub fn mtype_count(&self) -> usize {

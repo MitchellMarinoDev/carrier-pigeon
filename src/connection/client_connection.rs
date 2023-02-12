@@ -14,12 +14,12 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 /// [`ReliableSystem`] with the generic parameters set for a server.
-type ClientReliableSystem = ReliableSystem<Arc<Vec<u8>>, Box<dyn NetMsg>>;
+type ClientReliableSystem<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> = ReliableSystem<Arc<Vec<u8>>, Box<dyn NetMsg>, C, A, R, D>;
 
 /// A wrapper around the the [`ClientTransport`] that adds the reliability and ordering.
-pub(crate) struct ClientConnection<T: ClientTransport> {
+pub(crate) struct ClientConnection<T: ClientTransport, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
     /// The [`MsgTable`] to use for sending and receiving messages.
-    msg_table: MsgTable,
+    msg_table: MsgTable<C, A, R, D>,
     /// The error that caused the client to disconnect.
     disconnect_err: Option<Error>,
     /// The [`Transport`] to use to send and receive the messages, if the connection is open.
@@ -27,13 +27,13 @@ pub(crate) struct ClientConnection<T: ClientTransport> {
     /// The system used to generate ping messages and estimate the RTT.
     ping_sys: ClientPingSystem,
     /// The [`ReliableSystem`] to add optional reliability to messages.
-    reliable_sys: ClientReliableSystem,
+    reliable_sys: ClientReliableSystem<C, A, R, D>,
     /// A buffer for messages that are ready to be received.
     ready: VecDeque<(MsgHeader, Box<dyn NetMsg>)>,
 }
 
-impl<T: ClientTransport> ClientConnection<T> {
-    pub fn new(msg_table: MsgTable) -> Self {
+impl<T: ClientTransport, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ClientConnection<T, C, A, R, D> {
+    pub fn new(msg_table: MsgTable<C, A, R, D>) -> Self {
         Self {
             msg_table: msg_table.clone(),
             disconnect_err: None,

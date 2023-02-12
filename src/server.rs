@@ -17,7 +17,7 @@ use crate::messages::{NetMsg, Response};
 /// Listens on a address and port, allowing for clients to connect. Newly connected clients will
 /// be given a connection ID ([`CId`]) starting at `1` that is unique for the session.
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
-pub struct Server {
+pub struct Server<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
     /// The configuration of the server.
     config: ServerConfig,
     /// The received message buffer.
@@ -28,17 +28,17 @@ pub struct Server {
     /// Disconnected connections.
     disconnected: VecDeque<(CId, Status)>,
     /// The connection for this server.
-    connection: ServerConnection<UdpServerTransport>,
+    connection: ServerConnection<UdpServerTransport, C, A, R, D>,
 
     /// The [`MsgTable`] to use for sending messages.
-    msg_table: MsgTable,
+    msg_table: MsgTable<C, A, R, D>,
 }
 
-impl Server {
+impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     /// Creates a new [`Server`].
     pub fn new(
         listen_addr: SocketAddr,
-        msg_table: MsgTable,
+        msg_table: MsgTable<C, A, R, D>,
         config: ServerConfig,
     ) -> io::Result<Self> {
         let connection = ServerConnection::new(msg_table.clone(), listen_addr)?;
@@ -90,7 +90,7 @@ impl Server {
     /// ### Panics
     /// Panics if the generic parameters `C`, `A` and `R` are not the same `C`, `A` and `R`
     /// that you passed into [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
-    pub fn handle_new_cons<C: NetMsg, A: NetMsg, R: NetMsg>(
+    pub fn handle_new_cons(
         &mut self,
         hook: impl FnMut(CId, SocketAddr, C) -> Response<A, R>,
     ) -> u32 {
@@ -327,7 +327,7 @@ impl Server {
     }
 }
 
-impl Debug for Server {
+impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Debug for Server<C, A, R, D> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Server")
             .field("listen_addr", &self.listen_addr())

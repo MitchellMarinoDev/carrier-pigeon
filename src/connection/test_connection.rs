@@ -20,9 +20,9 @@ fn test_reliability() {
     let server_addr = "127.0.0.1:7777".parse().unwrap();
     let client_addr = "127.0.0.1:0".parse().unwrap();
 
-    let mut server_connection: ServerConnection<UdpServerTransport> =
+    let mut server_connection: ServerConnection<UdpServerTransport, Connection, Accepted, Rejected, Disconnect> =
         ServerConnection::new(msg_table.clone(), server_addr).unwrap();
-    let mut client_connection: ClientConnection<UdpClientTransport> =
+    let mut client_connection: ClientConnection<UdpClientTransport, Connection, Accepted, Rejected, Disconnect> =
         ClientConnection::new(msg_table);
 
     client_connection.connect(client_addr, server_addr).expect("Connection failed");
@@ -158,7 +158,7 @@ pub struct Accepted;
 pub struct Rejected;
 
 /// Builds a table with all these test messages and returns it's parts.
-pub fn get_msg_table() -> MsgTable {
+pub fn get_msg_table() -> MsgTable<Connection, Accepted, Rejected, Disconnect> {
     let mut builder = MsgTableBuilder::new();
     builder
         .register_ordered::<ReliableMsg>(Guarantees::ReliableOrdered)

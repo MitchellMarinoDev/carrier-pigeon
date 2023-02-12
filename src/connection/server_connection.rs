@@ -16,28 +16,28 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 /// [`ReliableSystem`] with the generic parameters set for a server.
-type ServerReliableSystem =
-    ReliableSystem<(SocketAddr, Arc<Vec<u8>>), (CId, Box<dyn NetMsg>)>;
+type ServerReliableSystem<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> =
+    ReliableSystem<(SocketAddr, Arc<Vec<u8>>), (CId, Box<dyn NetMsg>), C, A, R, D>;
 
 /// A wrapper around the the [`ServerTransport`] that adds
 /// (de)serialization, reliability and ordering to the messages.
-pub struct ServerConnection<T: ServerTransport> {
+pub struct ServerConnection<T: ServerTransport, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
     /// The [`MsgTable`] to use for sending and receiving messages.
-    msg_table: MsgTable,
+    msg_table: MsgTable<C, A, R, D>,
     /// The transport to use to send and receive the messages.
     transport: T,
     /// The system used to generate ping messages and estimate the RTT.
     ping_sys: ServerPingSystem,
     /// The [`ReliableSystem`]s to add optional reliability to messages for each connection.
-    reliable_sys: HashMap<CId, ServerReliableSystem>,
+    reliable_sys: HashMap<CId, ServerReliableSystem<C, A, R, D>>,
     /// The connection list for managing the connections to this [`ServerConnection`].
     connection_list: ConnectionList,
     /// A buffer for messages that are ready to be received.
     ready: VecDeque<(CId, MsgHeader, Box<dyn NetMsg>)>,
 }
 
-impl<T: ServerTransport> ServerConnection<T> {
-    pub fn new(msg_table: MsgTable, listen_addr: SocketAddr) -> io::Result<Self> {
+impl<T: ServerTransport, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ServerConnection<T, C, A, R, D> {
+    pub fn new(msg_table: MsgTable<C, A, R, D>, listen_addr: SocketAddr) -> io::Result<Self> {
         let connection_list = ConnectionList::new();
         let transport = T::new(listen_addr)?;
         trace!(
@@ -245,7 +245,7 @@ impl<T: ServerTransport> ServerConnection<T> {
     /// ### Guarentees
     /// The caller must guarentee that generic parameters `C` `A` and `R` are the same generic
     /// parameters that were passed into [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
-    pub fn handle_pending<C: NetMsg, A: NetMsg, R: NetMsg>(
+    pub fn handle_pending(
         &mut self,
         mut hook: impl FnMut(CId, SocketAddr, C) -> Response<A, R>,
     ) -> u32 {

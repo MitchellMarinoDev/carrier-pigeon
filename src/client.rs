@@ -17,7 +17,7 @@ use crate::messages::NetMsg;
 ///
 /// Contains a TCP and UDP connection to the server.
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
-pub struct Client {
+pub struct Client<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
     /// The configuration of the client.
     config: ClientConfig,
     /// The status of the client. Whether it is connected/disconnected etc.
@@ -29,15 +29,15 @@ pub struct Client {
 
     // TODO: make this generic/behind a feature flag somehow.
     /// The UDP connection for this client.
-    connection: ClientConnection<UdpClientTransport>,
+    connection: ClientConnection<UdpClientTransport, C, A, R, D>,
 
     /// The [`MsgTable`] to use for sending messages.
-    msg_table: MsgTable,
+    msg_table: MsgTable<C, A, R, D>,
 }
 
-impl Client {
+impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     /// Creates a new [`Client`].
-    pub fn new(msg_table: MsgTable, config: ClientConfig) -> Client {
+    pub fn new(msg_table: MsgTable<C, A, R, D>, config: ClientConfig) -> Self {
         trace!("Creating a Client.");
 
         let connection = ClientConnection::new(msg_table.clone());
@@ -53,7 +53,7 @@ impl Client {
     }
 
     // TODO: make a custom error type. Add invalid state.
-    pub fn connect<C: NetMsg>(
+    pub fn connect(
         &mut self,
         local_addr: SocketAddr,
         peer_addr: SocketAddr,
@@ -78,7 +78,7 @@ impl Client {
     }
 
     /// Gets the [`MsgTable`] of the client.
-    pub fn msg_table(&self) -> &MsgTable {
+    pub fn msg_table(&self) -> &MsgTable<C, A, R, D> {
         &self.msg_table
     }
 
@@ -86,7 +86,7 @@ impl Client {
     /// method before dropping the client to let the server know that
     /// you intentionally disconnected. The `discon_msg` allows you to
     /// give a reason for the disconnect.
-    pub fn disconnect<D: NetMsg>(&mut self, discon_msg: &D) -> io::Result<()> {
+    pub fn disconnect(&mut self, discon_msg: &D) -> io::Result<()> {
         let tid = TypeId::of::<D>();
         if self.msg_table.tid_map[&tid] != DISCONNECT_M_TYPE {
             return Err(Error::new(
@@ -251,7 +251,7 @@ impl Client {
     }
 }
 
-impl Debug for Client {
+impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Debug for Client<C, A, R, D> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Client")
             .field("status", self.get_status())
