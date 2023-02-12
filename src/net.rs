@@ -1,11 +1,11 @@
 //! Networking things that are not specific to either transport.
 
 use serde::{Deserialize, Serialize};
-use std::any::Any;
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::Error;
 use std::ops::Deref;
+use crate::messages::NetMsg;
 
 /// The maximum safe message size that can be sent on udp,
 /// after taking off the possible overheads from the transport.
@@ -132,13 +132,12 @@ impl MsgHeader {
 /// The function used to deserialize a message.
 ///
 /// fn(&[[u8]]) -> [`io::Result`]<[`Box`]<dyn [`Any`] + [`Send`] + [`Sync`]>>
-pub type DeserFn = fn(&[u8]) -> io::Result<Box<dyn Any + Send + Sync>>;
+pub type DeserFn = fn(&[u8]) -> io::Result<Box<dyn NetMsg>>;
 /// The function used to serialize a message.
 ///
 /// fn(&(dyn [`Any`] + [`Send`] + [`Sync`]), &mut [`Vec`]<[`u8`]>) -> [`io::Result`]<()>
-pub type SerFn = fn(&(dyn Any + Send + Sync), &mut Vec<u8>) -> io::Result<()>;
+pub type SerFn = fn(&(dyn NetMsg), &mut Vec<u8>) -> io::Result<()>;
 
-#[derive(Debug)]
 /// An enum for the possible states of a connection.
 pub enum Status {
     /// Not connected to any peer.
@@ -148,20 +147,26 @@ pub enum Status {
     /// We have sent a connection message, but have yet to hear a response.
     Connecting,
     /// We just got accepted.
-    Accepted(Box<dyn Any + Send + Sync>),
+    Accepted(Box<dyn NetMsg>),
     /// We just got rejected.
-    Rejected(Box<dyn Any + Send + Sync>),
+    Rejected(Box<dyn NetMsg>),
     /// The connection failed.
     ConnectionFailed(Error),
     /// The connection is established.
     Connected,
     /// The connection is closed because the peer disconnected by sending a disconnection message.
-    Disconnected(Box<dyn Any + Send + Sync>),
+    Disconnected(Box<dyn NetMsg>),
     /// The connection was dropped without sending a disconnection message.
     Dropped(Error),
     /// Disconnecting from the peer.
     // TODO: add the ack_num of the disconnection message so we can monitor it's ack status.
     Disconnecting,
+}
+
+impl Debug for Status {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        <Status as Display>::fmt(self, f)
+    }
 }
 
 impl Display for Status {
@@ -235,7 +240,7 @@ impl Status {
     /// (generic parameter `R`) that you passed into
     /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
     /// For a typed version, use [`unwrap_accepted`](Self::unwrap_accepted).
-    pub fn unwrap_accepted_dyn(self) -> Option<Box<dyn Any + Send + Sync>> {
+    pub fn unwrap_accepted_dyn(self) -> Option<Box<dyn NetMsg>> {
         match self {
             Status::Accepted(msg) => Some(msg),
             _ => None,
@@ -247,7 +252,7 @@ impl Status {
     /// (generic parameter `R`) that you passed into
     /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
     /// For a typed version, use [`unwrap_rejected`](Self::unwrap_rejected).
-    pub fn unwrap_rejected_dyn(self) -> Option<Box<dyn Any + Send + Sync>> {
+    pub fn unwrap_rejected_dyn(self) -> Option<Box<dyn NetMsg>> {
         match self {
             Status::Rejected(msg) => Some(msg),
             _ => None,
@@ -259,7 +264,7 @@ impl Status {
     /// (generic parameter `D`) that you passed into
     /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
     /// For a typed version, use [`unwrap_disconnected`](Self::unwrap_disconnected).
-    pub fn unwrap_disconnected_dyn(self) -> Option<Box<dyn Any + Send + Sync>> {
+    pub fn unwrap_disconnected_dyn(self) -> Option<Box<dyn NetMsg>> {
         match self {
             Status::Disconnected(msg) => Some(msg),
             _ => None,
@@ -271,7 +276,7 @@ impl Status {
     /// (generic parameter `R` that you passed into
     /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build)) this will return `None`.
     /// For an untyped version, use [`unwrap_accepted_dyn`](Self::unwrap_accepted_dyn).
-    pub fn unwrap_accepted<R: Any + Send + Sync>(self) -> Option<R> {
+    pub fn unwrap_accepted<R: NetMsg>(self) -> Option<R> {
         self.unwrap_accepted_dyn()?.downcast().ok().map(|msg| *msg)
     }
 
@@ -280,7 +285,7 @@ impl Status {
     /// (generic parameter `R` that you passed into
     /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build)) this will return `None`.
     /// For an untyped version, use [`unwrap_rejected_dyn`](Self::unwrap_rejected_dyn).
-    pub fn unwrap_rejected<R: Any + Send + Sync>(self) -> Option<R> {
+    pub fn unwrap_rejected<R: NetMsg>(self) -> Option<R> {
         self.unwrap_rejected_dyn()?.downcast().ok().map(|msg| *msg)
     }
 
@@ -289,7 +294,7 @@ impl Status {
     /// (generic parameter `D` that you passed into
     /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build)) this will return `None`.
     /// For an untyped version, use [`unwrap_disconnected_dyn`](Self::unwrap_disconnected_dyn).
-    pub fn unwrap_disconnected<D: Any + Send + Sync>(self) -> Option<D> {
+    pub fn unwrap_disconnected<D: NetMsg>(self) -> Option<D> {
         self.unwrap_disconnected_dyn()?.downcast().ok().map(|msg| *msg)
     }
 
@@ -314,7 +319,7 @@ impl Status {
     /// ### Panics
     /// Panics if the generic parameter `D` isn't the disconnect message type (the same `D` that
     /// you passed into `MsgTable::build`).
-    pub fn disconnected<D: Any + Send + Sync>(&self) -> Option<&D> {
+    pub fn disconnected<D: NetMsg>(&self) -> Option<&D> {
         match self {
             Status::Disconnected(d) => Some(d.downcast_ref().expect("The generic parameter `D` must be the disconnection message type (the same `D` that you passed into `MsgTable::build`).")),
             _ => None,
@@ -322,7 +327,7 @@ impl Status {
     }
 
     /// Turns this into an option with the disconnect message.
-    pub fn disconnected_dyn(&self) -> Option<&Box<dyn Any + Send + Sync>> {
+    pub fn disconnected_dyn(&self) -> Option<&Box<dyn NetMsg>> {
         match self {
             Status::Disconnected(d) => Some(d),
             _ => None,
@@ -430,7 +435,6 @@ impl ServerConfig {
 }
 
 /// An untyped network message containing the message content, along with the metadata associated.
-#[derive(Debug)]
 pub(crate) struct ErasedNetMsg {
     /// The [`CId`] that the message was sent from.
     pub cid: CId,
@@ -447,7 +451,7 @@ pub(crate) struct ErasedNetMsg {
     /// messages.
     pub order_num: OrderNum,
     /// The actual message.
-    pub msg: Box<dyn Any + Send + Sync>,
+    pub msg: Box<dyn NetMsg>,
 }
 
 impl ErasedNetMsg {
@@ -455,7 +459,7 @@ impl ErasedNetMsg {
         cid: CId,
         ack_num: AckNum,
         order_num: OrderNum,
-        msg: Box<dyn Any + Send + Sync>,
+        msg: Box<dyn NetMsg>,
     ) -> Self {
         Self {
             cid,
@@ -466,9 +470,9 @@ impl ErasedNetMsg {
     }
 
     /// Converts this to NetMsg, borrowed from this.
-    pub(crate) fn get_typed<T: Any + Send + Sync>(&self) -> Option<NetMsg<T>> {
+    pub(crate) fn get_typed<T: NetMsg>(&self) -> Option<Message<T>> {
         let msg = self.msg.downcast_ref()?;
-        Some(NetMsg {
+        Some(Message {
             cid: self.cid,
             ack_num: self.ack_num,
             order_num: self.order_num,
@@ -479,7 +483,7 @@ impl ErasedNetMsg {
 
 /// A network message containing the message content, along with the metadata associated.
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
-pub struct NetMsg<'n, T: Any + Send + Sync> {
+pub struct Message<'n, T: NetMsg> {
     /// The [`CId`] that the message was sent from.
     pub cid: CId,
     /// The acknowledgment number. This is an incrementing integer assigned by the sender for every
@@ -500,7 +504,7 @@ pub struct NetMsg<'n, T: Any + Send + Sync> {
     pub m: &'n T,
 }
 
-impl<'n, T: Any + Send + Sync> Deref for NetMsg<'n, T> {
+impl<'n, T: NetMsg> Deref for Message<'n, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {

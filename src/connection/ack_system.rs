@@ -29,7 +29,7 @@ pub(crate) struct AckBitfields {
 /// other than the header. Since this differs between client and server (server needs to keep track
 /// of a to address), it is made a generic parameter.
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
-pub(crate) struct AckSystem<SD: Debug + Clone> {
+pub(crate) struct AckSystem<SD: Clone> {
     /// The current [`AckNum`] for outgoing messages.
     outgoing_counter: AckNum,
     /// The current ack_offset value for the front end of the buffer.
@@ -47,7 +47,7 @@ pub(crate) struct AckSystem<SD: Debug + Clone> {
     saved_msgs: HashMap<AckNum, (Instant, MsgHeader, SD)>,
 }
 
-impl<SD: Debug + Clone> AckSystem<SD> {
+impl<SD: Clone> AckSystem<SD> {
     /// Creates a new [`AckSystem`].
     pub fn new() -> Self {
         let mut deque = VecDeque::new();

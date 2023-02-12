@@ -1,16 +1,20 @@
 use crate::message_table::MsgRegError::TypeAlreadyRegistered;
-use crate::messages::{AckMsg, PingMsg};
+use crate::messages::{AckMsg, NetMsg, PingMsg};
 use crate::net::{DeserFn, SerFn};
 use crate::{MType, Response};
 use hashbrown::HashMap;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::any::{type_name, Any, TypeId};
+use std::any::{type_name, TypeId};
 use std::fmt::{Display, Formatter};
 use std::io;
 use std::io::{Error, ErrorKind};
+use std::marker::PhantomData;
+use std::ops::Deref;
+use std::sync::Arc;
 use MsgRegError::NonUniqueIdentifier;
 
+// TODO: Move to net
 /// Delivery guarantees.
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub enum Guarantees {
@@ -101,13 +105,8 @@ pub struct MsgTableBuilder {
     sorted: Vec<(String, Registration)>,
 }
 
-/// The table mapping [`TypeId`]s to [`MType`](crate::MType)s and [`Guarantees`].
-///
-/// You can build this by registering your types with a [`MsgTableBuilder`] or [`SortedMsgTableBuilder`], then building it with
-/// [`MsgTableBuilder::build()`] or [`SortedMsgTableBuilder::build()`].
-#[derive(Clone)]
-#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
-pub struct MsgTable {
+/// The inner structure of the [`MsgTable`].
+pub struct MsgTableInner{
     /// The mapping from TypeId to MessageId.
     pub tid_map: HashMap<TypeId, MType>,
     /// The transport associated with each message type.
@@ -116,6 +115,34 @@ pub struct MsgTable {
     pub ser: Vec<SerFn>,
     /// The deserialization functions associated with each message type.
     pub deser: Vec<DeserFn>,
+}
+
+/// The table mapping [`TypeId`]s to [`MType`](crate::MType)s and [`Guarantees`].
+///
+/// You can build this by registering your types with a [`MsgTableBuilder`] or [`SortedMsgTableBuilder`], then building it with
+/// [`MsgTableBuilder::build()`] or [`SortedMsgTableBuilder::build()`].
+#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
+pub struct MsgTable<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
+    /// The message type data wrapped in an [`Arc`].
+    inner: Arc<MsgTableInner>,
+    _pd: PhantomData<(C, A, R, D)>,
+}
+
+impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Clone for MsgTable<C, A, R, D>  {
+    fn clone(&self) -> Self {
+        MsgTable {
+            inner: self.inner.clone(),
+            _pd: PhantomData,
+        }
+    }
+}
+
+impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Deref for MsgTable<C, A, R, D>  {
+    type Target = MsgTableInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 pub const CONNECTION_M_TYPE: MType = 0;
@@ -164,7 +191,7 @@ impl MsgTableBuilder {
     /// If type `T` has been registered or not.
     pub fn is_registered<T>(&self) -> bool
     where
-        T: Any + Send + Sync + DeserializeOwned + Serialize,
+        T: NetMsg
     {
         let tid = TypeId::of::<T>();
         self.tid_registered(tid)
@@ -187,9 +214,9 @@ impl MsgTableBuilder {
     /// use the [`register_sorted`] method. That method does not require a constant
     /// registration order, but instead requires a unique string identifier to be
     /// registered with each message.
-    pub fn register_ordered<T>(&mut self, guarantees: Guarantees) -> Result<(), MsgRegError>
+    pub fn register_ordered<T: NetMsg + Serialize + DeserializeOwned>(&mut self, guarantees: Guarantees) -> Result<(), MsgRegError>
     where
-        T: Any + Send + Sync + DeserializeOwned + Serialize,
+        T: NetMsg,
     {
         self.ordered
             .push(self.get_ordered_registration::<T>(guarantees)?);
@@ -209,7 +236,7 @@ impl MsgTableBuilder {
         identifier: impl ToString,
     ) -> Result<(), MsgRegError>
     where
-        T: Any + Send + Sync + DeserializeOwned + Serialize,
+        T: NetMsg + DeserializeOwned + Serialize,
     {
         self.sorted
             .push(self.get_sorted_registration::<T>(guarantees, identifier)?);
@@ -222,7 +249,7 @@ impl MsgTableBuilder {
         guarantees: Guarantees,
     ) -> Result<Registration, MsgRegError>
     where
-        T: Any + Send + Sync + DeserializeOwned + Serialize,
+        T: NetMsg + DeserializeOwned + Serialize,
     {
         // Check if it has been registered already.
         let tid = TypeId::of::<T>();
@@ -233,7 +260,7 @@ impl MsgTableBuilder {
         // Get the serialize and deserialize functions
         let deser: DeserFn = |bytes: &[u8]| {
             bincode::deserialize::<T>(bytes)
-                .map(|d| Box::new(d) as Box<dyn Any + Send + Sync>)
+                .map(|d| Box::new(d) as Box<dyn NetMsg>)
                 .map_err(|o| {
                     Error::new(
                         ErrorKind::InvalidData,
@@ -241,7 +268,7 @@ impl MsgTableBuilder {
                     )
                 })
         };
-        let ser: SerFn = |m: &(dyn Any + Send + Sync), buf| {
+        let ser: SerFn = |m: &(dyn NetMsg), buf| {
             bincode::serialize_into(
                 buf,
                 m.downcast_ref::<T>()
@@ -270,7 +297,7 @@ impl MsgTableBuilder {
         identifier: impl ToString,
     ) -> Result<(String, Registration), MsgRegError>
     where
-        T: Any + Send + Sync + DeserializeOwned + Serialize,
+        T: NetMsg + Serialize + DeserializeOwned,
     {
         let identifier = identifier.to_string();
         // Check if the identifier has been registered already.
@@ -296,12 +323,12 @@ impl MsgTableBuilder {
     /// The generic parameters should **not** be registered before hand.
     ///
     /// This fails iff the generic parameters have already been registered.
-    pub fn build<C, A, R, D>(mut self) -> Result<MsgTable, MsgRegError>
+    pub fn build<C, A, R, D>(mut self) -> Result<MsgTable<C, A, R, D>, MsgRegError>
     where
-        C: Any + Send + Sync + DeserializeOwned + Serialize,
-        A: Any + Send + Sync + DeserializeOwned + Serialize,
-        R: Any + Send + Sync + DeserializeOwned + Serialize,
-        D: Any + Send + Sync + DeserializeOwned + Serialize,
+        C: NetMsg + Serialize + DeserializeOwned,
+        A: NetMsg + Serialize + DeserializeOwned,
+        R: NetMsg + Serialize + DeserializeOwned,
+        D: NetMsg + Serialize + DeserializeOwned,
     {
         // Always prepend the Connection and Disconnect types first.
         // This gives them universal MTypes.
@@ -340,15 +367,18 @@ impl MsgTableBuilder {
         }
 
         Ok(MsgTable {
-            tid_map,
-            guarantees,
-            ser,
-            deser,
+            inner: Arc::new(MsgTableInner {
+                tid_map,
+                guarantees,
+                ser,
+                deser,
+            }),
+            _pd: PhantomData
         })
     }
 }
 
-impl MsgTable {
+impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> MsgTable<C, A, R, D> {
     /// Gets the number of registered [`MType`](crate::MType)s.
     #[inline]
     pub fn mtype_count(&self) -> usize {
@@ -382,7 +412,7 @@ impl MsgTable {
     }
 
     /// Checks if the type `T` is registered. If it is not, it returns an error.
-    pub fn check_type<T: Any + Send + Sync>(&self) -> io::Result<()> {
+    pub fn check_type<T: NetMsg>(&self) -> io::Result<()> {
         let tid = TypeId::of::<T>();
         if !self.valid_tid(tid) {
             return Err(Error::new(
@@ -433,17 +463,17 @@ mod tests {
     use super::*;
     use serde::{Deserialize, Serialize};
 
-    #[derive(Serialize, Deserialize)]
+    #[derive(Serialize, Deserialize, Debug)]
     struct Connection;
-    #[derive(Serialize, Deserialize)]
+    #[derive(Serialize, Deserialize, Debug)]
     struct Accepted;
-    #[derive(Serialize, Deserialize)]
+    #[derive(Serialize, Deserialize, Debug)]
     struct Rejected;
-    #[derive(Serialize, Deserialize)]
+    #[derive(Serialize, Deserialize, Debug)]
     struct Disconnect;
-    #[derive(Serialize, Deserialize)]
+    #[derive(Serialize, Deserialize, Debug)]
     struct ReliableMsg;
-    #[derive(Serialize, Deserialize)]
+    #[derive(Serialize, Deserialize, Debug)]
     struct UnreliableMsg;
 
     /// Tests the [`TypeAlreadyRegistered`], and [`NonUniqueIdentifier`]

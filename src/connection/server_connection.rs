@@ -2,13 +2,13 @@ use crate::connection::ping_system::ServerPingSystem;
 use crate::connection::reliable::ReliableSystem;
 use crate::connection::{ConnectionList, ConnectionListError};
 use crate::message_table::{CONNECTION_M_TYPE, PING_M_TYPE};
-use crate::messages::{AckMsg, PingMsg, PingType, Response};
+use crate::messages::{AckMsg, NetMsg, PingMsg, PingType, Response};
 use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ServerTransport;
 use crate::{CId, MsgTable};
 use hashbrown::HashMap;
 use log::{debug, error, info, trace, warn};
-use std::any::{type_name, Any, TypeId};
+use std::any::{type_name, TypeId};
 use std::collections::VecDeque;
 use std::io;
 use std::io::{Error, ErrorKind};
@@ -16,28 +16,28 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 /// [`ReliableSystem`] with the generic parameters set for a server.
-type ServerReliableSystem =
-    ReliableSystem<(SocketAddr, Arc<Vec<u8>>), (CId, Box<dyn Any + Send + Sync>)>;
+type ServerReliableSystem<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> =
+    ReliableSystem<(SocketAddr, Arc<Vec<u8>>), (CId, Box<dyn NetMsg>), C, A, R, D>;
 
 /// A wrapper around the the [`ServerTransport`] that adds
 /// (de)serialization, reliability and ordering to the messages.
-pub struct ServerConnection<T: ServerTransport> {
+pub struct ServerConnection<T: ServerTransport, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
     /// The [`MsgTable`] to use for sending and receiving messages.
-    msg_table: MsgTable,
+    msg_table: MsgTable<C, A, R, D>,
     /// The transport to use to send and receive the messages.
     transport: T,
     /// The system used to generate ping messages and estimate the RTT.
     ping_sys: ServerPingSystem,
     /// The [`ReliableSystem`]s to add optional reliability to messages for each connection.
-    reliable_sys: HashMap<CId, ServerReliableSystem>,
+    reliable_sys: HashMap<CId, ServerReliableSystem<C, A, R, D>>,
     /// The connection list for managing the connections to this [`ServerConnection`].
     connection_list: ConnectionList,
     /// A buffer for messages that are ready to be received.
-    ready: VecDeque<(CId, MsgHeader, Box<dyn Any + Send + Sync>)>,
+    ready: VecDeque<(CId, MsgHeader, Box<dyn NetMsg>)>,
 }
 
-impl<T: ServerTransport> ServerConnection<T> {
-    pub fn new(msg_table: MsgTable, listen_addr: SocketAddr) -> io::Result<Self> {
+impl<T: ServerTransport, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ServerConnection<T, C, A, R, D> {
+    pub fn new(msg_table: MsgTable<C, A, R, D>, listen_addr: SocketAddr) -> io::Result<Self> {
         let connection_list = ConnectionList::new();
         let transport = T::new(listen_addr)?;
         trace!(
@@ -60,7 +60,7 @@ impl<T: ServerTransport> ServerConnection<T> {
 
     // TODO: rework to not fail due to the transport. Only due to passing in a wrong message type.
     //      Then a custom error type may be helpful.
-    pub fn send_to<M: Any + Send + Sync>(&mut self, cid: CId, msg: &M) -> io::Result<()> {
+    pub fn send_to<M: NetMsg>(&mut self, cid: CId, msg: &M) -> io::Result<()> {
         // verify type is valid
         self.msg_table.check_type::<M>()?;
         let addr = self
@@ -139,7 +139,7 @@ impl<T: ServerTransport> ServerConnection<T> {
     ///
     /// A Error of type WouldBlock means no more messages can be returned at this time. Other
     /// errors are errors in receiving or validating the data.
-    pub fn recv_from(&mut self) -> io::Result<(CId, MsgHeader, Box<dyn Any + Send + Sync>)> {
+    pub fn recv_from(&mut self) -> io::Result<(CId, MsgHeader, Box<dyn NetMsg>)> {
         loop {
             // if there is a message that is ready, return it
             if let Some(ready) = self.ready.pop_front() {
@@ -245,7 +245,7 @@ impl<T: ServerTransport> ServerConnection<T> {
     /// ### Guarentees
     /// The caller must guarentee that generic parameters `C` `A` and `R` are the same generic
     /// parameters that were passed into [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
-    pub fn handle_pending<C: Any + Send + Sync, A: Any + Send + Sync, R: Any + Send + Sync>(
+    pub fn handle_pending(
         &mut self,
         mut hook: impl FnMut(CId, SocketAddr, C) -> Response<A, R>,
     ) -> u32 {

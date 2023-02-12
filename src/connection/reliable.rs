@@ -1,9 +1,8 @@
 use crate::connection::ack_system::AckSystem;
 use crate::connection::ordering_system::OrderingSystem;
-use crate::messages::AckMsg;
+use crate::messages::{AckMsg, NetMsg};
 use crate::net::MsgHeader;
 use crate::{Guarantees, MType, MsgTable};
-use std::fmt::Debug;
 use std::time::{Duration, Instant};
 
 /// A minimum time for ack messages to be sent.
@@ -21,16 +20,16 @@ const ACK_MSG_LIMIT: Option<Duration> = Some(Duration::from_millis(100));
 ///
 /// Since these differ between client and server (server needs to keep track of a from address),
 /// these need to be generic parameters.
-pub(crate) struct ReliableSystem<SD: Debug + Clone, RD: Debug> {
-    msg_table: MsgTable,
+pub(crate) struct ReliableSystem<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
+    msg_table: MsgTable<C, A, R, D>,
     last_ack_msg: Instant,
     ack_sys: AckSystem<SD>,
     ordering_sys: OrderingSystem<RD>,
 }
 
-impl<SD: Debug + Clone, RD: Debug> ReliableSystem<SD, RD> {
+impl<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<SD, RD, C, A, R, D> {
     /// Creates a new [`ReliableSystem`].
-    pub fn new(msg_table: MsgTable) -> Self {
+    pub fn new(msg_table: MsgTable<C, A, R, D>) -> Self {
         let m_table_count = msg_table.mtype_count();
         ReliableSystem {
             msg_table,

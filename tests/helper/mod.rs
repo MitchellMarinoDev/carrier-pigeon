@@ -3,12 +3,15 @@
 
 use crate::helper::test_messages::{get_msg_table, Connection, Disconnect, Accepted, Rejected};
 use carrier_pigeon::net::{ClientConfig, ServerConfig};
-use carrier_pigeon::{Client, Response, Server};
 use log::{debug, info};
 use std::thread::sleep;
 use std::time::Duration;
+use carrier_pigeon::Response;
 
 pub mod test_messages;
+
+type Client = carrier_pigeon::Client<Connection, Accepted, Rejected, Disconnect>;
+type Server = carrier_pigeon::Server<Connection, Accepted, Rejected, Disconnect>;
 
 pub const SERVER_ADDR_LOCAL: &str = "127.0.0.1:7778";
 pub const CLIENT_ADDR_LOCAL: &str = "127.0.0.1:7776";

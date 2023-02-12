@@ -1,23 +1,23 @@
 use crate::connection::server_connection::ServerConnection;
 use crate::message_table::{MsgTable, CONNECTION_M_TYPE, RESPONSE_M_TYPE};
-use crate::net::{CId, CIdSpec, ErasedNetMsg, NetMsg, ServerConfig, Status};
+use crate::net::{CId, CIdSpec, ErasedNetMsg, Message, ServerConfig, Status};
 use crate::transport::server_std_udp::UdpServerTransport;
 use log::*;
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::io;
 use std::io::ErrorKind::WouldBlock;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
-use crate::messages::Response;
+use crate::messages::{NetMsg, Response};
 
 /// A server that manages connections to multiple clients.
 ///
 /// Listens on a address and port, allowing for clients to connect. Newly connected clients will
 /// be given a connection ID ([`CId`]) starting at `1` that is unique for the session.
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
-pub struct Server {
+pub struct Server<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
     /// The configuration of the server.
     config: ServerConfig,
     /// The received message buffer.
@@ -28,17 +28,17 @@ pub struct Server {
     /// Disconnected connections.
     disconnected: VecDeque<(CId, Status)>,
     /// The connection for this server.
-    connection: ServerConnection<UdpServerTransport>,
+    connection: ServerConnection<UdpServerTransport, C, A, R, D>,
 
     /// The [`MsgTable`] to use for sending messages.
-    msg_table: MsgTable,
+    msg_table: MsgTable<C, A, R, D>,
 }
 
-impl Server {
+impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     /// Creates a new [`Server`].
     pub fn new(
         listen_addr: SocketAddr,
-        msg_table: MsgTable,
+        msg_table: MsgTable<C, A, R, D>,
         config: ServerConfig,
     ) -> io::Result<Self> {
         let connection = ServerConnection::new(msg_table.clone(), listen_addr)?;
@@ -70,7 +70,7 @@ impl Server {
     /// Disconnects from the given `cid`. You should always disconnect all clients before dropping
     /// the server to let the clients know that you intentionally disconnected. The `discon_msg`
     /// allows you to give a reason for the disconnect.
-    pub fn disconnect<T: Any + Send + Sync>(&mut self, discon_msg: &T, cid: CId) -> io::Result<()> {
+    pub fn disconnect<T: NetMsg>(&mut self, discon_msg: &T, cid: CId) -> io::Result<()> {
         if !self.cid_connected(cid) {
             return Err(Error::new(ErrorKind::InvalidData, "Invalid CId."));
         }
@@ -86,26 +86,10 @@ impl Server {
     /// the respective message.
     ///
     /// Returns the number of handled connections.
-    ///
-    /// ### Panics
-    /// Panics if the generic parameters `C`, `A` and `R` are not the same `C`, `A` and `R`
-    /// that you passed into [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
-    pub fn handle_new_cons<C: Any + Send + Sync, A: Any + Send + Sync, R: Any + Send + Sync>(
+    pub fn handle_new_cons(
         &mut self,
         hook: impl FnMut(CId, SocketAddr, C) -> Response<A, R>,
     ) -> u32 {
-        // verify that `C` and `R` are the right type.
-        let c_tid = TypeId::of::<C>();
-        let r_tid = TypeId::of::<Response<A, R>>();
-        if self.msg_table.tid_map.get(&c_tid) != Some(&CONNECTION_M_TYPE)
-            || self.msg_table.tid_map.get(&r_tid) != Some(&RESPONSE_M_TYPE)
-        {
-            panic!(
-                "generic parameters `C`, `A`, and `R` need to match the generic parameters \
-            that you passed into `MsgTableBuilder::build()`"
-            );
-        }
-
         self.connection.handle_pending(hook)
     }
 
@@ -129,12 +113,12 @@ impl Server {
     }
 
     /// Sends a message to the [`CId`] `cid`.
-    pub fn send_to<M: Any + Send + Sync>(&mut self, cid: CId, msg: &M) -> io::Result<()> {
+    pub fn send_to<M: NetMsg>(&mut self, cid: CId, msg: &M) -> io::Result<()> {
         self.connection.send_to(cid, msg)
     }
 
     /// Broadcasts a message to all connected clients.
-    pub fn broadcast<T: Any + Send + Sync>(&mut self, msg: &T) -> io::Result<()> {
+    pub fn broadcast<T: NetMsg>(&mut self, msg: &T) -> io::Result<()> {
         for cid in self.cids().collect::<Vec<_>>() {
             self.send_to(cid, msg)?;
         }
@@ -142,7 +126,7 @@ impl Server {
     }
 
     /// Sends a message to all [`CId`]s that match `spec`.
-    pub fn send_spec<T: Any + Send + Sync>(&mut self, spec: CIdSpec, msg: &T) -> io::Result<()> {
+    pub fn send_spec<T: NetMsg>(&mut self, spec: CIdSpec, msg: &T) -> io::Result<()> {
         for cid in self
             .cids()
             .filter(|cid| spec.matches(*cid))
@@ -160,7 +144,7 @@ impl Server {
     /// ### Panics
     /// Panics if the type `M` was not registered.
     /// For a non-panicking version, see [try_recv()](Self::try_recv).
-    pub fn recv<M: Any + Send + Sync>(&self) -> impl Iterator<Item = NetMsg<M>> {
+    pub fn recv<M: NetMsg>(&self) -> impl Iterator<Item = Message<M>> {
         self.msg_table.check_type::<M>().expect(
             "`recv` panics if generic type `M` is not registered in the MsgTable. \
             For a non panicking version, use `try_recv`",
@@ -178,7 +162,7 @@ impl Server {
     /// Make sure to call [`get_msgs()`](Self::get_msgs) before calling this.
     ///
     /// Returns `None` if the type `M` was not registered.
-    pub fn try_recv<M: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = NetMsg<M>>> {
+    pub fn try_recv<M: NetMsg>(&self) -> Option<impl Iterator<Item = Message<M>>> {
         let tid = TypeId::of::<M>();
         let m_type = *self.msg_table.tid_map.get(&tid)?;
 
@@ -197,10 +181,10 @@ impl Server {
     /// ### Panics
     /// Panics if the type `M` was not registered.
     /// For a non-panicking version, see [try_recv_spec()](Self::try_recv_spec).
-    pub fn recv_spec<M: Any + Send + Sync>(
+    pub fn recv_spec<M: NetMsg>(
         &self,
         spec: CIdSpec,
-    ) -> impl Iterator<Item = NetMsg<M>> + '_ {
+    ) -> impl Iterator<Item = Message<M>> + '_ {
         self.msg_table.check_type::<M>().expect(
             "`recv_spec` panics if generic type `M` is not registered in the MsgTable. \
             For a non panicking version, use `try_recv_spec`",
@@ -220,10 +204,10 @@ impl Server {
     /// Make sure to call [`get_msgs()`](Self::get_msgs)
     ///
     /// Returns `None` if the type `M` was not registered.
-    pub fn try_recv_spec<M: Any + Send + Sync>(
+    pub fn try_recv_spec<M: NetMsg>(
         &self,
         spec: CIdSpec,
-    ) -> Option<impl Iterator<Item = NetMsg<M>> + '_> {
+    ) -> Option<impl Iterator<Item = Message<M>> + '_> {
         let tid = TypeId::of::<M>();
         let m_type = *self.msg_table.tid_map.get(&tid)?;
 
@@ -327,7 +311,7 @@ impl Server {
     }
 }
 
-impl Debug for Server {
+impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Debug for Server<C, A, R, D> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Server")
             .field("listen_addr", &self.listen_addr())
