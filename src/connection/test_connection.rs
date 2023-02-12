@@ -9,7 +9,9 @@ use std::time::Duration;
 #[test]
 #[cfg(target_os = "linux")]
 fn test_reliability() {
-    env_logger::init();
+    let _ = simple_logger::SimpleLogger::new()
+        .with_level(log::LevelFilter::Trace)
+        .init();
 
     let msg_table = get_msg_table();
 

@@ -27,8 +27,8 @@ pub mod server;
 mod transport;
 mod util;
 
-pub use connection::{DisconnectionEvent, DisconnectionEventType};
 pub use client::Client;
+pub use connection::{DisconnectionEvent, DisconnectionEventType};
 pub use message_table::{MsgRegError, MsgTable, MsgTableBuilder};
 pub use messages::Response;
 pub use net::{CId, ClientConfig, Guarantees, MType, ServerConfig};

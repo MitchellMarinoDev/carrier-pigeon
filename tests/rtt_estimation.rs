@@ -7,7 +7,9 @@ mod helper;
 #[test]
 #[cfg(target_os = "linux")]
 fn test_rtt_calculation() {
-    env_logger::init();
+    let _ = simple_logger::SimpleLogger::new()
+        .with_level(log::LevelFilter::Trace)
+        .init();
 
     let (mut client, mut server) = create_client_server_pair();
 

@@ -20,7 +20,9 @@ use std::time::Duration;
 mod shared;
 
 fn main() {
-    env_logger::init();
+    let _ = simple_logger::SimpleLogger::new()
+        .with_level(log::LevelFilter::Trace)
+        .init();
 
     let mut args = env::args().skip(1);
     // Get the address from the command line args, or use loopback on port 7777.
@@ -54,7 +56,10 @@ fn main() {
         // This should be called every once in a while to clean up so that the
         // server doesn't send messages to disconnected clients.
         while let Some(disconnect_event) = server.handle_disconnect() {
-            println!("CId {} disconnected: {:?}", disconnect_event.cid, disconnect_event.disconnection_type);
+            println!(
+                "CId {} disconnected: {:?}",
+                disconnect_event.cid, disconnect_event.disconnection_type
+            );
         }
 
         // This handles the new connections with whatever logic you want.

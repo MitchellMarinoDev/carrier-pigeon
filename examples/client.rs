@@ -27,7 +27,9 @@ use std::{env, thread};
 mod shared;
 
 fn main() {
-    env_logger::init();
+    let _ = simple_logger::SimpleLogger::new()
+        .with_level(log::LevelFilter::Trace)
+        .init();
 
     let mut args = env::args().skip(1);
     // Get the address from the command line args, or use loopback on port 7777.

@@ -8,7 +8,9 @@ mod helper;
 
 #[test]
 fn send_recv() {
-    env_logger::init();
+    let _ = simple_logger::SimpleLogger::new()
+        .with_level(log::LevelFilter::Trace)
+        .init();
 
     // CLIENT TO SERVER
     let (mut client, mut server) = create_client_server_pair();

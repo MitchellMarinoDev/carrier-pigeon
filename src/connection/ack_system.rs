@@ -188,6 +188,14 @@ impl<SD: Clone> AckSystem<SD> {
 
         acks
     }
+
+    #[inline]
+    /// Checks to see if the given [`AckNum`] is in the resend buffer.
+    /// Therefore, this will return `false` if a message has not been acknowledged,
+    /// or was never sent.
+    pub fn is_not_acked(&self, ack_num: AckNum) -> bool {
+        self.saved_msgs.contains_key(&ack_num)
+    }
 }
 
 #[cfg(test)]

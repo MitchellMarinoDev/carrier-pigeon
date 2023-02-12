@@ -331,7 +331,9 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
 
     fn update_status(&mut self) {
         if let Status::Disconnecting(ack_num) = self.status {
-            // TODO: if the disconnection message has been acknowledged, move states.
+            if !self.reliable_sys.is_not_acked(ack_num) {
+                self.status = Status::NotConnected;
+            }
         }
     }
 
@@ -340,8 +342,17 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
         use Status::*;
 
         match &self.status {
-            Connected => self.status = Dropped(err),
-            Connecting | Accepted(_) | Rejected(_) => self.status = ConnectionFailed(err),
+            Connected => {
+                warn!(
+                    "Got error while sending/receiving data. Considering connection dropped. {}",
+                    err
+                );
+                self.status = Dropped(err);
+            }
+            Connecting | Accepted(_) | Rejected(_) => {
+                warn!("Got error while trying to connect to server. Considering the connection attempt failed. {}", err);
+                self.status = ConnectionFailed(err);
+            }
             Disconnecting(_) => self.status = NotConnected,
             _ => {}
         }
@@ -349,7 +360,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     }
 
     /// Updates the status of the connection if there is an error.
-    fn handle_transport_result(&mut self, result: io::Result<()>) {
+    fn handle_transport_result<T>(&mut self, result: io::Result<T>) {
         if let Err(err) = result {
             self.handle_transport_err(err);
         }

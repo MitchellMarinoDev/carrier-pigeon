@@ -125,7 +125,8 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
         // send the payload based on the guarantees
         let guarantees = self.msg_table.guarantees[m_type];
         reliable_sys.save(header, guarantees, (addr, payload.clone()));
-        self.transport.send_to(addr, m_type, payload)?;
+        let result = self.transport.send_to(addr, m_type, payload);
+        self.handle_send_result(cid, result);
         Ok(header.sender_ack_num)
     }
 
@@ -322,7 +323,10 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                 continue;
             }
             let header = MsgHeader::from_be_bytes(&buf[..HEADER_SIZE]);
-            self.msg_table.check_m_type(header.m_type)?;
+            if !self.msg_table.valid_m_type(header.m_type) {
+                warn!("Server received message with invalid MType ({}). Maximum is {}", header.m_type, self.msg_table.mtype_count() - 1);
+                continue;
+            }
             trace!(
                 "Server: received message (MType: {}, len: {}, AckNum: {}, from: {})",
                 header.m_type,
@@ -362,7 +366,13 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                 Some(cid) => cid,
             };
 
-            let msg = self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..])?;
+            let msg = match self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..]) {
+                Ok(i) => i,
+                Err(err) => {
+                    warn!("Server: Error deserializing message: {}", err);
+                    continue;
+                }
+            };
 
             match header.m_type {
                 // TODO: Add other special types.
@@ -395,13 +405,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                         .expect("cid should be from a connected client");
                 }
                 RESPONSE_M_TYPE => {
-                    // TODO: impl for server
-                    // if self.status.is_connecting() {
-                    //     match *msg.downcast::<Response<A, R>>().expect("since the MType is `RESPONSE_M_TYPE`, the message should be the response type") {
-                    //         Response::Accepted(a) => self.status = Status::Accepted(a),
-                    //         Response::Rejected(r) => self.status = Status::Rejected(r),
-                    //     }
-                    // }
+                    warn!("Server: Got a response type message. Ignoring.");
                 }
                 _ => {
                     // handle reliability and ordering
@@ -426,23 +430,31 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
 
     // TODO: handle things in the disconnecting buffer.
     fn update_statuses(&mut self) {
-        todo!();
-        // if let Status::Disconnecting(ack_num) = self.status {
-        //     // TODO: if the disconnection message has been acknowledged, move states.
-        // }
+        let mut remove = vec![];
+        for (idx, (cid, ack_num, _d)) in self.disconnecting.iter().enumerate() {
+            if !self.reliable_sys[cid].is_not_acked(*ack_num) {
+                remove.push(idx);
+            }
+        }
+
+        for idx in remove.into_iter().rev() {
+            let (cid, _, disconnect_msg) = self.disconnecting.swap_remove(idx);
+            self.server_disconnected_event(cid, disconnect_msg);
+        }
     }
 
     /// Updates the status of the connection based on a send error.
     ///
     /// Since receiving is not connection specific, it should be handled differently.
     fn handle_send_err(&mut self, cid: CId, err: Error) {
+        warn!("Got error while sending data to {}. Considering connection dropped. {}", cid, err);
         self.connection_dropped_event(cid, err);
     }
 
     /// Updates the status of the connection if there is a send error.
     ///
     /// Since receiving is not connection specific, it should be handled differently.
-    fn handle_send_result(&mut self, cid: CId, result: io::Result<()>) {
+    fn handle_send_result<T>(&mut self, cid: CId, result: io::Result<T>) {
         if let Err(err) = result {
             self.handle_send_err(cid, err);
         }
@@ -490,12 +502,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     ///
     /// Returns the number of disconnects handled.
     pub fn handle_disconnect(&mut self) -> Option<DisconnectionEvent<D>> {
-        // disconnect counts.
-        let discon_event = self.disconnection_events.pop_front()?;
-        self.remove_connection(discon_event.cid)
-            .expect("cid from disconnection_events should be connected");
-        debug!("Removing CId {}", discon_event.cid);
-        Some(discon_event)
+        self.disconnection_events.pop_front()
     }
 
     /// Handles an incoming ping message.
@@ -542,6 +549,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
             .push_back(DisconnectionEvent::dropped(cid, err));
         self.remove_connection(cid)
             .expect("cid should be from a connected client");
+        debug!("CId {} dropped.", cid);
     }
 
     /// Creates a [`DisconnectionEvent`] of type `Disconnected`,
@@ -554,6 +562,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
             .push_back(DisconnectionEvent::disconnected(cid, disconnect_msg));
         self.remove_connection(cid)
             .expect("cid should be from a connected client");
+        debug!("CId {} disconnected.", cid);
     }
 
     /// Creates a [`DisconnectionEvent`] of type `ServerDisconnected`,
@@ -566,6 +575,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
             .push_back(DisconnectionEvent::server_disconnected(cid, disconnect_msg));
         self.remove_connection(cid)
             .expect("cid should be from a connected client");
+        debug!("CId {} got disconnected by the server.", cid);
     }
 
     /// Gets the [`NetConfig`] of the client.

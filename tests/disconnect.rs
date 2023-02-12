@@ -7,8 +7,9 @@ mod helper;
 
 #[test]
 fn graceful_disconnect() {
-    std::env::set_var("RUST_LOG", "TRACE");
-    env_logger::init();
+    let _ = simple_logger::SimpleLogger::new()
+        .with_level(log::LevelFilter::Trace)
+        .init();
 
     {
         // Client Disconnect Test
@@ -22,15 +23,12 @@ fn graceful_disconnect() {
         std::thread::sleep(Duration::from_millis(100));
 
         server.tick();
-        while let Some(disconnect_event) = server.handle_disconnect() {
+        let mut discon_count = 0;
+        while let Some(discon_event) = server.handle_disconnect() {
             assert_eq!(
-                disconnect_event.disconnection_type.unwrap_disconnected(),
+                discon_event.disconnection_type.unwrap_disconnected(),
                 Some(&Disconnect::new("Testing Disconnect Client."))
             );
-        }
-
-        let mut discon_count = 0;
-        while let Some(_) = server.handle_disconnect() {
             discon_count += 1;
         }
         assert_eq!(discon_count, 1);
@@ -57,14 +55,16 @@ fn graceful_disconnect() {
 
 #[test]
 fn drop_test() {
-    env_logger::init();
+    let _ = simple_logger::SimpleLogger::new()
+        .with_level(log::LevelFilter::Trace)
+        .init();
 
     {
         // Server Drop Client.
         let (mut client, server) = create_client_server_pair();
         drop(server);
 
-        // Give the server enough time for the connection to sever.
+        // Give the client enough time for the connection to timeout.
         std::thread::sleep(Duration::from_millis(100));
 
         client.tick();
@@ -77,17 +77,16 @@ fn drop_test() {
         let (client, mut server) = create_client_server_pair();
         drop(client);
 
-        // Give the server enough time for the connection to sever.
+        // Give the server enough time for the connection to timeout.
         std::thread::sleep(Duration::from_millis(100));
 
         server.tick();
-        while let Some(discon_msg) = server.handle_disconnect() {
-            assert!(discon_msg.disconnection_type.is_dropped())
-        }
-
         let mut discon_count = 0;
         while let Some(discon_event) = server.handle_disconnect() {
-            assert!(discon_event.disconnection_type.is_dropped(), "expected status to be dropped");
+            assert!(
+                discon_event.disconnection_type.is_dropped(),
+                "expected status to be dropped"
+            );
             discon_count += 1;
         }
 
