@@ -2,7 +2,7 @@
 //! Helper functions and types to make setting up the tests easier.
 
 use crate::helper::test_messages::{get_table_parts, Connection, Disconnect, Response};
-use carrier_pigeon::net::ClientConfig;
+use carrier_pigeon::net::NetConfig;
 use carrier_pigeon::{Client, Server, ServerConfig};
 use log::debug;
 use std::net::{TcpListener, TcpStream, UdpSocket};
@@ -32,7 +32,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
         ADDR_LOCAL.parse().unwrap(),
         addr,
         parts,
-        ClientConfig::default(),
+        NetConfig::default(),
         Connection::new("John"),
     );
 

@@ -89,7 +89,7 @@ pub const RESPONSE_M_TYPE: MType = 1;
 pub const DISCONNECT_M_TYPE: MType = 2;
 pub const ACK_M_TYPE: MType = 3;
 pub const PING_M_TYPE: MType = 4;
-pub const SPECIAL_M_TYPE_COUNT: MType = 5;
+pub const SPECIAL_M_TYPE_COUNT: usize = 5;
 
 impl MsgTableBuilder {
     /// Creates a new [`MsgTableBuilder`].

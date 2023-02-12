@@ -5,7 +5,7 @@ use crate::messages::{NetMsg, PingMsg, PingType};
 use crate::net::{AckNum, ErasedNetMsg, Message, MsgHeader, Status, HEADER_SIZE};
 use crate::transport::client_std_udp::UdpClientTransport;
 use crate::transport::ClientTransport;
-use crate::{ClientConfig, MsgTable, Response};
+use crate::{NetConfig, MsgTable, Response};
 use log::{debug, error, trace, warn};
 use std::any::TypeId;
 use std::io;
@@ -18,8 +18,8 @@ type ClientReliableSystem<C, A, R, D> = ReliableSystem<Arc<Vec<u8>>, Box<dyn Net
 
 /// A wrapper around the the [`ClientTransport`] that adds the reliability and ordering.
 pub struct Client<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
-    /// The configuration of the client.
-    config: ClientConfig,
+    /// The [`NetConfig`].
+    config: NetConfig,
     /// The [`MsgTable`] to use for sending and receiving messages.
     msg_table: MsgTable<C, A, R, D>,
     /// The status of the client. Whether it is connected/disconnected etc.
@@ -37,15 +37,15 @@ pub struct Client<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
 }
 
 impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
-    pub fn new(config: ClientConfig, msg_table: MsgTable<C, A, R, D>) -> Self {
+    pub fn new(config: NetConfig, msg_table: MsgTable<C, A, R, D>) -> Self {
         Self {
             config,
             msg_table: msg_table.clone(),
             status: Status::NotConnected,
             transport: None,
-            ping_sys: ClientPingSystem::new(),
+            ping_sys: ClientPingSystem::new(config),
             msg_buf: (0..msg_table.mtype_count()).map(|_| vec![]).collect(),
-            reliable_sys: ReliableSystem::new(msg_table),
+            reliable_sys: ReliableSystem::new(msg_table, config),
         }
     }
 
@@ -77,8 +77,8 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
         );
 
         // clean up from last connection
-        self.ping_sys = ClientPingSystem::new();
-        self.reliable_sys = ReliableSystem::new(self.msg_table.clone());
+        self.ping_sys = ClientPingSystem::new(self.config);
+        self.reliable_sys = ReliableSystem::new(self.msg_table.clone(), self.config);
         for buf in self.msg_buf.iter_mut() {
             buf.clear();
         }
@@ -390,7 +390,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     }
 
     /// Gets the [`NetConfig`] of the client.
-    pub fn config(&self) -> &ClientConfig {
+    pub fn config(&self) -> &NetConfig {
         &self.config
     }
 

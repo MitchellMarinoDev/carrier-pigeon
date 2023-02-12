@@ -6,7 +6,7 @@ use crate::messages::{AckMsg, NetMsg, PingMsg, PingType, Response};
 use crate::net::{AckNum, CIdSpec, ErasedNetMsg, Message, MsgHeader, HEADER_SIZE};
 use crate::transport::server_std_udp::UdpServerTransport;
 use crate::transport::ServerTransport;
-use crate::{CId, MsgTable, ServerConfig};
+use crate::{CId, MsgTable, NetConfig};
 use hashbrown::HashMap;
 use log::{debug, error, info, trace, warn};
 use std::any::{type_name, TypeId};
@@ -26,8 +26,8 @@ type ServerReliableSystem<C, A, R, D> =
 /// be given a connection ID ([`CId`]) starting at `1` that is unique for the session.
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct Server<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
-    /// The configuration of the server.
-    config: ServerConfig,
+    /// The [`NetConfig`].
+    config: NetConfig,
     /// The [`MsgTable`] to use for sending and receiving messages.
     msg_table: MsgTable<C, A, R, D>,
     /// The transport to use to send and receive the messages.
@@ -50,7 +50,7 @@ pub struct Server<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
 
 impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     pub fn new(
-        config: ServerConfig,
+        config: NetConfig,
         listen_addr: SocketAddr,
         msg_table: MsgTable<C, A, R, D>,
     ) -> io::Result<Self> {
@@ -70,7 +70,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
             config,
             msg_table,
             transport,
-            ping_sys: ServerPingSystem::new(),
+            ping_sys: ServerPingSystem::new(config),
             reliable_sys: HashMap::new(),
             disconnection_events: VecDeque::new(),
             disconnecting: vec![],
@@ -497,7 +497,6 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
         count
     }
 
-    // TODO: change to handle events
     /// Handles all remaining disconnects.
     ///
     /// Returns the number of disconnects handled.
@@ -525,7 +524,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
         self.connection_list.new_connection(cid, addr)?;
         self.ping_sys.add_cid(cid);
         self.reliable_sys
-            .insert(cid, ReliableSystem::new(self.msg_table.clone()));
+            .insert(cid, ReliableSystem::new(self.msg_table.clone(), self.config));
         Ok(())
     }
 
@@ -579,7 +578,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     }
 
     /// Gets the [`NetConfig`] of the client.
-    pub fn config(&self) -> &ServerConfig {
+    pub fn config(&self) -> &NetConfig {
         &self.config
     }
 
@@ -605,9 +604,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     }
 
     pub fn cid_disconnecting(&self, cid: CId) -> bool {
-        // self.disconnecting
-        // TODO: impl
-        todo!()
+        self.disconnecting.iter().any(|(disconnecting_cid, _, _)| *disconnecting_cid == cid)
     }
 
     pub fn addr_of(&self, cid: CId) -> Option<SocketAddr> {

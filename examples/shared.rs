@@ -1,6 +1,7 @@
 //! Code that is shared between the client and server examples.
 //!
 //! This is mostly just the Message type declarations.
+#![allow(unused)]
 
 use serde::{Deserialize, Serialize};
 

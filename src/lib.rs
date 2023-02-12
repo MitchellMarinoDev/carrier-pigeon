@@ -31,5 +31,5 @@ pub use client::Client;
 pub use connection::{DisconnectionEvent, DisconnectionEventType};
 pub use message_table::{MsgRegError, MsgTable, MsgTableBuilder};
 pub use messages::Response;
-pub use net::{CId, ClientConfig, Guarantees, MType, ServerConfig};
+pub use net::{CId, NetConfig, Guarantees, MType};
 pub use server::Server;

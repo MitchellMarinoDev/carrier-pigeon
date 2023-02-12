@@ -16,7 +16,7 @@
 use crate::shared::{
     Accepted, Connection, Disconnect, Msg, Rejected, CLIENT_ADDR_LOCAL, SERVER_ADDR_LOCAL,
 };
-use carrier_pigeon::net::{ClientConfig, Status};
+use carrier_pigeon::net::{NetConfig, Status};
 use carrier_pigeon::{Client, Guarantees, MsgTableBuilder};
 use std::io::stdin;
 use std::sync::mpsc::{sync_channel, Receiver};
@@ -61,7 +61,7 @@ fn main() {
     };
 
     // Start the connection to the server.
-    let mut client = Client::new(ClientConfig::default(), table);
+    let mut client = Client::new(NetConfig::default(), table);
 
     client
         .connect(local, peer, &con_msg)

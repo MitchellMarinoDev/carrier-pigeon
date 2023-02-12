@@ -1,14 +1,9 @@
 use crate::messages::{PingMsg, PingType};
-use crate::CId;
+use crate::{CId, NetConfig};
 use hashbrown::HashMap;
 use log::warn;
 use std::collections::VecDeque;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-
-const PING_INTERVAL: Duration = Duration::from_millis(100);
-const PINGS_TO_RETAIN: usize = 8;
-/// This is 1/ the number to move by for smooth the ping number. Higher number is smoother.
-const PING_LERP_DIST: i32 = 4;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// Gets the number of microseconds since the unix epoch
 fn unix_micros() -> u128 {
@@ -19,10 +14,12 @@ fn unix_micros() -> u128 {
 }
 
 pub(crate) struct ServerPingSystem {
-    /// The [`Instant`] of the last ping
-    last_ping_time: Instant,
     /// The incrementing integer to use as an identifier for the [`PingMsg`]
     last_ping_counter: u32,
+    /// The configuration to use for pinging.
+    config: NetConfig,
+    /// The [`Instant`] of the last ping
+    last_ping_time: Instant,
     /// A list of stored sent ping identifiers with the unix micros for when it was sent.
     pings: VecDeque<(u32, u128)>,
     /// The current estimate of the round trip time.
@@ -31,8 +28,9 @@ pub(crate) struct ServerPingSystem {
 
 impl ServerPingSystem {
     /// Creates a new [`ServerPingSystem`].
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(config: NetConfig) -> Self {
         ServerPingSystem {
+            config,
             last_ping_time: Instant::now(),
             last_ping_counter: 0,
             pings: VecDeque::new(),
@@ -45,7 +43,7 @@ impl ServerPingSystem {
         self.last_ping_time = Instant::now();
         let ping_num = self.last_ping_counter;
         self.last_ping_counter += 1;
-        if self.pings.len() > PINGS_TO_RETAIN {
+        if self.pings.len() > self.config.pings_to_retain {
             self.pings.pop_back();
         }
         self.pings.push_front((ping_num, unix_micros()));
@@ -58,7 +56,7 @@ impl ServerPingSystem {
 
     /// Gets the next [`PingMsg`] to send if needed.
     pub(crate) fn get_ping_msg(&mut self) -> Option<PingMsg> {
-        if self.last_ping_time.elapsed() < PING_INTERVAL {
+        if self.last_ping_time.elapsed() < self.config.ping_interval {
             return None;
         }
         Some(self.next_ping_msg())
@@ -103,7 +101,7 @@ impl ServerPingSystem {
         };
 
         let dif = micros as i128 - *rtt as i128;
-        *rtt = rtt.saturating_add_signed(dif as i32 / PING_LERP_DIST);
+        *rtt = rtt.saturating_add_signed(dif as i32 / self.config.ping_smoothing_value);
     }
 
     /// Gets the current estimated round trip time in microseconds for the given connection.
@@ -113,10 +111,12 @@ impl ServerPingSystem {
 }
 
 pub(crate) struct ClientPingSystem {
-    /// The [`Instant`] of the last ping
-    last_ping_time: Instant,
     /// The incrementing integer to use as an identifier for the [`PingMsg`]
     last_ping_counter: u32,
+    /// The [`NetConfig`].
+    config: NetConfig,
+    /// The [`Instant`] of the last ping
+    last_ping_time: Instant,
     /// A list of stored sent ping identifiers with the unix micros for when it was sent.
     pings: Vec<(u32, u128)>,
     /// The current estimate of the round trip time.
@@ -125,8 +125,9 @@ pub(crate) struct ClientPingSystem {
 
 impl ClientPingSystem {
     /// Creates a new [`ClientPingSystem`].
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(config: NetConfig) -> Self {
         ClientPingSystem {
+            config,
             last_ping_time: Instant::now(),
             last_ping_counter: 0,
             pings: vec![],
@@ -149,7 +150,7 @@ impl ClientPingSystem {
 
     /// Gets the next [`PingMsg`] to send if needed.
     pub(crate) fn get_ping_msg(&mut self) -> Option<PingMsg> {
-        if self.last_ping_time.elapsed() < PING_INTERVAL {
+        if self.last_ping_time.elapsed() < self.config.ping_interval {
             return None;
         }
         Some(self.next_ping_msg())
@@ -177,7 +178,7 @@ impl ClientPingSystem {
     /// Modifies the RTT time to be closer to `micros`. Any smoothing of values should be done here.
     fn mod_rtt(&mut self, micros: u128) {
         let dif = micros as i128 - self.rtt as i128;
-        self.rtt = self.rtt.saturating_add_signed(dif as i32 / PING_LERP_DIST);
+        self.rtt = self.rtt.saturating_add_signed(dif as i32 / self.config.ping_smoothing_value);
     }
 
     /// Gets the current estimated round trip time in microseconds.
@@ -191,10 +192,11 @@ mod tests {
     use crate::connection::ping_system::ClientPingSystem;
     use std::thread::sleep;
     use std::time::Duration;
+    use crate::NetConfig;
 
     #[test]
     fn test_rtt() {
-        let mut ping_sys = ClientPingSystem::new();
+        let mut ping_sys = ClientPingSystem::new(NetConfig::default());
         for _ in 0..20 {
             let ping_msg = ping_sys.next_ping_msg();
             sleep(Duration::from_micros(20_000));

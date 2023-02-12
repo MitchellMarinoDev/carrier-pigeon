@@ -2,7 +2,7 @@ use crate::connection::ack_system::AckSystem;
 use crate::connection::ordering_system::OrderingSystem;
 use crate::messages::{AckMsg, NetMsg};
 use crate::net::{AckNum, MsgHeader};
-use crate::{Guarantees, MType, MsgTable};
+use crate::{Guarantees, MType, MsgTable, NetConfig};
 use std::time::{Duration, Instant};
 
 /// A minimum time for ack messages to be sent.
@@ -29,12 +29,12 @@ pub(crate) struct ReliableSystem<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg,
 
 impl<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<SD, RD, C, A, R, D> {
     /// Creates a new [`ReliableSystem`].
-    pub fn new(msg_table: MsgTable<C, A, R, D>) -> Self {
+    pub fn new(msg_table: MsgTable<C, A, R, D>, config: NetConfig) -> Self {
         let m_table_count = msg_table.mtype_count();
         ReliableSystem {
             msg_table,
             last_ack_msg: Instant::now(),
-            ack_sys: AckSystem::new(),
+            ack_sys: AckSystem::new(config),
             ordering_sys: OrderingSystem::new(m_table_count),
         }
     }

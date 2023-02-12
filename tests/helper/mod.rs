@@ -2,7 +2,7 @@
 //! Helper functions and types to make setting up the tests easier.
 
 use crate::helper::test_messages::{get_msg_table, Accepted, Connection, Disconnect, Rejected};
-use carrier_pigeon::net::{ClientConfig, ServerConfig};
+use carrier_pigeon::net::{NetConfig};
 use carrier_pigeon::Response;
 use log::{debug, info};
 use std::thread::sleep;
@@ -23,7 +23,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
 
     debug!("Creating server.");
     let mut server = Server::new(
-        ServerConfig::default(),
+        NetConfig::default(),
         SERVER_ADDR_LOCAL.parse().unwrap(),
         msg_table.clone(),
     )
@@ -34,7 +34,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
 
     debug!("Creating client.");
     // Start client connection.
-    let mut client = Client::new(ClientConfig::default(), msg_table);
+    let mut client = Client::new(NetConfig::default(), msg_table);
     debug!("Client Connecting");
     client.connect(
         CLIENT_ADDR_LOCAL.parse().unwrap(),

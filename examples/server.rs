@@ -12,7 +12,7 @@
 //! not be broadcast to the other clients.
 
 use crate::shared::{Accepted, Connection, Disconnect, Msg, Rejected, SERVER_ADDR_LOCAL};
-use carrier_pigeon::net::{CIdSpec, ServerConfig};
+use carrier_pigeon::net::{CIdSpec, NetConfig};
 use carrier_pigeon::{Guarantees, MsgTableBuilder, Response, Server};
 use std::env;
 use std::time::Duration;
@@ -45,7 +45,7 @@ fn main() {
 
     // Start the server.
     let mut server =
-        Server::new(ServerConfig::default(), listen, table).expect("failed to create server");
+        Server::new(NetConfig::default(), listen, table).expect("failed to create server");
 
     let blacklisted_users = vec!["john", "jane"];
 

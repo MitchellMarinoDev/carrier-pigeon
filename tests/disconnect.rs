@@ -64,10 +64,13 @@ fn drop_test() {
         let (mut client, server) = create_client_server_pair();
         drop(server);
 
-        // Give the client enough time for the connection to timeout.
-        std::thread::sleep(Duration::from_millis(100));
-
-        client.tick();
+        // Give the client a few ticks to timeout or detect the connection drop.
+        for _ in 0..10 {
+            std::thread::sleep(Duration::from_millis(10));
+            client.tick();
+            // exit early if the drop was detected.
+            if client.get_status().is_dropped() { break; }
+        }
         // Make sure the client is dropped abruptly
         assert!(client.get_status().is_dropped());
     }
@@ -77,10 +80,12 @@ fn drop_test() {
         let (client, mut server) = create_client_server_pair();
         drop(client);
 
-        // Give the server enough time for the connection to timeout.
-        std::thread::sleep(Duration::from_millis(100));
+        // Give the server a few ticks to timeout or detect the connection drop.
+        for _ in 0..10 {
+            std::thread::sleep(Duration::from_millis(10));
+            server.tick();
+        }
 
-        server.tick();
         let mut discon_count = 0;
         while let Some(discon_event) = server.handle_disconnect() {
             assert!(

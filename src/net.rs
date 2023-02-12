@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Display, Formatter};
 use std::io::Error;
 use std::ops::Deref;
+use std::time::Duration;
 
 /// The maximum safe message size that can be sent on udp,
 /// after taking off the possible overheads from the transport.
@@ -411,13 +412,36 @@ impl CIdSpec {
     }
 }
 
-/// Configuration for a client.
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize, Default)]
-pub struct ClientConfig {}
+/// Configuration for a client or server
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub struct NetConfig {
+    /// The minimum number of times to acknowledge a message.
+    pub ack_send_count: u32,
+    /// The interval to try to ping the peer. This allows us to estimate the
+    /// RTT witch is needed for reliable system.
+    /// This also works as a heartbeat to keep the connection from timing out.
+    pub ping_interval: Duration,
+    /// The number of sent pings to keep track of. This should be set depending on how often you
+    /// are sending pings, and how slow you expect the connection to be.
+    pub pings_to_retain: usize,
+    /// The number used for smoothing out the RTT. The higher the number, the more smooth/slow
+    /// the smoothing is.
+    ///
+    /// The smoothing is exponential. We move the RTT by (the difference between the current RTT
+    /// and the newly estimated RTT)/(`this value`).
+    pub ping_smoothing_value: i32,
+}
 
-/// Configuration for a server.
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize, Default)]
-pub struct ServerConfig {}
+impl Default for NetConfig {
+    fn default() -> Self {
+        NetConfig {
+            ack_send_count: 2,
+            ping_interval: Duration::from_millis(100),
+            pings_to_retain: 8,
+            ping_smoothing_value: 8,
+        }
+    }
+}
 
 /// An untyped network message containing the message content, along with the metadata associated.
 pub(crate) struct ErasedNetMsg {

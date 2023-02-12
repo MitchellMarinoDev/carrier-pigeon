@@ -1,14 +1,12 @@
 use crate::net::{AckNum, MsgHeader};
-use crate::Guarantees;
+use crate::{Guarantees, NetConfig};
 use hashbrown::HashMap;
 use log::warn;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
 
-// TODO: add to config
-/// The number of times we need to ack something, to consider it acknowledged enough.
-const SEND_ACK_THRESHOLD: u32 = 2;
+// TODO: impl ack_send_count for residuals
 
 /// The width of the bitfield that is used for acknowledgement.
 const BITFIELD_WIDTH: u16 = 32;
@@ -39,6 +37,8 @@ pub(crate) struct AckSystem<SD: Clone> {
     ///
     /// Used for `get_next`.
     current_idx: usize,
+    /// The [`NetConfig`].
+    config: NetConfig,
     /// The ack bitfields.
     ///
     /// This stores a bitfield for weather the 32 messages before `ack_offset` have been received.
@@ -49,13 +49,14 @@ pub(crate) struct AckSystem<SD: Clone> {
 
 impl<SD: Clone> AckSystem<SD> {
     /// Creates a new [`AckSystem`].
-    pub fn new() -> Self {
+    pub fn new(config: NetConfig) -> Self {
         let mut deque = VecDeque::new();
         deque.push_front(AckBitfields::default());
         AckSystem {
             outgoing_counter: 0,
             ack_offset: 0,
             current_idx: usize::MAX - 1,
+            config,
             ack_bitfields: deque,
             saved_msgs: HashMap::new(),
         }
@@ -72,7 +73,7 @@ impl<SD: Clone> AckSystem<SD> {
         while num >= upper_bound {
             // if the last element has been acknowledged enough, pop the back to make room.
             // otherwise, we just push one on the front, growing the buffer
-            if self.ack_bitfields[0].send_count >= SEND_ACK_THRESHOLD {
+            if self.ack_bitfields[0].send_count >= self.config.ack_send_count {
                 self.ack_bitfields.pop_front();
                 // ack_offset keeps track of the offset from the front; when we remove the front,
                 // we must increment it.
@@ -205,7 +206,8 @@ mod tests {
 
     #[test]
     fn test_mark_received() {
-        let mut ack_system: AckSystem<()> = AckSystem::new();
+
+        let mut ack_system: AckSystem<()> = AckSystem::new(NetConfig::default());
 
         ack_system.msg_received(0);
         assert_eq!(ack_system.ack_bitfields.len(), 1);
@@ -224,7 +226,7 @@ mod tests {
         assert_eq!(ack_system.next_header(), (0, 1 << 8 | 1 << 0));
         assert_eq!(ack_system.ack_bitfields[0].send_count, 1);
         // The rest of the test relies on this not being across the threshold
-        assert!(ack_system.ack_bitfields[0].send_count < SEND_ACK_THRESHOLD);
+        assert!(ack_system.ack_bitfields[0].send_count < NetConfig::default().ack_send_count);
 
         ack_system.msg_received(32 + 6);
         assert_eq!(ack_system.ack_bitfields.len(), 2);
@@ -239,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_save_ack() {
-        let mut ack_system = AckSystem::new();
+        let mut ack_system = AckSystem::new(NetConfig::default());
 
         ack_system.save_msg(MsgHeader::new(1, 0, 10, 0, 0), Reliable, ());
         assert_eq!(ack_system.saved_msgs.len(), 1);
@@ -274,7 +276,7 @@ mod tests {
 
     #[test]
     fn newest() {
-        let mut ack_system = AckSystem::new();
+        let mut ack_system = AckSystem::new(NetConfig::default());
 
         ack_system.save_msg(MsgHeader::new(1, 0, 10, 0, 0), ReliableNewest, ());
         assert_eq!(ack_system.saved_msgs.len(), 1);
