@@ -23,9 +23,9 @@ pub fn create_client_server_pair() -> (Client, Server) {
 
     debug!("Creating server.");
     let mut server = Server::new(
+        ServerConfig::default(),
         SERVER_ADDR_LOCAL.parse().unwrap(),
         msg_table.clone(),
-        ServerConfig::default(),
     )
     .unwrap();
     debug!("Server created!");
@@ -48,7 +48,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
     loop {
         client.tick();
         server.tick();
-        let count = server.handle_new_cons(|_cid, _addr, _con_msg: Connection| {
+        let count = server.handle_pending(|_cid, _addr, _con_msg: Connection| {
             Response::Accepted::<Accepted, Rejected>(Accepted)
         });
         if count != 0 {

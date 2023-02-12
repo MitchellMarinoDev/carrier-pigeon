@@ -21,7 +21,8 @@ pub enum ConnectionListError {
 }
 
 /// An enum representing the possible disconnection event types.
-pub enum DisconnectionType<D: NetMsg> {
+#[derive(Debug)]
+pub enum DisconnectionEventType<D: NetMsg> {
     /// The connection was dropped without sending a disconnection message.
     Dropped(Error),
     /// The peer disconnected by sending a disconnection message.
@@ -30,12 +31,54 @@ pub enum DisconnectionType<D: NetMsg> {
     ServerDisconnected(D),
 }
 
+impl<D: NetMsg> DisconnectionEventType<D> {
+    /// Returns weather this is the [`Dropped`](Self::Dropped) variant or not.
+    pub fn is_dropped(&self) -> bool {
+        matches!(self, DisconnectionEventType::Dropped(_))
+    }
+
+    /// Returns weather this is the [`Disconnected`](Self::Disconnected) variant or not.
+    pub fn is_disconnected(&self) -> bool {
+        matches!(self, DisconnectionEventType::Disconnected(_))
+    }
+
+    /// Returns weather this is the [`ServerDisconnected`](Self::ServerDisconnected) variant or not.
+    pub fn is_server_disconnected(&self) -> bool {
+        matches!(self, DisconnectionEventType::ServerDisconnected(_))
+    }
+
+    /// Gets the error message out of the [`Dropped`](Self::Dropped) variant.
+    pub fn unwrap_dropped(&self) -> Option<&Error> {
+        match self {
+            DisconnectionEventType::Dropped(err) => Some(err),
+            _ => None,
+        }
+    }
+
+    /// Gets the disconnection message out of the [`Disconnected`](Self::Disconnected) variant.
+    pub fn unwrap_disconnected(&self) -> Option<&D> {
+        match self {
+            DisconnectionEventType::Disconnected(msg) => Some(msg),
+            _ => None,
+        }
+    }
+
+    /// Gets the disconnection message out of the [`ServerDisconnected`](Self::ServerDisconnected) variant.
+    pub fn unwrap_server_disconnected(&self) -> Option<&D> {
+        match self {
+            DisconnectionEventType::ServerDisconnected(msg) => Some(msg),
+            _ => None,
+        }
+    }
+}
+
 /// An enum representing the possible disconnection events
+#[derive(Debug)]
 pub struct DisconnectionEvent<D: NetMsg> {
     /// The [`CId`] that the event it for.
     pub cid: CId,
     /// The type of disconnection event.
-    pub disconnection_type: DisconnectionType<D>,
+    pub disconnection_type: DisconnectionEventType<D>,
 }
 
 impl<D: NetMsg> DisconnectionEvent<D> {
@@ -44,7 +87,7 @@ impl<D: NetMsg> DisconnectionEvent<D> {
     pub fn dropped(cid: CId, err: Error) -> Self {
         DisconnectionEvent {
             cid,
-            disconnection_type: DisconnectionType::Dropped(err),
+            disconnection_type: DisconnectionEventType::Dropped(err),
         }
     }
 
@@ -53,7 +96,7 @@ impl<D: NetMsg> DisconnectionEvent<D> {
     pub fn disconnected(cid: CId, disconnect_msg: D) -> Self {
         DisconnectionEvent {
             cid,
-            disconnection_type: DisconnectionType::Disconnected(disconnect_msg),
+            disconnection_type: DisconnectionEventType::Disconnected(disconnect_msg),
         }
     }
 
@@ -62,7 +105,7 @@ impl<D: NetMsg> DisconnectionEvent<D> {
     pub fn server_disconnected(cid: CId, disconnect_msg: D) -> Self {
         DisconnectionEvent {
             cid,
-            disconnection_type: DisconnectionType::ServerDisconnected(disconnect_msg),
+            disconnection_type: DisconnectionEventType::ServerDisconnected(disconnect_msg),
         }
     }
 }
@@ -120,7 +163,11 @@ impl<C: NetMsg> ConnectionList<C> {
     ///
     /// ### Errors
     /// Returns an error if `cid`, or `addr` are already connected.
-    pub fn new_connection(&mut self, cid: CId, addr: SocketAddr) -> Result<(), ConnectionListError> {
+    pub fn new_connection(
+        &mut self,
+        cid: CId,
+        addr: SocketAddr,
+    ) -> Result<(), ConnectionListError> {
         self.cid_addr
             .insert(cid, addr)
             .map_err(|_| ConnectionListError::AlreadyConnected)?;

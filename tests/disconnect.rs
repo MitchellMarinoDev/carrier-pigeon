@@ -22,13 +22,17 @@ fn graceful_disconnect() {
         std::thread::sleep(Duration::from_millis(100));
 
         server.tick();
-        let discon_count = server.handle_disconnects(|_cid, status| {
+        while let Some(disconnect_event) = server.handle_disconnect() {
             assert_eq!(
-                status.unwrap_disconnected(),
+                disconnect_event.disconnection_type.unwrap_disconnected(),
                 Some(&Disconnect::new("Testing Disconnect Client."))
             );
-        });
+        }
 
+        let mut discon_count = 0;
+        while let Some(_) = server.handle_disconnect() {
+            discon_count += 1;
+        }
         assert_eq!(discon_count, 1);
     }
 
@@ -37,7 +41,7 @@ fn graceful_disconnect() {
         let (mut client, mut server) = create_client_server_pair();
 
         server
-            .disconnect(&Disconnect::new("Testing Disconnect Server."), 1)
+            .disconnect(Disconnect::new("Testing Disconnect Server."), 1)
             .unwrap();
 
         // Give the server enough time to send the disconnect message.
@@ -77,11 +81,17 @@ fn drop_test() {
         std::thread::sleep(Duration::from_millis(100));
 
         server.tick();
-        let counts = server.handle_disconnects(|_cid, status| {
-            assert!(status.is_dropped(), "expected status to be dropped");
-        });
+        while let Some(discon_msg) = server.handle_disconnect() {
+            assert!(discon_msg.disconnection_type.is_dropped())
+        }
+
+        let mut discon_count = 0;
+        while let Some(discon_event) = server.handle_disconnect() {
+            assert!(discon_event.disconnection_type.is_dropped(), "expected status to be dropped");
+            discon_count += 1;
+        }
 
         // make sure there was 1 disconnect handled.
-        assert_eq!(counts, 1);
+        assert_eq!(discon_count, 1);
     }
 }

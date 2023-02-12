@@ -2,7 +2,8 @@ use crate::connection::ping_system::ClientPingSystem;
 use crate::connection::reliable::ReliableSystem;
 use crate::message_table::{DISCONNECT_M_TYPE, PING_M_TYPE, RESPONSE_M_TYPE};
 use crate::messages::{NetMsg, PingMsg, PingType};
-use crate::net::{AckNum, ErasedNetMsg, MsgHeader, HEADER_SIZE, Message, Status};
+use crate::net::{AckNum, ErasedNetMsg, Message, MsgHeader, Status, HEADER_SIZE};
+use crate::transport::client_std_udp::UdpClientTransport;
 use crate::transport::ClientTransport;
 use crate::{ClientConfig, MsgTable, Response};
 use log::{debug, error, trace, warn};
@@ -11,7 +12,6 @@ use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use crate::transport::client_std_udp::UdpClientTransport;
 
 /// [`ReliableSystem`] with the generic parameters set for a server.
 type ClientReliableSystem<C, A, R, D> = ReliableSystem<Arc<Vec<u8>>, Box<dyn NetMsg>, C, A, R, D>;
@@ -36,9 +36,7 @@ pub struct Client<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
     msg_buf: Vec<Vec<ErasedNetMsg>>,
 }
 
-impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg>
-    Client<C, A, R, D>
-{
+impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     pub fn new(config: ClientConfig, msg_table: MsgTable<C, A, R, D>) -> Self {
         Self {
             config,
@@ -52,7 +50,12 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg>
     }
 
     // TODO: make a custom error type. Add invalid state.
-    pub fn connect(&mut self, local_addr: SocketAddr, peer_addr: SocketAddr, con_msg: &C) -> io::Result<()> {
+    pub fn connect(
+        &mut self,
+        local_addr: SocketAddr,
+        peer_addr: SocketAddr,
+        con_msg: &C,
+    ) -> io::Result<()> {
         if !self.status.is_not_connected() {
             return Err(Error::new(
                 ErrorKind::Other,

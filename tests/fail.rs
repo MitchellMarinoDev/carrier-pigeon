@@ -1,8 +1,8 @@
 use crate::helper::test_messages::{get_msg_table, Connection};
 use carrier_pigeon::net::ClientConfig;
+use carrier_pigeon::Client;
 use std::thread::sleep;
 use std::time::Duration;
-use carrier_pigeon::Client;
 
 mod helper;
 

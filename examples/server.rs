@@ -43,7 +43,7 @@ fn main() {
 
     // Start the server.
     let mut server =
-        Server::new(listen, table, ServerConfig::default()).expect("failed to create server");
+        Server::new(ServerConfig::default(), listen, table).expect("failed to create server");
 
     let blacklisted_users = vec!["john", "jane"];
 
@@ -53,12 +53,12 @@ fn main() {
 
         // This should be called every once in a while to clean up so that the
         // server doesn't send messages to disconnected clients.
-        server.handle_disconnects(|cid, status| {
-            println!("CId {} disconnected with status: {:?}", cid, status);
-        });
+        while let Some(disconnect_event) = server.handle_disconnect() {
+            println!("CId {} disconnected: {:?}", disconnect_event.cid, disconnect_event.disconnection_type);
+        }
 
         // This handles the new connections with whatever logic you want.
-        server.handle_new_cons(|_cid, _addr, con_msg: Connection| {
+        server.handle_pending(|_cid, _addr, con_msg: Connection| {
             // You can capture variables from the context to decide if you want
             // to accept or reject the connection request.
             let blacklisted = blacklisted_users.contains(&&*con_msg.user.to_lowercase());
@@ -97,7 +97,7 @@ fn main() {
         for cid in cids_to_disconnect {
             server
                 .disconnect(
-                    &Disconnect {
+                    Disconnect {
                         reason: "Disconnect requested.".to_string(),
                     },
                     cid,

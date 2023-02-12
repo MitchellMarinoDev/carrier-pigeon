@@ -3,7 +3,8 @@ use crate::connection::reliable::ReliableSystem;
 use crate::connection::{ConnectionList, ConnectionListError, DisconnectionEvent};
 use crate::message_table::{CONNECTION_M_TYPE, DISCONNECT_M_TYPE, PING_M_TYPE, RESPONSE_M_TYPE};
 use crate::messages::{AckMsg, NetMsg, PingMsg, PingType, Response};
-use crate::net::{AckNum, MsgHeader, HEADER_SIZE, ErasedNetMsg, Message, CIdSpec};
+use crate::net::{AckNum, CIdSpec, ErasedNetMsg, Message, MsgHeader, HEADER_SIZE};
+use crate::transport::server_std_udp::UdpServerTransport;
 use crate::transport::ServerTransport;
 use crate::{CId, MsgTable, ServerConfig};
 use hashbrown::HashMap;
@@ -14,7 +15,6 @@ use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use crate::transport::server_std_udp::UdpServerTransport;
 
 /// [`ReliableSystem`] with the generic parameters set for a server.
 type ServerReliableSystem<C, A, R, D> =
@@ -48,10 +48,12 @@ pub struct Server<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
     msg_buf: Vec<Vec<ErasedNetMsg>>,
 }
 
-impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg>
-    Server<C, A, R, D>
-{
-    pub fn new(config: ServerConfig, listen_addr: SocketAddr, msg_table: MsgTable<C, A, R, D>) -> io::Result<Self> {
+impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
+    pub fn new(
+        config: ServerConfig,
+        listen_addr: SocketAddr,
+        msg_table: MsgTable<C, A, R, D>,
+    ) -> io::Result<Self> {
         let connection_list = ConnectionList::new();
         let transport = UdpServerTransport::new(listen_addr)?;
         trace!(
@@ -205,9 +207,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg>
         let tid = TypeId::of::<M>();
         let m_type = self.msg_table.tid_map[&tid];
 
-        self.msg_buf[m_type]
-            .iter()
-            .map(|m| m.get_typed().unwrap())
+        self.msg_buf[m_type].iter().map(|m| m.get_typed().unwrap())
     }
 
     /// Gets an iterator for the messages of type `M`.
@@ -219,11 +219,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg>
         let tid = TypeId::of::<M>();
         let m_type = *self.msg_table.tid_map.get(&tid)?;
 
-        Some(
-            self.msg_buf[m_type]
-                .iter()
-                .map(|m| m.get_typed().unwrap()),
-        )
+        Some(self.msg_buf[m_type].iter().map(|m| m.get_typed().unwrap()))
     }
 
     /// This handles everything that the server needs to do each frame.
@@ -371,7 +367,9 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg>
             match header.m_type {
                 // TODO: Add other special types.
                 PING_M_TYPE => {
-                    let msg: PingMsg = *msg.downcast().expect("since the MType is `PING_M_TYPE`, the message should be the PingMsg type");
+                    let msg: PingMsg = *msg.downcast().expect(
+                        "since the MType is `PING_M_TYPE`, the message should be the PingMsg type",
+                    );
                     match msg.ping_type {
                         PingType::Req => {
                             if let Err(err) = self.send_to(cid, &msg.response()) {
@@ -390,9 +388,11 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg>
                         continue;
                     }
                     let disconnect_msg: D = *msg.downcast().expect("since the MType is `DISCONNECT_M_TYPE`, the message should be the disconnection type");
-                    self.disconnection_events.push_back(DisconnectionEvent::disconnected(cid, disconnect_msg));
+                    self.disconnection_events
+                        .push_back(DisconnectionEvent::disconnected(cid, disconnect_msg));
                     // TODO: add this next to all disconnection_events.push calls; Or, even better, make it a function
-                    self.remove_connection(cid).expect("cid should be from a connected client");
+                    self.remove_connection(cid)
+                        .expect("cid should be from a connected client");
                 }
                 RESPONSE_M_TYPE => {
                     // TODO: impl for server
@@ -492,7 +492,8 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg>
     pub fn handle_disconnect(&mut self) -> Option<DisconnectionEvent<D>> {
         // disconnect counts.
         let discon_event = self.disconnection_events.pop_front()?;
-        self.remove_connection(discon_event.cid).expect("cid from disconnection_events should be connected");
+        self.remove_connection(discon_event.cid)
+            .expect("cid from disconnection_events should be connected");
         debug!("Removing CId {}", discon_event.cid);
         Some(discon_event)
     }
@@ -534,25 +535,37 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg>
     /// Creates a [`DisconnectionEvent`] of type `Dropped`,
     /// and and removes the connection.
     pub fn connection_dropped_event(&mut self, cid: CId, err: Error) {
-        if !self.cid_connected(cid) { return; }
-        self.disconnection_events.push_back(DisconnectionEvent::dropped(cid, err));
-        self.remove_connection(cid).expect("cid should be from a connected client");
+        if !self.cid_connected(cid) {
+            return;
+        }
+        self.disconnection_events
+            .push_back(DisconnectionEvent::dropped(cid, err));
+        self.remove_connection(cid)
+            .expect("cid should be from a connected client");
     }
 
     /// Creates a [`DisconnectionEvent`] of type `Disconnected`,
     /// and and removes the connection.
     pub fn connection_disconnected_event(&mut self, cid: CId, disconnect_msg: D) {
-        if !self.cid_connected(cid) { return; }
-        self.disconnection_events.push_back(DisconnectionEvent::disconnected(cid, disconnect_msg));
-        self.remove_connection(cid).expect("cid should be from a connected client");
+        if !self.cid_connected(cid) {
+            return;
+        }
+        self.disconnection_events
+            .push_back(DisconnectionEvent::disconnected(cid, disconnect_msg));
+        self.remove_connection(cid)
+            .expect("cid should be from a connected client");
     }
 
     /// Creates a [`DisconnectionEvent`] of type `ServerDisconnected`,
     /// and and removes the connection.
     pub fn server_disconnected_event(&mut self, cid: CId, disconnect_msg: D) {
-        if !self.cid_connected(cid) { return; }
-        self.disconnection_events.push_back(DisconnectionEvent::server_disconnected(cid, disconnect_msg));
-        self.remove_connection(cid).expect("cid should be from a connected client");
+        if !self.cid_connected(cid) {
+            return;
+        }
+        self.disconnection_events
+            .push_back(DisconnectionEvent::server_disconnected(cid, disconnect_msg));
+        self.remove_connection(cid)
+            .expect("cid should be from a connected client");
     }
 
     /// Gets the [`NetConfig`] of the client.

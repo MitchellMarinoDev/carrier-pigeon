@@ -1,5 +1,5 @@
-use crate::Server;
 use crate::messages::Response;
+use crate::Server;
 use crate::{Client, ClientConfig, Guarantees, MsgTable, MsgTableBuilder, ServerConfig};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
@@ -16,18 +16,10 @@ fn test_reliability() {
     let server_addr = "127.0.0.1:7777".parse().unwrap();
     let client_addr = "127.0.0.1:0".parse().unwrap();
 
-    let mut server: Server<
-        Connection,
-        Accepted,
-        Rejected,
-        Disconnect,
-    > = Server::new(ServerConfig::default(), server_addr, msg_table.clone()).unwrap();
-    let mut client: Client<
-        Connection,
-        Accepted,
-        Rejected,
-        Disconnect,
-    > = Client::new(ClientConfig::default(), msg_table);
+    let mut server: Server<Connection, Accepted, Rejected, Disconnect> =
+        Server::new(ServerConfig::default(), server_addr, msg_table.clone()).unwrap();
+    let mut client: Client<Connection, Accepted, Rejected, Disconnect> =
+        Client::new(ClientConfig::default(), msg_table);
 
     client
         .connect(client_addr, server_addr, &Connection)
@@ -60,7 +52,7 @@ fn test_reliability() {
         sleep(Duration::from_millis(150));
         server.tick();
         for msg in server.recv::<ReliableMsg>() {
-            results.push(msg);
+            results.push(msg.m.clone());
         }
     }
 
@@ -70,10 +62,10 @@ fn test_reliability() {
         // make sure that the client is receiving the server's acks
         client.tick();
         sleep(Duration::from_millis(150));
-            server.tick();
-            for msg in server.recv::<ReliableMsg>() {
-                results.push(msg);
-            }
+        server.tick();
+        for msg in server.recv::<ReliableMsg>() {
+            results.push(msg.m.clone());
+        }
     }
     // remove the simulated conditions
     Command::new("bash")
@@ -88,11 +80,7 @@ fn test_reliability() {
 
     // ensure all messages arrive uncorrupted
     for v in results.iter() {
-        assert_eq!(
-            v.m,
-            &msg,
-            "message is not intact"
-        )
+        assert_eq!(v, &msg, "message is not intact")
     }
 
     // ensure all messages arrive
