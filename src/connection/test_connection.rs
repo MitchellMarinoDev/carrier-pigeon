@@ -1,6 +1,6 @@
 use crate::messages::Response;
 use crate::Server;
-use crate::{Client, NetConfig, Guarantees, MsgTable, MsgTableBuilder};
+use crate::{Client, Guarantees, MsgTable, MsgTableBuilder, NetConfig};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 use std::thread::sleep;

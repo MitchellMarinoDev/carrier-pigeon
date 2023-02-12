@@ -417,10 +417,6 @@ impl CIdSpec {
 pub struct NetConfig {
     /// The minimum number of times to acknowledge a message.
     pub ack_send_count: u32,
-    /// The interval to try to ping the peer. This allows us to estimate the
-    /// RTT witch is needed for reliable system.
-    /// This also works as a heartbeat to keep the connection from timing out.
-    pub ping_interval: Duration,
     /// The number of sent pings to keep track of. This should be set depending on how often you
     /// are sending pings, and how slow you expect the connection to be.
     pub pings_to_retain: usize,
@@ -430,6 +426,10 @@ pub struct NetConfig {
     /// The smoothing is exponential. We move the RTT by (the difference between the current RTT
     /// and the newly estimated RTT)/(`this value`).
     pub ping_smoothing_value: i32,
+    /// The interval to try to ping the peer. This allows us to estimate the
+    /// RTT witch is needed for reliable system.
+    /// This also works as a heartbeat to keep the connection from timing out.
+    pub ping_interval: Duration,
 }
 
 impl Default for NetConfig {

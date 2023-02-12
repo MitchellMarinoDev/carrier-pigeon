@@ -84,8 +84,8 @@ impl<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<S
     }
 
     /// Gets messages that are due for a resend.
-    pub fn get_resend(&mut self) -> Vec<(MsgHeader, SD)> {
-        self.ack_sys.get_resend()
+    pub fn get_resend(&mut self, rtt: u32) -> Vec<(MsgHeader, SD)> {
+        self.ack_sys.get_resend(rtt)
     }
 
     /// Checks to see if the given [`AckNum`] is in the resend buffer.

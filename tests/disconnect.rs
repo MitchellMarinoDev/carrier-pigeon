@@ -69,7 +69,9 @@ fn drop_test() {
             std::thread::sleep(Duration::from_millis(10));
             client.tick();
             // exit early if the drop was detected.
-            if client.get_status().is_dropped() { break; }
+            if client.get_status().is_dropped() {
+                break;
+            }
         }
         // Make sure the client is dropped abruptly
         assert!(client.get_status().is_dropped());

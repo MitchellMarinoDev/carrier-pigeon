@@ -2,7 +2,7 @@
 //! Helper functions and types to make setting up the tests easier.
 
 use crate::helper::test_messages::{get_msg_table, Accepted, Connection, Disconnect, Rejected};
-use carrier_pigeon::net::{NetConfig};
+use carrier_pigeon::net::NetConfig;
 use carrier_pigeon::Response;
 use log::{debug, info};
 use std::thread::sleep;

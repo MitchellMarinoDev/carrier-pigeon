@@ -5,7 +5,7 @@ use crate::messages::{NetMsg, PingMsg, PingType};
 use crate::net::{AckNum, ErasedNetMsg, Message, MsgHeader, Status, HEADER_SIZE};
 use crate::transport::client_std_udp::UdpClientTransport;
 use crate::transport::ClientTransport;
-use crate::{NetConfig, MsgTable, Response};
+use crate::{MsgTable, NetConfig, Response};
 use log::{debug, error, trace, warn};
 use std::any::TypeId;
 use std::io;
@@ -220,7 +220,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
 
     /// Resends any messages that it needs to for the reliability system to work.
     fn resend_reliable(&mut self) {
-        for (header, payload) in self.reliable_sys.get_resend() {
+        for (header, payload) in self.reliable_sys.get_resend(self.rtt()) {
             if let Some(transport) = &self.transport {
                 self.handle_transport_result(transport.send(header.m_type, payload.clone()));
             }

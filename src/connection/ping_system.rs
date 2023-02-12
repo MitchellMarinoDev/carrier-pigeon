@@ -5,6 +5,8 @@ use log::warn;
 use std::collections::VecDeque;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+// TODO: see if we can combine some of these structs.
+
 /// Gets the number of microseconds since the unix epoch
 fn unix_micros() -> u128 {
     SystemTime::now()
@@ -22,7 +24,7 @@ pub(crate) struct ServerPingSystem {
     last_ping_time: Instant,
     /// A list of stored sent ping identifiers with the unix micros for when it was sent.
     pings: VecDeque<(u32, u128)>,
-    /// The current estimate of the round trip time.
+    /// The current estimate of the round trip time in microseconds.
     rtt: HashMap<CId, u32>,
 }
 
@@ -119,7 +121,7 @@ pub(crate) struct ClientPingSystem {
     last_ping_time: Instant,
     /// A list of stored sent ping identifiers with the unix micros for when it was sent.
     pings: Vec<(u32, u128)>,
-    /// The current estimate of the round trip time.
+    /// The current estimate of the round trip time in microseconds.
     rtt: u32,
 }
 
@@ -178,7 +180,9 @@ impl ClientPingSystem {
     /// Modifies the RTT time to be closer to `micros`. Any smoothing of values should be done here.
     fn mod_rtt(&mut self, micros: u128) {
         let dif = micros as i128 - self.rtt as i128;
-        self.rtt = self.rtt.saturating_add_signed(dif as i32 / self.config.ping_smoothing_value);
+        self.rtt = self
+            .rtt
+            .saturating_add_signed(dif as i32 / self.config.ping_smoothing_value);
     }
 
     /// Gets the current estimated round trip time in microseconds.
@@ -190,9 +194,9 @@ impl ClientPingSystem {
 #[cfg(test)]
 mod tests {
     use crate::connection::ping_system::ClientPingSystem;
+    use crate::NetConfig;
     use std::thread::sleep;
     use std::time::Duration;
-    use crate::NetConfig;
 
     #[test]
     fn test_rtt() {

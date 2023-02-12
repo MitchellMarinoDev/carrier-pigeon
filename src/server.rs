@@ -276,11 +276,12 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     /// Resends any messages that it needs to for the reliability system to work.
     fn resend_reliable(&mut self) {
         for cid in self.connection_list.cids() {
+            let rtt = self.rtt(cid).expect("cid should be valid");
             let reliable_sys = self
                 .reliable_sys
                 .get_mut(&cid)
                 .expect("cid should be valid");
-            for (header, (addr, payload)) in reliable_sys.get_resend() {
+            for (header, (addr, payload)) in reliable_sys.get_resend(rtt) {
                 debug!("Resending msg {}", header.sender_ack_num);
                 if let Err(err) = self.transport.send_to(addr, header.m_type, payload) {
                     error!("Error resending msg {}: {}", header.sender_ack_num, err);
@@ -324,7 +325,11 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
             }
             let header = MsgHeader::from_be_bytes(&buf[..HEADER_SIZE]);
             if !self.msg_table.valid_m_type(header.m_type) {
-                warn!("Server received message with invalid MType ({}). Maximum is {}", header.m_type, self.msg_table.mtype_count() - 1);
+                warn!(
+                    "Server received message with invalid MType ({}). Maximum is {}",
+                    header.m_type,
+                    self.msg_table.mtype_count() - 1
+                );
                 continue;
             }
             trace!(
@@ -447,7 +452,10 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     ///
     /// Since receiving is not connection specific, it should be handled differently.
     fn handle_send_err(&mut self, cid: CId, err: Error) {
-        warn!("Got error while sending data to {}. Considering connection dropped. {}", cid, err);
+        warn!(
+            "Got error while sending data to {}. Considering connection dropped. {}",
+            cid, err
+        );
         self.connection_dropped_event(cid, err);
     }
 
@@ -523,8 +531,10 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     fn new_connection(&mut self, cid: CId, addr: SocketAddr) -> Result<(), ConnectionListError> {
         self.connection_list.new_connection(cid, addr)?;
         self.ping_sys.add_cid(cid);
-        self.reliable_sys
-            .insert(cid, ReliableSystem::new(self.msg_table.clone(), self.config));
+        self.reliable_sys.insert(
+            cid,
+            ReliableSystem::new(self.msg_table.clone(), self.config),
+        );
         Ok(())
     }
 
@@ -604,7 +614,9 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     }
 
     pub fn cid_disconnecting(&self, cid: CId) -> bool {
-        self.disconnecting.iter().any(|(disconnecting_cid, _, _)| *disconnecting_cid == cid)
+        self.disconnecting
+            .iter()
+            .any(|(disconnecting_cid, _, _)| *disconnecting_cid == cid)
     }
 
     pub fn addr_of(&self, cid: CId) -> Option<SocketAddr> {

@@ -2,9 +2,10 @@ use crate::net::{AckNum, MsgHeader};
 use crate::{Guarantees, NetConfig};
 use hashbrown::HashMap;
 use log::warn;
+use std::cmp::max;
 use std::collections::VecDeque;
 use std::fmt::Debug;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 // TODO: impl ack_send_count for residuals
 
@@ -177,11 +178,14 @@ impl<SD: Clone> AckSystem<SD> {
     }
 
     /// Gets messages that are due for a resend. This resets the time sent.
-    pub fn get_resend(&mut self) -> Vec<(MsgHeader, SD)> {
+    ///
+    /// `rtt` should be the round trip time in microseconds.
+    pub fn get_resend(&mut self, rtt: u32) -> Vec<(MsgHeader, SD)> {
+        let rtt = max(rtt, 60);
         let mut acks = vec![];
         for (sent, msg_header, sd) in self.saved_msgs.values_mut() {
             // TODO: add duration to config.
-            if sent.elapsed() > Duration::from_millis(100) {
+            if sent.elapsed().as_micros() > (rtt * 3 / 2) as u128 {
                 *sent = Instant::now();
                 acks.push((*msg_header, sd.clone()));
             }
@@ -206,7 +210,6 @@ mod tests {
 
     #[test]
     fn test_mark_received() {
-
         let mut ack_system: AckSystem<()> = AckSystem::new(NetConfig::default());
 
         ack_system.msg_received(0);
