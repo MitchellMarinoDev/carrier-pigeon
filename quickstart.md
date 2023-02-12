@@ -4,7 +4,7 @@ This will walk you through what you need to know to use `carrier-pigeon`.
 
 ### Messages
 
-Messages are simple rust types that implement the `Any + Send + Sync` traits, and serde's `Serialize` and 
+Messages are simple rust types that implement the `NetMsg` traits, and serde's `Serialize` and 
 `DeserializeOwned` traits. This means making new message types is simple and almost boilerplate free. Each message type
 is independent of the others. This means adding another message type won't mess with any of the other messages/logic.
 This not only makes it scalable for your code, but makes it easy for plugins to add their own message types without

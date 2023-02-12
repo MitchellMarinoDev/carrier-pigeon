@@ -1,12 +1,12 @@
 use crate::connection::ping_system::ClientPingSystem;
 use crate::connection::reliable::ReliableSystem;
 use crate::message_table::PING_M_TYPE;
-use crate::messages::{PingMsg, PingType};
+use crate::messages::{NetMsg, PingMsg, PingType};
 use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ClientTransport;
 use crate::MsgTable;
 use log::{error, trace, warn};
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 use std::collections::VecDeque;
 use std::io;
 use std::io::{Error, ErrorKind};
@@ -14,7 +14,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 /// [`ReliableSystem`] with the generic parameters set for a server.
-type ClientReliableSystem = ReliableSystem<Arc<Vec<u8>>, Box<dyn Any + Send + Sync>>;
+type ClientReliableSystem = ReliableSystem<Arc<Vec<u8>>, Box<dyn NetMsg>>;
 
 /// A wrapper around the the [`ClientTransport`] that adds the reliability and ordering.
 pub(crate) struct ClientConnection<T: ClientTransport> {
@@ -29,7 +29,7 @@ pub(crate) struct ClientConnection<T: ClientTransport> {
     /// The [`ReliableSystem`] to add optional reliability to messages.
     reliable_sys: ClientReliableSystem,
     /// A buffer for messages that are ready to be received.
-    ready: VecDeque<(MsgHeader, Box<dyn Any + Send + Sync>)>,
+    ready: VecDeque<(MsgHeader, Box<dyn NetMsg>)>,
 }
 
 impl<T: ClientTransport> ClientConnection<T> {
@@ -71,7 +71,7 @@ impl<T: ClientTransport> ClientConnection<T> {
 
     // TODO: rework to not fail due to the transport. Only due to passing in a wrong message type.
     //      Then a custom error type may be helpful.
-    pub fn send<M: Any + Send + Sync>(&mut self, msg: &M) -> io::Result<()> {
+    pub fn send<M: NetMsg>(&mut self, msg: &M) -> io::Result<()> {
         // TODO: convert to a custom error type?
         let transport = match &mut self.transport {
             Some(t) => t,
@@ -138,7 +138,7 @@ impl<T: ClientTransport> ClientConnection<T> {
         }
     }
 
-    pub fn recv(&mut self) -> Option<(MsgHeader, Box<dyn Any + Send + Sync>)> {
+    pub fn recv(&mut self) -> Option<(MsgHeader, Box<dyn NetMsg>)> {
         self.ready.pop_front()
     }
 

@@ -1,11 +1,16 @@
 //! A module for internal messages that are used by carrier pigeon.
 //! This includes [`AckMsg`] and [`PingMsg`].
 
-use std::any::Any;
+use std::fmt::Debug;
 use crate::net::AckNum;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::io::ErrorKind;
+use downcast_rs::{Downcast, impl_downcast};
+
+pub trait NetMsg: Downcast + Send + Sync + Debug {}
+impl<T: 'static + Send + Sync + Debug> NetMsg for T {}
+impl_downcast!(NetMsg);
 
 /// An enum representing the possible responses to a connection request.
 ///
@@ -13,7 +18,7 @@ use std::io::ErrorKind;
 /// upon being accepted or rejected respectively.
 /// This could be server info or a reason for rejecting.
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub enum Response<A: Any + Send + Sync, R: Any + Send + Sync> {
+pub enum Response<A: NetMsg, R: NetMsg> {
     /// The connection request is accepted.
     Accepted(A),
     /// The connection request is rejected.

@@ -9,9 +9,9 @@ mod test_connection;
 
 use crate::util::DoubleHashMap;
 use crate::CId;
-use std::any::Any;
 use std::collections::VecDeque;
 use std::net::SocketAddr;
+use crate::messages::NetMsg;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum ConnectionListError {
@@ -25,7 +25,6 @@ pub enum ConnectionListError {
 ///
 /// Also manages a `addrs` which holds a sorted list of all the addresses that are
 /// connected.
-#[derive(Debug)]
 struct ConnectionList {
     /// The current [`CId`]. The id to assign to new connections (then increment).
     current_cid: CId,
@@ -33,7 +32,7 @@ struct ConnectionList {
     cid_addr: DoubleHashMap<CId, SocketAddr>,
     /// A que that keeps track of new unhandled connections.
     // TODO: I dont think a cid needs to be assigned until/unless the connection is accepted.
-    pending_connections: VecDeque<(CId, SocketAddr, Box<dyn Any + Send + Sync>)>,
+    pending_connections: VecDeque<(CId, SocketAddr, Box<dyn NetMsg>)>,
 }
 
 impl ConnectionList {
@@ -57,7 +56,7 @@ impl ConnectionList {
     pub fn new_pending(
         &mut self,
         addr: SocketAddr,
-        connection_msg: Box<dyn Any + Send + Sync>,
+        connection_msg: Box<dyn NetMsg>,
     ) -> Result<CId, ConnectionListError> {
         let cid = self.current_cid;
         self.current_cid += 1;
@@ -67,7 +66,7 @@ impl ConnectionList {
     }
 
     /// Gets the next pending connection if there is one.
-    pub fn get_pending(&mut self) -> Option<(CId, SocketAddr, Box<dyn Any + Send + Sync>)> {
+    pub fn get_pending(&mut self) -> Option<(CId, SocketAddr, Box<dyn NetMsg>)> {
         self.pending_connections.pop_front()
     }
 

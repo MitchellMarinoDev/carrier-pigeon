@@ -1,18 +1,15 @@
 use crate::connection::client_connection::ClientConnection;
 use crate::message_table::{MsgTable, DISCONNECT_M_TYPE, RESPONSE_M_TYPE};
-use crate::net::{ClientConfig, ErasedNetMsg, NetMsg, Status};
+use crate::net::{ClientConfig, ErasedNetMsg, Message, Status};
 use crate::transport::client_std_udp::UdpClientTransport;
-use crossbeam_channel::internal::SelectHandle;
-use crossbeam_channel::Receiver;
 use log::{debug, trace};
-use std::any::{Any, TypeId};
-use std::fmt::{Debug, Display, Formatter};
+use std::any::TypeId;
+use std::fmt::{Debug, Formatter};
 use std::io;
 use std::io::ErrorKind::{InvalidData};
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
-use bevy::reflect::enum_hash;
-use crate::{MType, Response};
+use crate::messages::NetMsg;
 
 /// A Client connection.
 ///
@@ -56,7 +53,7 @@ impl Client {
     }
 
     // TODO: make a custom error type. Add invalid state.
-    pub fn connect<C: Any + Send + Sync>(
+    pub fn connect<C: NetMsg>(
         &mut self,
         local_addr: SocketAddr,
         peer_addr: SocketAddr,
@@ -89,7 +86,7 @@ impl Client {
     /// method before dropping the client to let the server know that
     /// you intentionally disconnected. The `discon_msg` allows you to
     /// give a reason for the disconnect.
-    pub fn disconnect<D: Any + Send + Sync>(&mut self, discon_msg: &D) -> io::Result<()> {
+    pub fn disconnect<D: NetMsg>(&mut self, discon_msg: &D) -> io::Result<()> {
         let tid = TypeId::of::<D>();
         if self.msg_table.tid_map[&tid] != DISCONNECT_M_TYPE {
             return Err(Error::new(
@@ -132,7 +129,7 @@ impl Client {
     /// Sends a message to the peer.
     ///
     /// `T` must be registered in the [`MsgTable`].
-    pub fn send<T: Any + Send + Sync>(&mut self, msg: &T) -> io::Result<()> {
+    pub fn send<T: NetMsg>(&mut self, msg: &T) -> io::Result<()> {
         self.connection.send(msg)
     }
 
@@ -141,7 +138,7 @@ impl Client {
     /// ### Panics
     /// Panics if the type `T` was not registered.
     /// For a non-panicking version, see [try_get_msgs()](Self::try_get_msgs).
-    pub fn recv<T: Any + Send + Sync>(&self) -> impl Iterator<Item = NetMsg<T>> + '_ {
+    pub fn recv<T: NetMsg>(&self) -> impl Iterator<Item = Message<T>> + '_ {
         self.msg_table.check_type::<T>().expect(
             "`get_msgs` panics if generic type `T` is not registered in the MsgTable. \
             For a non panicking version, use `try_get_msgs`",
@@ -155,7 +152,7 @@ impl Client {
     /// Gets an iterator for the messages of type `T`.
     ///
     /// Returns `None` if the type `T` was not registered.
-    pub fn try_recv<T: Any + Send + Sync>(&self) -> Option<impl Iterator<Item = NetMsg<T>> + '_> {
+    pub fn try_recv<T: NetMsg>(&self) -> Option<impl Iterator<Item = Message<T>> + '_> {
         let tid = TypeId::of::<T>();
         let m_type = *self.msg_table.tid_map.get(&tid)?;
 
@@ -261,127 +258,5 @@ impl Debug for Client {
             .field("local", &self.local_addr())
             .field("peer_addr", &self.peer_addr())
             .finish()
-    }
-}
-
-/// A client that has started connecting, but might not have finished connecting.
-///
-/// When creating a client, a new thread is spawned for the client connection cycle.
-/// When the client is done being created, it will send it back through this pending client.
-#[derive(Debug)]
-#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
-pub struct PendingClient {
-    channel: Receiver<io::Result<(Client, Box<dyn Any + Send + Sync>)>>,
-}
-
-// Impl display so that `get()` can be unwrapped.
-impl Display for PendingClient {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Pending client connection ({}).",
-            if self.done() { "done" } else { "not done" }
-        )
-    }
-}
-
-impl PendingClient {
-    /// Returns whether the client is finished connecting.
-    pub fn done(&self) -> bool {
-        self.channel.is_ready()
-    }
-
-    /// Takes the [`io::Result<Client>`] from the [`PendingClient`].
-    /// This **will** yield a value if [`done()`](Self::done) returned `true`.
-    ///
-    /// ### Panics
-    /// Panics if the generic parameter `R` isn't the response message type (the same `R` that you passed into `MsgTable::build`).
-    pub fn take<R: Any + Send + Sync>(self) -> Result<io::Result<(Client, R)>, Self> {
-        if self.done() {
-            Ok(self.channel.recv().unwrap().map(|(client, m)| (client, *m.downcast::<R>().expect("The generic parameter `R` must be the response message type (the same `R` that you passed into `MsgTable::build`)."))))
-        } else {
-            Err(self)
-        }
-    }
-
-    /// Blocks until the client is ready.
-    ///
-    /// ### Panics
-    /// Panics if the generic parameter `R` isn't the response message type (the same `R` that you passed into `MsgTable::build`).
-    pub fn block<R: Any + Send + Sync>(self) -> io::Result<(Client, R)> {
-        self.channel.recv().unwrap().map(|(client, m)| (client, *m.downcast::<R>().expect("The generic parameter `R` must be the response message type (the same `R` that you passed into `MsgTable::build`).")))
-    }
-
-    /// Converts this into a [`OptionPendingClient`].
-    pub fn option(self) -> OptionPendingClient {
-        OptionPendingClient {
-            channel: Some(self.channel),
-        }
-    }
-}
-
-impl From<PendingClient> for OptionPendingClient {
-    fn from(value: PendingClient) -> Self {
-        value.option()
-    }
-}
-
-/// An optional version of the [`PendingClient`].
-///
-/// Get a [`OptionPendingClient`] with the `option()` method of the [`PendingClient`],
-/// or with the [`Into`]/[`From`] traits.
-///
-/// Represents a pending client that could have been received already.
-/// This type is useful when you can only get a mutable reference to this (not own it).
-///
-/// The most notable difference is the `take` method only takes `&mut self`, instead of `self`,
-/// and the returns from most methods are wrapped in an option.
-#[derive(Debug)]
-#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
-pub struct OptionPendingClient {
-    #[allow(clippy::type_complexity)]
-    channel: Option<Receiver<io::Result<(Client, Box<dyn Any + Send + Sync>)>>>,
-}
-
-// Impl display so that `get()` can be unwrapped.
-impl Display for OptionPendingClient {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Optional pending client connection ({}).",
-            match self.done() {
-                None => "Already taken",
-                Some(true) => "done",
-                Some(false) => "not done",
-            }
-        )
-    }
-}
-
-impl OptionPendingClient {
-    /// Returns whether the client is finished connecting.
-    pub fn done(&self) -> Option<bool> {
-        Some(self.channel.as_ref()?.is_ready())
-    }
-
-    /// Takes the [`io::Result<Client>`] from the [`PendingClient`].
-    /// This **will** yield a value if [`done()`](Self::done) returned `true`.
-    ///
-    /// ### Panics
-    /// Panics if `R` is not the response message type.
-    pub fn take<R: Any + Send + Sync>(&mut self) -> Option<io::Result<(Client, R)>> {
-        if self.done()? {
-            Some(self.channel.as_ref().unwrap().recv().unwrap().map(|(client, m)| (client, *m.downcast::<R>().expect("The generic parameter `R` must be the response message type (the same `R` that you passed into `MsgTable::build`)."))))
-        } else {
-            None
-        }
-    }
-
-    /// Blocks until the client is ready.
-    ///
-    /// ### Panics
-    /// Panics if the generic parameter `R` isn't the response message type (the same `R` that you passed into `MsgTable::build`).
-    pub fn block<R: Any + Send + Sync>(self) -> Option<io::Result<(Client, R)>> {
-        Some(self.channel?.recv().unwrap().map(|(client, m)| (client, *m.downcast::<R>().expect("The generic parameter `R` must be the response message type (the same `R` that you passed into `MsgTable::build`)."))))
     }
 }
