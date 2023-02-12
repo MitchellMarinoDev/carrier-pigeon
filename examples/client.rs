@@ -59,7 +59,7 @@ fn main() {
     };
 
     // Start the connection to the server.
-    let mut client = Client::new(table, ClientConfig::default());
+    let mut client = Client::new(ClientConfig::default(), table);
 
     client
         .connect(local, peer, &con_msg)

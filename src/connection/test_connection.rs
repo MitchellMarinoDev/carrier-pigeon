@@ -1,11 +1,7 @@
-use crate::connection::client_connection::ClientConnection;
-use crate::connection::server_connection::ServerConnection;
+use crate::Server;
 use crate::messages::Response;
-use crate::transport::client_std_udp::UdpClientTransport;
-use crate::transport::server_std_udp::UdpServerTransport;
-use crate::{ClientConfig, Guarantees, MsgTable, MsgTableBuilder};
+use crate::{Client, ClientConfig, Guarantees, MsgTable, MsgTableBuilder, ServerConfig};
 use serde::{Deserialize, Serialize};
-use std::io::ErrorKind;
 use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
@@ -20,33 +16,26 @@ fn test_reliability() {
     let server_addr = "127.0.0.1:7777".parse().unwrap();
     let client_addr = "127.0.0.1:0".parse().unwrap();
 
-    let mut server_connection: ServerConnection<
-        UdpServerTransport,
+    let mut server: Server<
         Connection,
         Accepted,
         Rejected,
         Disconnect,
-    > = ServerConnection::new(msg_table.clone(), server_addr).unwrap();
-    let mut client_connection: ClientConnection<
-        UdpClientTransport,
+    > = Server::new(ServerConfig::default(), server_addr, msg_table.clone()).unwrap();
+    let mut client: Client<
         Connection,
         Accepted,
         Rejected,
         Disconnect,
-    > = ClientConnection::new(ClientConfig::default(), msg_table);
+    > = Client::new(ClientConfig::default(), msg_table);
 
-    client_connection
+    client
         .connect(client_addr, server_addr, &Connection)
         .expect("Connection failed");
 
     sleep(Duration::from_millis(10));
-    // recv_from needs to be called in order for the connection to read the client's message.
-    // Since the message is a connection type message, it will not be returned from the function.
-    assert_eq!(
-        server_connection.recv_from().unwrap_err().kind(),
-        ErrorKind::WouldBlock
-    );
-    let handled = server_connection.handle_pending(|_cid, _addr, _msg: Connection| {
+    server.tick();
+    let handled = server.handle_pending(|_cid, _addr, _msg: Connection| {
         Response::Accepted::<Accepted, Rejected>(Accepted)
     });
     assert_eq!(handled, 1);
@@ -64,51 +53,27 @@ fn test_reliability() {
     // send 10 bursts of 10 messages.
     for _ in 0..10 {
         // make sure that the client is receiving the server's acks
-        let _ = client_connection.get_msgs();
-        client_connection.resend_reliable();
+        client.tick();
         for _ in 0..10 {
-            client_connection.send(&msg).expect("failed to send");
+            client.send(&msg).expect("failed to send");
         }
         sleep(Duration::from_millis(150));
-        loop {
-            match server_connection.recv_from() {
-                Err(e) if e.kind() == ErrorKind::WouldBlock => break,
-                Err(err) => panic!("unexpected error: {}", err),
-                Ok((_cid, header, msg)) => {
-                    // TODO: This will also not be necessary once ignore Connection/Response msgs
-                    //       after connected.
-                    if header.m_type == 5 {
-                        results.push(msg);
-                    }
-                }
-            }
+        server.tick();
+        for msg in server.recv::<ReliableMsg>() {
+            results.push(msg);
         }
-        // send ack messages for the reliability system.
-        server_connection.send_ack_msgs();
     }
 
     println!("All messages sent at least once. Looping 10 more times for reliability");
     // do some more receives to get the stragglers
     for _ in 0..10 {
         // make sure that the client is receiving the server's acks
-        client_connection.get_msgs();
-        client_connection.resend_reliable();
+        client.tick();
         sleep(Duration::from_millis(150));
-        loop {
-            match server_connection.recv_from() {
-                Err(e) if e.kind() == ErrorKind::WouldBlock => break,
-                Err(err) => panic!("unexpected error: {}", err),
-                Ok((_cid, header, msg)) => {
-                    // TODO: This will also not be necessary once ignore Connection/Response msgs
-                    //       after connected.
-                    if header.m_type == 5 {
-                        results.push(msg);
-                    }
-                }
+            server.tick();
+            for msg in server.recv::<ReliableMsg>() {
+                results.push(msg);
             }
-        }
-        // send ack messages for the reliability system.
-        server_connection.send_ack_msgs();
     }
     // remove the simulated conditions
     Command::new("bash")
@@ -124,7 +89,7 @@ fn test_reliability() {
     // ensure all messages arrive uncorrupted
     for v in results.iter() {
         assert_eq!(
-            v.downcast_ref::<ReliableMsg>().unwrap(),
+            v.m,
             &msg,
             "message is not intact"
         )
@@ -171,6 +136,8 @@ pub struct Rejected;
 /// Builds a table with all these test messages and returns it's parts.
 pub fn get_msg_table() -> MsgTable<Connection, Accepted, Rejected, Disconnect> {
     let mut builder = MsgTableBuilder::new();
+    // TODO: change this back to reliable
+    // TODO: add test for dupe checking when reliable
     builder
         .register_ordered::<ReliableMsg>(Guarantees::ReliableOrdered)
         .unwrap();

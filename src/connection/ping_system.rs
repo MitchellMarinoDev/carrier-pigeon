@@ -91,8 +91,8 @@ impl ServerPingSystem {
     }
 
     /// Stops tracking the rtt time of `cid`.
-    pub fn remove_cid(&mut self, cid: CId) {
-        self.rtt.remove(&cid);
+    pub fn remove_cid(&mut self, cid: CId) -> bool {
+        self.rtt.remove(&cid).is_some()
     }
 
     /// Modifies the RTT time to be closer to `micros`. Any smoothing of values should be done here.

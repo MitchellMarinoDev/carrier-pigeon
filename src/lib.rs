@@ -19,13 +19,13 @@ extern crate core;
 
 pub mod net;
 
-mod client;
 mod connection;
 mod message_table;
 pub(crate) mod messages;
-mod server;
 mod transport;
 mod util;
+mod client;
+pub mod server;
 
 pub use client::Client;
 pub use message_table::{MsgRegError, MsgTable, MsgTableBuilder};

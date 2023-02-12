@@ -5,8 +5,6 @@ use crate::net::AckNum;
 use downcast_rs::{impl_downcast, Downcast};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
-use std::io;
-use std::io::ErrorKind;
 
 pub trait NetMsg: Downcast + Send + Sync + Debug {}
 impl<T: Downcast + Send + Sync + Debug> NetMsg for T {}
@@ -62,26 +60,6 @@ pub(crate) struct PingMsg {
 }
 
 impl PingMsg {
-    /// Deserializes the ping message using bincode.
-    pub(crate) fn deser(bytes: &[u8]) -> io::Result<Self> {
-        bincode::deserialize(bytes).map_err(|err| {
-            io::Error::new(
-                ErrorKind::InvalidData,
-                format!("deserialization error: {}", err),
-            )
-        })
-    }
-
-    /// Serializes the ping message using bincode.
-    pub(crate) fn ser(&self, buf: &mut Vec<u8>) -> io::Result<()> {
-        bincode::serialize_into(buf, self).map_err(|err| {
-            io::Error::new(
-                ErrorKind::InvalidData,
-                format!("serialization error: {}", err),
-            )
-        })
-    }
-
     /// Gets the corresponding response message type.
     pub(crate) fn response(&self) -> Self {
         PingMsg {

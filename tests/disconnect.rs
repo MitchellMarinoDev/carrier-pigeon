@@ -1,7 +1,6 @@
 //! Disconnect and Drop tests.
 use crate::helper::create_client_server_pair;
 use crate::helper::test_messages::Disconnect;
-use log::debug;
 use std::time::Duration;
 
 mod helper;

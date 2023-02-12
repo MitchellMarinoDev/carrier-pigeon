@@ -34,7 +34,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
 
     debug!("Creating client.");
     // Start client connection.
-    let mut client = Client::new(msg_table, ClientConfig::default());
+    let mut client = Client::new(ClientConfig::default(), msg_table);
     debug!("Client Connecting");
     client.connect(
         CLIENT_ADDR_LOCAL.parse().unwrap(),

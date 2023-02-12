@@ -1,19 +1,19 @@
 use crate::helper::test_messages::{get_msg_table, Connection};
 use carrier_pigeon::net::ClientConfig;
-use carrier_pigeon::Client;
 use std::thread::sleep;
 use std::time::Duration;
+use carrier_pigeon::Client;
 
 mod helper;
 
 #[test]
 fn client_fail() {
-    let parts = get_msg_table();
+    let table = get_msg_table();
 
     let local = "127.0.0.1:7776".parse().unwrap();
     let peer = "127.0.0.1:7777".parse().unwrap();
 
-    let mut client = Client::new(parts, ClientConfig::default());
+    let mut client = Client::new(ClientConfig::default(), table);
     client
         .connect(local, peer, &Connection::new("John Smith"))
         .unwrap();
