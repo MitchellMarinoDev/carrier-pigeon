@@ -217,9 +217,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     }
 
     /// Receives the messages from the connections. This is called in `server.tick()`.
-    fn get_msgs(&mut self) -> u32 {
-        let mut count = 0;
-
+    fn get_msgs(&mut self) {
         loop {
             match self.connection.recv_from() {
                 Err(e) if e.kind() == WouldBlock => break,
@@ -228,7 +226,6 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                 }
                 Ok((cid, header, msg)) => {
                     // TODO: handle special message types here
-                    count += 1;
                     self.msg_buf[header.m_type].push(ErasedNetMsg {
                         cid,
                         order_num: header.order_num,
@@ -238,7 +235,6 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                 }
             }
         }
-        count
     }
 
     /// Clears messages from the buffer.

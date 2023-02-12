@@ -28,8 +28,7 @@ mod transport;
 mod util;
 
 pub use client::Client;
-pub use message_table::{Guarantees, MsgRegError, MsgTable, MsgTableBuilder};
+pub use message_table::{MsgRegError, MsgTable, MsgTableBuilder};
 pub use messages::Response;
-pub use net::{CId, MType};
-pub use net::{ClientConfig, ServerConfig};
+pub use net::{CId, MType, Guarantees, ClientConfig, ServerConfig};
 pub use server::Server;

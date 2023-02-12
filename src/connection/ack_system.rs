@@ -1,10 +1,10 @@
 use crate::net::{AckNum, MsgHeader};
-use crate::Guarantees;
 use hashbrown::HashMap;
 use log::warn;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
+use crate::Guarantees;
 
 // TODO: add to config
 /// The number of times we need to ack something, to consider it acknowledged enough.

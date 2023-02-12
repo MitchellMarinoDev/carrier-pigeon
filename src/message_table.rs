@@ -1,6 +1,6 @@
 use crate::message_table::MsgRegError::TypeAlreadyRegistered;
 use crate::messages::{AckMsg, NetMsg, PingMsg};
-use crate::net::{DeserFn, SerFn};
+use crate::net::Guarantees;
 use crate::{MType, Response};
 use hashbrown::HashMap;
 use serde::de::DeserializeOwned;
@@ -14,75 +14,15 @@ use std::ops::Deref;
 use std::sync::Arc;
 use MsgRegError::NonUniqueIdentifier;
 
-// TODO: Move to net
-/// Delivery guarantees.
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
-pub enum Guarantees {
-    /// Messages are guaranteed to arrive. Not necessarily in order.
-    Reliable,
-    /// Messages are guaranteed to arrive in order.
-    ReliableOrdered,
-    /// The most recent (newest) message is guaranteed to arrive.
-    /// You might not get all the messages if they arrive out of order.
-    ReliableNewest,
-    /// No guarantees about delivery. Messages might or might not arrive.
-    Unreliable,
-    /// No delivery guarantee, but you will only get the newest message.
-    /// If an older message arrives after a newer one, it will be discarded.
-    UnreliableNewest,
-}
+/// The function used to deserialize a message.
+///
+/// fn(&[[u8]]) -> [`io::Result`]<[`Box`]<dyn [`Any`] + [`Send`] + [`Sync`]>>
+pub type DeserFn = fn(&[u8]) -> io::Result<Box<dyn NetMsg>>;
+/// The function used to serialize a message.
+///
+/// fn(&(dyn [`Any`] + [`Send`] + [`Sync`]), &mut [`Vec`]<[`u8`]>) -> [`io::Result`]<()>
+pub type SerFn = fn(&(dyn NetMsg), &mut Vec<u8>) -> io::Result<()>;
 
-impl Guarantees {
-    /// Weather this guarantee is reliable.
-    pub fn reliable(&self) -> bool {
-        use Guarantees::*;
-        match self {
-            Reliable | ReliableOrdered | ReliableNewest => true,
-            Unreliable | UnreliableNewest => false,
-        }
-    }
-
-    /// Weather this guarantee is unreliable.
-    pub fn unreliable(&self) -> bool {
-        !self.reliable()
-    }
-
-    /// Weather this guarantee is ordered.
-    pub fn ordered(&self) -> bool {
-        use Guarantees::*;
-        match self {
-            ReliableOrdered => true,
-            Reliable | ReliableNewest | Unreliable | UnreliableNewest => false,
-        }
-    }
-
-    /// Weather this guarantee is newest.
-    pub fn newest(&self) -> bool {
-        use Guarantees::*;
-        match self {
-            ReliableNewest | UnreliableNewest => true,
-            Reliable | ReliableOrdered | Unreliable => false,
-        }
-    }
-
-    /// Weather this guarantee is ordered or newest.
-    pub fn some_ordering(&self) -> bool {
-        use Guarantees::*;
-        match self {
-            ReliableOrdered | ReliableNewest | UnreliableNewest => true,
-            Reliable | Unreliable => false,
-        }
-    }
-
-    /// Weather this guarantee is not ordered or newest.
-    pub fn no_ordering(&self) -> bool {
-        use Guarantees::*;
-        match self {
-            Reliable | Unreliable => true,
-            ReliableOrdered | ReliableNewest | UnreliableNewest => false,
-        }
-    }
-}
 
 /// A registration in the [`MsgTableBuilder`].
 #[derive(Copy, Clone)]
