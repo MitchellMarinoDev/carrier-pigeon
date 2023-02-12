@@ -1,15 +1,14 @@
 use crate::connection::client_connection::ClientConnection;
-use crate::message_table::{MsgTable, DISCONNECT_M_TYPE, RESPONSE_M_TYPE};
+use crate::message_table::{MsgTable, RESPONSE_M_TYPE};
+use crate::messages::NetMsg;
 use crate::net::{ClientConfig, ErasedNetMsg, Message, Status};
 use crate::transport::client_std_udp::UdpClientTransport;
 use log::{debug, trace};
 use std::any::TypeId;
 use std::fmt::{Debug, Formatter};
 use std::io;
-use std::io::ErrorKind::{InvalidData};
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
-use crate::messages::NetMsg;
 
 /// A Client connection.
 ///
@@ -130,7 +129,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     /// ### Panics
     /// Panics if the type `M` was not registered.
     /// For a non-panicking version, see [try_get_msgs()](Self::try_get_msgs).
-    pub fn recv<M: NetMsg>(&self) -> impl Iterator<Item = Message<T>> + '_ {
+    pub fn recv<M: NetMsg>(&self) -> impl Iterator<Item = Message<M>> + '_ {
         self.msg_table.check_type::<M>().expect(
             "`get_msgs` panics if generic type `M` is not registered in the MsgTable. \
             For a non panicking version, use `try_get_msgs`",
@@ -144,7 +143,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     /// Gets an iterator for the messages of type `M`.
     ///
     /// Returns `None` if the type `M` was not registered.
-    pub fn try_recv<M: NetMsg>(&self) -> Option<impl Iterator<Item = Message<T>> + '_> {
+    pub fn try_recv<M: NetMsg>(&self) -> Option<impl Iterator<Item = Message<M>> + '_> {
         let tid = TypeId::of::<M>();
         let m_type = *self.msg_table.tid_map.get(&tid)?;
 

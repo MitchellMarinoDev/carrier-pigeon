@@ -1,5 +1,6 @@
 use crate::connection::client_connection::ClientConnection;
 use crate::connection::server_connection::ServerConnection;
+use crate::messages::Response;
 use crate::transport::client_std_udp::UdpClientTransport;
 use crate::transport::server_std_udp::UdpServerTransport;
 use crate::{Guarantees, MsgTable, MsgTableBuilder};
@@ -8,7 +9,6 @@ use std::io::ErrorKind;
 use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
-use crate::messages::Response;
 
 #[test]
 #[cfg(target_os = "linux")]
@@ -20,12 +20,24 @@ fn test_reliability() {
     let server_addr = "127.0.0.1:7777".parse().unwrap();
     let client_addr = "127.0.0.1:0".parse().unwrap();
 
-    let mut server_connection: ServerConnection<UdpServerTransport, Connection, Accepted, Rejected, Disconnect> =
-        ServerConnection::new(msg_table.clone(), server_addr).unwrap();
-    let mut client_connection: ClientConnection<UdpClientTransport, Connection, Accepted, Rejected, Disconnect> =
-        ClientConnection::new(msg_table);
+    let mut server_connection: ServerConnection<
+        UdpServerTransport,
+        Connection,
+        Accepted,
+        Rejected,
+        Disconnect,
+    > = ServerConnection::new(msg_table.clone(), server_addr).unwrap();
+    let mut client_connection: ClientConnection<
+        UdpClientTransport,
+        Connection,
+        Accepted,
+        Rejected,
+        Disconnect,
+    > = ClientConnection::new(msg_table);
 
-    client_connection.connect(client_addr, server_addr).expect("Connection failed");
+    client_connection
+        .connect(client_addr, server_addr)
+        .expect("Connection failed");
 
     client_connection.send(&Connection).unwrap();
 
@@ -36,8 +48,9 @@ fn test_reliability() {
         server_connection.recv_from().unwrap_err().kind(),
         ErrorKind::WouldBlock
     );
-    let handled = server_connection
-        .handle_pending(|_cid, _addr, _msg: Connection| Response::Accepted::<Accepted, Rejected>(Accepted));
+    let handled = server_connection.handle_pending(|_cid, _addr, _msg: Connection| {
+        Response::Accepted::<Accepted, Rejected>(Accepted)
+    });
     assert_eq!(handled, 1);
 
     // simulate bad network conditions
@@ -166,5 +179,7 @@ pub fn get_msg_table() -> MsgTable<Connection, Accepted, Rejected, Disconnect> {
     builder
         .register_ordered::<UnreliableMsg>(Guarantees::Unreliable)
         .unwrap();
-    builder.build::<Connection, Accepted, Rejected, Disconnect>().unwrap()
+    builder
+        .build::<Connection, Accepted, Rejected, Disconnect>()
+        .unwrap()
 }

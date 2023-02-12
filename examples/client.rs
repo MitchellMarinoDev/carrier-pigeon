@@ -13,7 +13,9 @@
 //! You may request the server to disconnect you by writing
 //! `disconnect-me`.
 
-use crate::shared::{Connection, Disconnect, Msg, Accepted, Rejected, CLIENT_ADDR_LOCAL, SERVER_ADDR_LOCAL};
+use crate::shared::{
+    Accepted, Connection, Disconnect, Msg, Rejected, CLIENT_ADDR_LOCAL, SERVER_ADDR_LOCAL,
+};
 use carrier_pigeon::net::{ClientConfig, Status};
 use carrier_pigeon::{Client, Guarantees, MsgTableBuilder};
 use std::io::stdin;
@@ -48,7 +50,9 @@ fn main() {
     builder
         .register_ordered::<Msg>(Guarantees::Unreliable)
         .unwrap();
-    let table = builder.build::<Connection, Accepted, Rejected, Disconnect>().unwrap();
+    let table = builder
+        .build::<Connection, Accepted, Rejected, Disconnect>()
+        .unwrap();
 
     let con_msg = Connection {
         user: username.clone(),
@@ -88,7 +92,6 @@ fn main() {
         }
         _ => {}
     }
-
 
     let receiver = spawn_stdin_thread();
 

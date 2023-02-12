@@ -11,7 +11,7 @@
 //! they will be disconnected, and their message will
 //! not be broadcast to the other clients.
 
-use crate::shared::{Connection, Disconnect, Msg, Accepted, Rejected, SERVER_ADDR_LOCAL};
+use crate::shared::{Accepted, Connection, Disconnect, Msg, Rejected, SERVER_ADDR_LOCAL};
 use carrier_pigeon::net::{CIdSpec, ServerConfig};
 use carrier_pigeon::{Guarantees, MsgTableBuilder, Response, Server};
 use std::env;
@@ -37,7 +37,9 @@ fn main() {
         .register_ordered::<Msg>(Guarantees::Unreliable)
         .unwrap();
 
-    let table = builder.build::<Connection, Accepted, Rejected, Disconnect>().unwrap();
+    let table = builder
+        .build::<Connection, Accepted, Rejected, Disconnect>()
+        .unwrap();
 
     // Start the server.
     let mut server =
@@ -62,7 +64,9 @@ fn main() {
             let blacklisted = blacklisted_users.contains(&&*con_msg.user.to_lowercase());
 
             if blacklisted {
-                Response::Rejected(Rejected { reason: "This user is blacklisted".to_owned() })
+                Response::Rejected(Rejected {
+                    reason: "This user is blacklisted".to_owned(),
+                })
             } else {
                 Response::Accepted(Accepted)
             }

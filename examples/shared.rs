@@ -35,4 +35,3 @@ pub struct Accepted;
 pub struct Rejected {
     pub reason: String,
 }
-

@@ -1,12 +1,12 @@
 //! A module for internal messages that are used by carrier pigeon.
 //! This includes [`AckMsg`] and [`PingMsg`].
 
-use std::fmt::Debug;
 use crate::net::AckNum;
+use downcast_rs::{impl_downcast, Downcast};
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 use std::io;
 use std::io::ErrorKind;
-use downcast_rs::{Downcast, impl_downcast};
 
 pub trait NetMsg: Downcast + Send + Sync + Debug {}
 impl<T: Downcast + Send + Sync + Debug> NetMsg for T {}

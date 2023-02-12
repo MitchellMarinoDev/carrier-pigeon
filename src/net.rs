@@ -1,11 +1,11 @@
 //! Networking things that are not specific to either transport.
 
+use crate::messages::NetMsg;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::Error;
 use std::ops::Deref;
-use crate::messages::NetMsg;
 
 /// The maximum safe message size that can be sent on udp,
 /// after taking off the possible overheads from the transport.
@@ -295,7 +295,10 @@ impl Status {
     /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build)) this will return `None`.
     /// For an untyped version, use [`unwrap_disconnected_dyn`](Self::unwrap_disconnected_dyn).
     pub fn unwrap_disconnected<D: NetMsg>(self) -> Option<D> {
-        self.unwrap_disconnected_dyn()?.downcast().ok().map(|msg| *msg)
+        self.unwrap_disconnected_dyn()?
+            .downcast()
+            .ok()
+            .map(|msg| *msg)
     }
 
     /// Unwraps the connection error from the [`ConnectionFailed`](Self::ConnectionFailed) variant.

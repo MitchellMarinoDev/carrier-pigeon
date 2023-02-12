@@ -106,7 +106,7 @@ pub struct MsgTableBuilder {
 }
 
 /// The inner structure of the [`MsgTable`].
-pub struct MsgTableInner{
+pub struct MsgTableInner {
     /// The mapping from TypeId to MessageId.
     pub tid_map: HashMap<TypeId, MType>,
     /// The transport associated with each message type.
@@ -128,7 +128,7 @@ pub struct MsgTable<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
     _pd: PhantomData<(C, A, R, D)>,
 }
 
-impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Clone for MsgTable<C, A, R, D>  {
+impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Clone for MsgTable<C, A, R, D> {
     fn clone(&self) -> Self {
         MsgTable {
             inner: self.inner.clone(),
@@ -137,7 +137,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Clone for MsgTable<C, A, R, D> 
     }
 }
 
-impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Deref for MsgTable<C, A, R, D>  {
+impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Deref for MsgTable<C, A, R, D> {
     type Target = MsgTableInner;
 
     fn deref(&self) -> &Self::Target {
@@ -191,7 +191,7 @@ impl MsgTableBuilder {
     /// If type `T` has been registered or not.
     pub fn is_registered<T>(&self) -> bool
     where
-        T: NetMsg
+        T: NetMsg,
     {
         let tid = TypeId::of::<T>();
         self.tid_registered(tid)
@@ -214,7 +214,10 @@ impl MsgTableBuilder {
     /// use the [`register_sorted`] method. That method does not require a constant
     /// registration order, but instead requires a unique string identifier to be
     /// registered with each message.
-    pub fn register_ordered<T: NetMsg + Serialize + DeserializeOwned>(&mut self, guarantees: Guarantees) -> Result<(), MsgRegError>
+    pub fn register_ordered<T: NetMsg + Serialize + DeserializeOwned>(
+        &mut self,
+        guarantees: Guarantees,
+    ) -> Result<(), MsgRegError>
     where
         T: NetMsg,
     {
@@ -373,7 +376,7 @@ impl MsgTableBuilder {
                 ser,
                 deser,
             }),
-            _pd: PhantomData
+            _pd: PhantomData,
         })
     }
 }
@@ -540,7 +543,9 @@ mod tests {
             Guarantees::Unreliable, // UnreliableMsg
         ];
 
-        let parts = table.build::<Connection, Accepted, Rejected, Disconnect>().unwrap();
+        let parts = table
+            .build::<Connection, Accepted, Rejected, Disconnect>()
+            .unwrap();
 
         // Make sure the tid_map and transports generated correctly.
         assert_eq!(parts.tid_map, expected_tid_map);

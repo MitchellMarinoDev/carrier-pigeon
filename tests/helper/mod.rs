@@ -1,12 +1,12 @@
 #![allow(unused)]
 //! Helper functions and types to make setting up the tests easier.
 
-use crate::helper::test_messages::{get_msg_table, Connection, Disconnect, Accepted, Rejected};
+use crate::helper::test_messages::{get_msg_table, Accepted, Connection, Disconnect, Rejected};
 use carrier_pigeon::net::{ClientConfig, ServerConfig};
+use carrier_pigeon::Response;
 use log::{debug, info};
 use std::thread::sleep;
 use std::time::Duration;
-use carrier_pigeon::Response;
 
 pub mod test_messages;
 
@@ -42,15 +42,15 @@ pub fn create_client_server_pair() -> (Client, Server) {
         &Connection::new("John Smith"),
     );
 
-
     // Spin until the connection is handled.
     // Normally this would be done in the game loop
     // and there would be other things to do.
     loop {
         client.tick();
         server.tick();
-        let count =
-            server.handle_new_cons(|_cid, _addr, _con_msg: Connection| Response::Accepted::<Accepted, Rejected>(Accepted));
+        let count = server.handle_new_cons(|_cid, _addr, _con_msg: Connection| {
+            Response::Accepted::<Accepted, Rejected>(Accepted)
+        });
         if count != 0 {
             break;
         }

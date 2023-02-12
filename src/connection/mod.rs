@@ -7,11 +7,11 @@ pub mod server_connection;
 #[cfg(test)]
 mod test_connection;
 
+use crate::messages::NetMsg;
 use crate::util::DoubleHashMap;
 use crate::CId;
 use std::collections::VecDeque;
 use std::net::SocketAddr;
-use crate::messages::NetMsg;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum ConnectionListError {

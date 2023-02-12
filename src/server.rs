@@ -1,5 +1,6 @@
 use crate::connection::server_connection::ServerConnection;
-use crate::message_table::{MsgTable, CONNECTION_M_TYPE, RESPONSE_M_TYPE};
+use crate::message_table::MsgTable;
+use crate::messages::{NetMsg, Response};
 use crate::net::{CId, CIdSpec, ErasedNetMsg, Message, ServerConfig, Status};
 use crate::transport::server_std_udp::UdpServerTransport;
 use log::*;
@@ -10,7 +11,6 @@ use std::io;
 use std::io::ErrorKind::WouldBlock;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
-use crate::messages::{NetMsg, Response};
 
 /// A server that manages connections to multiple clients.
 ///
@@ -181,10 +181,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     /// ### Panics
     /// Panics if the type `M` was not registered.
     /// For a non-panicking version, see [try_recv_spec()](Self::try_recv_spec).
-    pub fn recv_spec<M: NetMsg>(
-        &self,
-        spec: CIdSpec,
-    ) -> impl Iterator<Item = Message<M>> + '_ {
+    pub fn recv_spec<M: NetMsg>(&self, spec: CIdSpec) -> impl Iterator<Item = Message<M>> + '_ {
         self.msg_table.check_type::<M>().expect(
             "`recv_spec` panics if generic type `M` is not registered in the MsgTable. \
             For a non panicking version, use `try_recv_spec`",

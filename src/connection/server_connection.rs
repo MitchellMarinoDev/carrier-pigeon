@@ -16,7 +16,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 /// [`ReliableSystem`] with the generic parameters set for a server.
-type ServerReliableSystem<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> =
+type ServerReliableSystem<C, A, R, D> =
     ReliableSystem<(SocketAddr, Arc<Vec<u8>>), (CId, Box<dyn NetMsg>), C, A, R, D>;
 
 /// A wrapper around the the [`ServerTransport`] that adds
@@ -36,7 +36,9 @@ pub struct ServerConnection<T: ServerTransport, C: NetMsg, A: NetMsg, R: NetMsg,
     ready: VecDeque<(CId, MsgHeader, Box<dyn NetMsg>)>,
 }
 
-impl<T: ServerTransport, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ServerConnection<T, C, A, R, D> {
+impl<T: ServerTransport, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg>
+    ServerConnection<T, C, A, R, D>
+{
     pub fn new(msg_table: MsgTable<C, A, R, D>, listen_addr: SocketAddr) -> io::Result<Self> {
         let connection_list = ConnectionList::new();
         let transport = T::new(listen_addr)?;
@@ -273,7 +275,6 @@ impl<T: ServerTransport, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ServerConne
                     addr, cid, err
                 );
             }
-
         }
         count
     }

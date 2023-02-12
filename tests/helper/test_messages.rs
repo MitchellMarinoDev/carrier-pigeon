@@ -60,7 +60,6 @@ pub struct Rejected {
     pub reason: String,
 }
 
-
 /// Builds a table with all these test messages and returns it's parts.
 pub fn get_msg_table() -> MsgTable<Connection, Accepted, Rejected, Disconnect> {
     let mut builder = MsgTableBuilder::new();
@@ -70,5 +69,7 @@ pub fn get_msg_table() -> MsgTable<Connection, Accepted, Rejected, Disconnect> {
     builder
         .register_ordered::<UnreliableMsg>(Guarantees::Unreliable)
         .unwrap();
-    builder.build::<Connection, Accepted, Rejected, Disconnect>().unwrap()
+    builder
+        .build::<Connection, Accepted, Rejected, Disconnect>()
+        .unwrap()
 }
