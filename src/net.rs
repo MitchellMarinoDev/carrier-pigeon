@@ -220,8 +220,10 @@ pub enum Status<A: NetMsg, R: NetMsg, D: NetMsg> {
     /// The connection was dropped without sending a disconnection message.
     Dropped(Error),
     /// Disconnecting from the peer.
+    ///
+    /// Contains the [`AckNum`] of the sent disconnection message.
     // TODO: add the ack_num of the disconnection message so we can monitor it's ack status.
-    Disconnecting,
+    Disconnecting(AckNum),
 }
 
 impl<A: NetMsg, R: NetMsg, D: NetMsg> Debug for Status<A, R, D> {
@@ -241,7 +243,7 @@ impl<A: NetMsg, R: NetMsg, D: NetMsg> Display for Status<A, R, D> {
             Status::Connected => write!(f, "Connected"),
             Status::Disconnected(_) => write!(f, "Disconnected gracefully"),
             Status::Dropped(e) => write!(f, "Dropped with error {}", e),
-            Status::Disconnecting => write!(f, "Disconnecting..."),
+            Status::Disconnecting(ack_num) => write!(f, "Disconnecting({})...", ack_num),
         }
     }
 }
@@ -291,7 +293,7 @@ impl<A: NetMsg, R: NetMsg, D: NetMsg> Status<A, R, D> {
 
     /// Weather this status is [`Disconnecting`](Self::Disconnecting).
     pub fn is_disconnecting(&self) -> bool {
-        matches!(self, Status::Disconnecting)
+        matches!(self, Status::Disconnecting(_))
     }
 
     // unwrapping functions

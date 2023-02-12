@@ -1,15 +1,15 @@
 use crate::connection::client_connection::ClientConnection;
-use crate::message_table::{MsgTable, RESPONSE_M_TYPE};
+use crate::message_table::{MsgTable, DISCONNECT_M_TYPE, RESPONSE_M_TYPE};
 use crate::messages::NetMsg;
-use crate::net::{ClientConfig, ErasedNetMsg, Message, Status};
+use crate::net::{AckNum, ClientConfig, ErasedNetMsg, Message, Status};
 use crate::transport::client_std_udp::UdpClientTransport;
+use crate::Response;
 use log::{debug, trace};
 use std::any::TypeId;
 use std::fmt::{Debug, Formatter};
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
-use crate::Response;
 
 /// A Client connection.
 ///
@@ -87,11 +87,13 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     /// you intentionally disconnected. The `discon_msg` allows you to
     /// give a reason for the disconnect.
     pub fn disconnect(&mut self, discon_msg: &D) -> io::Result<()> {
-        debug!("Disconnecting client.");
-        self.send(discon_msg)?;
+        // TODO: change to custom error type.
+        if !self.status.is_connected() { return Err(Error::new(ErrorKind::NotConnected, "Client is not connected.")) }
+        debug!("Client disconnecting from server.");
+        let discon_ack = self.send(discon_msg)?;
         // TODO: start to close the udp connection.
         //       It needs to stay open long enough to reliably send the disconnection message.
-        self.status = Status::Disconnecting;
+        self.status = Status::Disconnecting(discon_ack);
         Ok(())
     }
 
@@ -107,7 +109,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
             Connected => Connected,
             Disconnected(_) => NotConnected,
             Dropped(_) => NotConnected,
-            Disconnecting => Disconnecting,
+            Disconnecting(ack_num) => Disconnecting(*ack_num),
         };
 
         std::mem::replace(&mut self.status, new_status)
@@ -121,7 +123,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     /// Sends a message to the peer.
     ///
     /// `T` must be registered in the [`MsgTable`].
-    pub fn send<T: NetMsg>(&mut self, msg: &T) -> io::Result<()> {
+    pub fn send<T: NetMsg>(&mut self, msg: &T) -> io::Result<AckNum> {
         self.connection.send(msg)
     }
 
@@ -174,30 +176,35 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
         self.connection.get_msgs();
 
         while let Some((header, msg)) = self.connection.recv() {
-            self.msg_buff[header.m_type].push(ErasedNetMsg::new(
-                0,
-                header.sender_ack_num,
-                header.order_num,
-                msg,
-            ));
+            match header.m_type {
+                DISCONNECT_M_TYPE => {
+                    if self.status.is_connected() {
+                        self.status = Status::Disconnected(*msg.downcast().expect("since the MType is `DISCONNECT_M_TYPE`, the message should be the disconnection type"));
+                    }
+                }
+                RESPONSE_M_TYPE => {
+                    if self.status.is_connecting() {
+                        match *msg.downcast::<Response<A, R>>().expect("since the MType is `RESPONSE_M_TYPE`, the message should be the response type") {
+                            Response::Accepted(a) => self.status = Status::Accepted(a),
+                            Response::Rejected(r) => self.status = Status::Rejected(r),
+                        }
+                    }
+                }
+                _ => {
+                    self.msg_buff[header.m_type].push(ErasedNetMsg::new(
+                        0,
+                        header.sender_ack_num,
+                        header.order_num,
+                        msg,
+                    ));
+                }
+            }
         }
     }
 
     fn update_status(&mut self) {
         match self.status {
             Status::Connecting => {
-                if let Some(response_msg) = self.msg_buff[RESPONSE_M_TYPE].pop() {
-                    let response = *response_msg.msg.downcast::<Response<A, R>>().expect("all messages in this buffer should be of type `RESPONSE_M_TYPE`");
-                    match response {
-                        Response::Accepted(a) => {
-                            self.status = Status::Accepted(a)
-                        }
-                        Response::Rejected(r) => {
-                            self.status = Status::Rejected(r)
-                        }
-                    }
-                }
-
                 if let Some(err) = self.connection.take_err() {
                     self.status = Status::ConnectionFailed(err);
                 }
@@ -207,7 +214,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
                     self.status = Status::Dropped(err);
                 }
             }
-            Status::Disconnecting => {
+            Status::Disconnecting(ack_num) => {
                 // When we are disconnecting, if we send our disconnection message, but the
                 // ack for it gets lost and the peer closes their socket we could get an error.
                 // This could also happen if the connection drops after we have disconnected, but

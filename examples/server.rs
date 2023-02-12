@@ -43,7 +43,7 @@ fn main() {
 
     // Start the server.
     let mut server =
-        Server::new(listen, table, ServerConfig::default()).expect("Failed to create server.");
+        Server::new(listen, table, ServerConfig::default()).expect("failed to create server");
 
     let blacklisted_users = vec!["john", "jane"];
 

@@ -3,7 +3,7 @@ use crate::connection::reliable::ReliableSystem;
 use crate::connection::{ConnectionList, ConnectionListError};
 use crate::message_table::{CONNECTION_M_TYPE, PING_M_TYPE};
 use crate::messages::{AckMsg, NetMsg, PingMsg, PingType, Response};
-use crate::net::{MsgHeader, HEADER_SIZE};
+use crate::net::{MsgHeader, HEADER_SIZE, AckNum};
 use crate::transport::ServerTransport;
 use crate::{CId, MsgTable};
 use hashbrown::HashMap;
@@ -62,7 +62,7 @@ impl<T: ServerTransport, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg>
 
     // TODO: rework to not fail due to the transport. Only due to passing in a wrong message type.
     //      Then a custom error type may be helpful.
-    pub fn send_to<M: NetMsg>(&mut self, cid: CId, msg: &M) -> io::Result<()> {
+    pub fn send_to<M: NetMsg>(&mut self, cid: CId, msg: &M) -> io::Result<AckNum> {
         // verify type is valid
         self.msg_table.check_type::<M>()?;
         let addr = self
@@ -90,7 +90,8 @@ impl<T: ServerTransport, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg>
         // send the payload based on the guarantees
         let guarantees = self.msg_table.guarantees[m_type];
         reliable_sys.save(header, guarantees, (addr, payload.clone()));
-        self.transport.send_to(addr, m_type, payload)
+        self.transport.send_to(addr, m_type, payload)?;
+        Ok(header.sender_ack_num)
     }
 
     /// Sends an [`AckMsg`] to all clients in order to acknowledge all received messages.
@@ -141,6 +142,7 @@ impl<T: ServerTransport, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg>
     ///
     /// A Error of type WouldBlock means no more messages can be returned at this time. Other
     /// errors are errors in receiving or validating the data.
+    // TODO: refactor to match client.
     pub fn recv_from(&mut self) -> io::Result<(CId, MsgHeader, Box<dyn NetMsg>)> {
         loop {
             // if there is a message that is ready, return it

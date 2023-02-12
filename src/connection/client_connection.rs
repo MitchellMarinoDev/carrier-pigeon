@@ -2,7 +2,7 @@ use crate::connection::ping_system::ClientPingSystem;
 use crate::connection::reliable::ReliableSystem;
 use crate::message_table::PING_M_TYPE;
 use crate::messages::{NetMsg, PingMsg, PingType};
-use crate::net::{MsgHeader, HEADER_SIZE};
+use crate::net::{MsgHeader, HEADER_SIZE, AckNum};
 use crate::transport::ClientTransport;
 use crate::MsgTable;
 use log::{error, trace, warn};
@@ -73,7 +73,7 @@ impl<T: ClientTransport, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg>
 
     // TODO: rework to not fail due to the transport. Only due to passing in a wrong message type.
     //      Then a custom error type may be helpful.
-    pub fn send<M: NetMsg>(&mut self, msg: &M) -> io::Result<()> {
+    pub fn send<M: NetMsg>(&mut self, msg: &M) -> io::Result<AckNum> {
         // TODO: convert to a custom error type?
         let transport = match &mut self.transport {
             Some(t) => t,
@@ -103,7 +103,8 @@ impl<T: ClientTransport, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg>
         // send the payload based on the guarantees
         let guarantees = self.msg_table.guarantees[m_type];
         self.reliable_sys.save(header, guarantees, payload.clone());
-        transport.send(m_type, payload)
+        transport.send(m_type, payload)?;
+        Ok(header.sender_ack_num)
     }
 
     /// Disconnects this connection due to the error.

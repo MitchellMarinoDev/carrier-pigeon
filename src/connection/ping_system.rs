@@ -14,7 +14,7 @@ const PING_LERP_DIST: i32 = 4;
 fn unix_micros() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("Current system time is earlier than the UNIX_EPOCH")
+        .expect("current system time is earlier than the UNIX_EPOCH")
         .as_micros()
 }
 

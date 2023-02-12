@@ -10,12 +10,10 @@ mod helper;
 fn graceful_disconnect() {
     std::env::set_var("RUST_LOG", "TRACE");
     env_logger::init();
-    println!("init");
 
     {
         // Client Disconnect Test
         let (mut client, mut server) = create_client_server_pair();
-        debug!("Client server pair created.");
 
         client
             .disconnect(&Disconnect::new("Testing Disconnect Client."))
@@ -81,7 +79,7 @@ fn drop_test() {
 
         server.tick();
         let counts = server.handle_disconnects(|_cid, status| {
-            assert!(status.is_dropped(), "Expected status to be dropped");
+            assert!(status.is_dropped(), "expected status to be dropped");
         });
 
         // make sure there was 1 disconnect handled.

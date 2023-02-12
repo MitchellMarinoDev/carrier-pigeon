@@ -1,7 +1,7 @@
 use crate::connection::server_connection::ServerConnection;
-use crate::message_table::MsgTable;
+use crate::message_table::{DISCONNECT_M_TYPE, MsgTable, RESPONSE_M_TYPE};
 use crate::messages::{NetMsg, Response};
-use crate::net::{CId, CIdSpec, ErasedNetMsg, Message, ServerConfig, Status};
+use crate::net::{AckNum, CId, CIdSpec, ErasedNetMsg, Message, ServerConfig, Status};
 use crate::transport::server_std_udp::UdpServerTransport;
 use log::*;
 use std::any::TypeId;
@@ -75,8 +75,9 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
             return Err(Error::new(ErrorKind::InvalidData, "Invalid CId."));
         }
         debug!("Disconnecting CId {}", cid);
-        self.send_to(cid, discon_msg)?;
-        self.disconnected.push_back((cid, Status::Disconnecting));
+        let discon_ack = self.send_to(cid, discon_msg)?;
+        self.disconnected
+            .push_back((cid, Status::Disconnecting(discon_ack)));
         Ok(())
     }
 
@@ -113,7 +114,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     }
 
     /// Sends a message to the [`CId`] `cid`.
-    pub fn send_to<M: NetMsg>(&mut self, cid: CId, msg: &M) -> io::Result<()> {
+    pub fn send_to<M: NetMsg>(&mut self, cid: CId, msg: &M) -> io::Result<AckNum> {
         self.connection.send_to(cid, msg)
     }
 
@@ -225,13 +226,33 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                     error!("Error receiving data: {}", e);
                 }
                 Ok((cid, header, msg)) => {
-                    // TODO: handle special message types here
-                    self.msg_buf[header.m_type].push(ErasedNetMsg {
-                        cid,
-                        order_num: header.order_num,
-                        ack_num: header.sender_ack_num,
-                        msg,
-                    });
+                    match header.m_type {
+                        DISCONNECT_M_TYPE => {
+                            // TODO: impl this status update for a server
+                            todo!()
+                            // if self.status.is_connected() {
+                            //     self.status = Status::Disconnected(*msg.downcast().expect("since the MType is `DISCONNECT_M_TYPE`, the message should be the disconnection type"));
+                            // }
+                        }
+                        RESPONSE_M_TYPE => {
+                            todo!()
+                            // TODO: impl this status update for a server
+                            // if self.status.is_connecting() {
+                            //     match *msg.downcast::<Response<A, R>>().expect("since the MType is `RESPONSE_M_TYPE`, the message should be the response type") {
+                            //         Response::Accepted(a) => self.status = Accepted(a),
+                            //         Response::Rejected(r) => self.status = Rejected(r),
+                            //     }
+                            // }
+                        }
+                        _ => {
+                            self.msg_buf[header.m_type].push(ErasedNetMsg {
+                                cid,
+                                order_num: header.order_num,
+                                ack_num: header.sender_ack_num,
+                                msg,
+                            });
+                        }
+                    }
                 }
             }
         }
