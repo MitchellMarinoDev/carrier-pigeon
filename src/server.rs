@@ -86,26 +86,10 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     /// the respective message.
     ///
     /// Returns the number of handled connections.
-    ///
-    /// ### Panics
-    /// Panics if the generic parameters `C`, `A` and `R` are not the same `C`, `A` and `R`
-    /// that you passed into [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
     pub fn handle_new_cons(
         &mut self,
         hook: impl FnMut(CId, SocketAddr, C) -> Response<A, R>,
     ) -> u32 {
-        // verify that `C` and `R` are the right type.
-        let c_tid = TypeId::of::<C>();
-        let r_tid = TypeId::of::<Response<A, R>>();
-        if self.msg_table.tid_map.get(&c_tid) != Some(&CONNECTION_M_TYPE)
-            || self.msg_table.tid_map.get(&r_tid) != Some(&RESPONSE_M_TYPE)
-        {
-            panic!(
-                "generic parameters `C`, `A`, and `R` need to match the generic parameters \
-            that you passed into `MsgTableBuilder::build()`"
-            );
-        }
-
         self.connection.handle_pending(hook)
     }
 

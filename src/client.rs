@@ -87,14 +87,6 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     /// you intentionally disconnected. The `discon_msg` allows you to
     /// give a reason for the disconnect.
     pub fn disconnect(&mut self, discon_msg: &D) -> io::Result<()> {
-        let tid = TypeId::of::<D>();
-        if self.msg_table.tid_map[&tid] != DISCONNECT_M_TYPE {
-            return Err(Error::new(
-                InvalidData,
-                "The `discon_msg` type must be the disconnection message type \
-                (the same `D` that you passed into `MsgTable::build`).",
-            ));
-        }
         debug!("Disconnecting client.");
         self.send(discon_msg)?;
         // TODO: start to close the udp connection.
@@ -133,27 +125,27 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
         self.connection.send(msg)
     }
 
-    /// Gets an iterator for the messages of type `T`.
+    /// Gets an iterator for the messages of type `M`.
     ///
     /// ### Panics
-    /// Panics if the type `T` was not registered.
+    /// Panics if the type `M` was not registered.
     /// For a non-panicking version, see [try_get_msgs()](Self::try_get_msgs).
-    pub fn recv<T: NetMsg>(&self) -> impl Iterator<Item = Message<T>> + '_ {
-        self.msg_table.check_type::<T>().expect(
-            "`get_msgs` panics if generic type `T` is not registered in the MsgTable. \
+    pub fn recv<M: NetMsg>(&self) -> impl Iterator<Item = Message<T>> + '_ {
+        self.msg_table.check_type::<M>().expect(
+            "`get_msgs` panics if generic type `M` is not registered in the MsgTable. \
             For a non panicking version, use `try_get_msgs`",
         );
-        let tid = TypeId::of::<T>();
+        let tid = TypeId::of::<M>();
         let m_type = self.msg_table.tid_map[&tid];
 
         self.msg_buff[m_type].iter().map(|m| m.get_typed().unwrap())
     }
 
-    /// Gets an iterator for the messages of type `T`.
+    /// Gets an iterator for the messages of type `M`.
     ///
-    /// Returns `None` if the type `T` was not registered.
-    pub fn try_recv<T: NetMsg>(&self) -> Option<impl Iterator<Item = Message<T>> + '_> {
-        let tid = TypeId::of::<T>();
+    /// Returns `None` if the type `M` was not registered.
+    pub fn try_recv<M: NetMsg>(&self) -> Option<impl Iterator<Item = Message<T>> + '_> {
+        let tid = TypeId::of::<M>();
         let m_type = *self.msg_table.tid_map.get(&tid)?;
 
         Some(self.msg_buff[m_type].iter().map(|m| m.get_typed().unwrap()))
