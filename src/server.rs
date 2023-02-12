@@ -82,12 +82,13 @@ impl Server {
 
     /// Handles all available new connection attempts in a loop, calling the `hook` for each.
     ///
-    /// The hook function should return `(should_accept, response_msg)`.
+    /// The hook function should return a [`Response`] for weather to connect the client along with
+    /// the respective message.
     ///
     /// Returns the number of handled connections.
     ///
     /// ### Panics
-    /// Panics if the generic parameters `C` and `R` are not the same `C` and `R`
+    /// Panics if the generic parameters `C`, `A` and `R` are not the same `C`, `A` and `R`
     /// that you passed into [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
     pub fn handle_new_cons<C: Any + Send + Sync, A: Any + Send + Sync, R: Any + Send + Sync>(
         &mut self,
@@ -105,9 +106,7 @@ impl Server {
             );
         }
 
-        self.connection
-            .handle_pending(hook)
-            .expect("already checked generic parameters")
+        self.connection.handle_pending(hook)
     }
 
     /// Handles all remaining disconnects.

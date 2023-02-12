@@ -1,6 +1,5 @@
 # Connection Status State Machine
 
-
 ```mermaid
 flowchart TD
     classDef transition fill:#248
@@ -19,7 +18,7 @@ flowchart TD
 
         Accepted --> |"handle_status()"| Connected([Connected])
         Rejected --> |"handle_status()"| 2NotConnected([NotConnected])
-        ConnectionFailed --> |"status()"| 2NotConnected([NotConnected])
+        ConnectionFailed --> |"handle_status()"| 2NotConnected([NotConnected])
     end
     subgraph Disconnection
         2Connected([Connected])
@@ -51,4 +50,4 @@ events, you can use the `get_status()` method which does not mutate the status.
 
 The state can also get mutated in the `tick()` method. If any of the waiting states
 (highlighted in red) complete, the `tick()` method will move the connection to the 
-next state.
+next state. Moving from `Connected` also happens in the `tick()` method. 

@@ -69,7 +69,7 @@ fn main() {
     }
 
     match client.handle_status() {
-        Status::Accepted(accepted) => {
+        Status::Accepted(_) => {
             println!("We were accepted!");
         }
         Status::Rejected(rejected) => {

@@ -32,6 +32,7 @@ struct ConnectionList {
     /// The mapping of [`CId`]s to [`SocketAddr`]s and back.
     cid_addr: DoubleHashMap<CId, SocketAddr>,
     /// A que that keeps track of new unhandled connections.
+    // TODO: I dont think a cid needs to be assigned until/unless the connection is accepted.
     pending_connections: VecDeque<(CId, SocketAddr, Box<dyn Any + Send + Sync>)>,
 }
 

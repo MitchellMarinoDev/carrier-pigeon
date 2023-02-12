@@ -8,7 +8,9 @@ mod helper;
 
 #[test]
 fn graceful_disconnect() {
+    std::env::set_var("RUST_LOG", "TRACE");
     env_logger::init();
+    println!("init");
 
     {
         // Client Disconnect Test
@@ -25,7 +27,7 @@ fn graceful_disconnect() {
         server.tick();
         let discon_count = server.handle_disconnects(|_cid, status| {
             assert_eq!(
-                status.disconnected(),
+                status.unwrap_disconnected(),
                 Some(&Disconnect::new("Testing Disconnect Client."))
             );
         });

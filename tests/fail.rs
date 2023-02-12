@@ -1,7 +1,6 @@
-use crate::helper::test_messages::{get_msg_table, Connection, Accepted, Rejected};
-use carrier_pigeon::net::{ClientConfig, Status};
+use crate::helper::test_messages::{get_msg_table, Connection};
+use carrier_pigeon::net::{ClientConfig};
 use carrier_pigeon::Client;
-use std::io::ErrorKind;
 use std::thread::sleep;
 use std::time::Duration;
 

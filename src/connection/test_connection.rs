@@ -17,10 +17,15 @@ fn test_reliability() {
 
     let msg_table = get_msg_table();
 
+    let server_addr = "127.0.0.1:7777".parse().unwrap();
+    let client_addr = "127.0.0.1:0".parse().unwrap();
+
     let mut server_connection: ServerConnection<UdpServerTransport> =
-        ServerConnection::new(msg_table.clone(), "127.0.0.1:7777".parse().unwrap()).unwrap();
+        ServerConnection::new(msg_table.clone(), server_addr).unwrap();
     let mut client_connection: ClientConnection<UdpClientTransport> =
         ClientConnection::new(msg_table);
+
+    client_connection.connect(client_addr, server_addr).expect("Connection failed");
 
     client_connection.send(&Connection).unwrap();
 
@@ -32,8 +37,7 @@ fn test_reliability() {
         ErrorKind::WouldBlock
     );
     let handled = server_connection
-        .handle_pending(|_cid, _addr, _msg: Connection| Response::Accepted::<Accepted, Rejected>(Accepted))
-        .unwrap();
+        .handle_pending(|_cid, _addr, _msg: Connection| Response::Accepted::<Accepted, Rejected>(Accepted));
     assert_eq!(handled, 1);
 
     // simulate bad network conditions

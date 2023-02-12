@@ -1,13 +1,13 @@
 use crate::connection::ping_system::ServerPingSystem;
 use crate::connection::reliable::ReliableSystem;
 use crate::connection::{ConnectionList, ConnectionListError};
-use crate::message_table::{CONNECTION_M_TYPE, PING_M_TYPE, RESPONSE_M_TYPE};
+use crate::message_table::{CONNECTION_M_TYPE, PING_M_TYPE};
 use crate::messages::{AckMsg, PingMsg, PingType, Response};
 use crate::net::{MsgHeader, HEADER_SIZE};
 use crate::transport::ServerTransport;
 use crate::{CId, MsgTable};
 use hashbrown::HashMap;
-use log::{debug, error, trace, warn};
+use log::{debug, error, info, trace, warn};
 use std::any::{type_name, Any, TypeId};
 use std::collections::VecDeque;
 use std::io;
@@ -242,32 +242,13 @@ impl<T: ServerTransport> ServerConnection<T> {
     /// Handles all outstanding pending connections
     /// by calling `hook` with the `CId`, `SocketAddr` and the connection message.
     ///
-    /// ### Errors
-    /// Returns an error iff generic parameters `C` and `R` are not the same `C` and `R`
-    /// that you passed into [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
+    /// ### Guarentees
+    /// The caller must guarentee that generic parameters `C` `A` and `R` are the same generic
+    /// parameters that were passed into [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
     pub fn handle_pending<C: Any + Send + Sync, A: Any + Send + Sync, R: Any + Send + Sync>(
         &mut self,
         mut hook: impl FnMut(CId, SocketAddr, C) -> Response<A, R>,
-    ) -> io::Result<u32> {
-        let c_tid = TypeId::of::<C>();
-        let r_tid = TypeId::of::<R>();
-        if self.msg_table.tid_map.get(&c_tid) != Some(&CONNECTION_M_TYPE) {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "generic type `C` needs to the same `C` \
-                    that you passed into `MsgTableBuilder::build`"
-                    .to_string(),
-            ));
-        }
-        if self.msg_table.tid_map.get(&r_tid) != Some(&RESPONSE_M_TYPE) {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "generic type `R` needs to the same `R` \
-                    that you passed into `MsgTableBuilder::build`"
-                    .to_string(),
-            ));
-        }
-
+    ) -> u32 {
         let mut count = 0;
         while let Some((cid, addr, msg)) = self.connection_list.get_pending() {
             if self.connection_list.addr_connected(addr) {
@@ -279,9 +260,12 @@ impl<T: ServerTransport> ServerConnection<T> {
             count += 1;
             let response = hook(cid, addr, msg);
             if let Response::Accepted(_) = &response {
+                info!("Accepting client {}", cid);
                 self.new_connection(cid, addr).expect(
                     "cid and address should be valid, as they came from the connection list",
                 )
+            } else {
+                debug!("Rejecting client {}", cid);
             }
             if let Err(err) = self.send_to(cid, &response) {
                 warn!(
@@ -291,7 +275,7 @@ impl<T: ServerTransport> ServerConnection<T> {
             }
 
         }
-        Ok(count)
+        count
     }
 
     /// Add a new connection with `cid` and `addr`.

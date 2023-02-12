@@ -1,5 +1,5 @@
 use crate::connection::client_connection::ClientConnection;
-use crate::message_table::{MsgTable, DISCONNECT_M_TYPE};
+use crate::message_table::{MsgTable, DISCONNECT_M_TYPE, RESPONSE_M_TYPE};
 use crate::net::{ClientConfig, ErasedNetMsg, NetMsg, Status};
 use crate::transport::client_std_udp::UdpClientTransport;
 use crossbeam_channel::internal::SelectHandle;
@@ -11,6 +11,8 @@ use std::io;
 use std::io::ErrorKind::{InvalidData};
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
+use bevy::reflect::enum_hash;
+use crate::{MType, Response};
 
 /// A Client connection.
 ///
@@ -46,7 +48,7 @@ impl Client {
 
         Client {
             config,
-            status: Status::Connected,
+            status: Status::NotConnected,
             msg_buff,
             connection,
             msg_table,
@@ -54,7 +56,7 @@ impl Client {
     }
 
     // TODO: make a custom error type. Add invalid state.
-    pub fn connect<C: Send + Sync>(
+    pub fn connect<C: Any + Send + Sync>(
         &mut self,
         local_addr: SocketAddr,
         peer_addr: SocketAddr,
@@ -67,7 +69,10 @@ impl Client {
             ));
         }
 
-        self.connection.connect(local_addr, peer_addr)
+        self.connection.connect(local_addr, peer_addr)?;
+        self.send(con_msg)?;
+        self.status = Status::Connecting;
+        Ok(())
     }
 
     /// Gets the [`NetConfig`] of the client.
@@ -97,7 +102,7 @@ impl Client {
         self.send(discon_msg)?;
         // TODO: start to close the udp connection.
         //       It needs to stay open long enough to reliably send the disconnection message.
-        self.status = Status::NotConnected;
+        self.status = Status::Disconnecting;
         Ok(())
     }
 
@@ -170,6 +175,7 @@ impl Client {
         self.connection.send_ping();
         self.connection.resend_reliable();
         self.get_msgs();
+        self.update_status();
     }
 
     /// Gets message from the transport, and moves them to this struct's buffer.
@@ -189,7 +195,37 @@ impl Client {
     }
 
     fn update_status(&mut self) {
-        todo!()
+        match self.status {
+            Status::Connecting => {
+                if let Some(response_msg) = self.msg_buff[RESPONSE_M_TYPE].get(0) {
+                    // TODO: generics are needed in order to unwrap this as this cant be downcast
+                    //      unless we know the types.
+                    todo!()
+                }
+
+                if let Some(err) = self.connection.take_err() {
+                    self.status = Status::ConnectionFailed(err);
+                }
+            }
+            Status::Connected => {
+                if let Some(err) = self.connection.take_err() {
+                    self.status = Status::Dropped(err);
+                }
+            }
+            Status::Disconnecting => {
+                // When we are disconnecting, if we send our disconnection message, but the
+                // ack for it gets lost and the peer closes their socket we could get an error.
+                // This could also happen if the connection drops after we have disconnected, but
+                // that is unlikely. With this, we can avoid some false positive `Dropped(err)`
+                // states.
+
+                // TODO: if the disconnection message has been acknowledged, move states.
+                if let Some(_) = self.connection.take_err() {
+                    self.status = Status::NotConnected;
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Clears messages from the buffer.

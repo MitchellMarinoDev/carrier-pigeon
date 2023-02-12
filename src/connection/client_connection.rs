@@ -110,6 +110,13 @@ impl<T: ClientTransport> ClientConnection<T> {
         self.transport = None;
     }
 
+    /// Disconnects this connection if there is an error.
+    fn disconnect_result(&mut self, result: io::Result<()>) {
+        if let Err(err) = result {
+            self.disconnect_err(err);
+        }
+    }
+
     /// Sends an [`AckMsg`] to acknowledge all received messages.
     pub fn send_ack_msg(&mut self) {
         let ack_msg = match self.reliable_sys.get_ack_msg() {
@@ -219,6 +226,11 @@ impl<T: ClientTransport> ClientConnection<T> {
                 self.ready.push_back((header, msg));
             }
         }
+    }
+
+    /// Takes the disconnection error, if any.
+    pub fn take_err(&mut self) -> Option<Error> {
+        self.disconnect_err.take()
     }
 
     /// Resends any messages that it needs to for the reliability system to work.

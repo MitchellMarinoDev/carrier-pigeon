@@ -140,16 +140,6 @@ pub type SerFn = fn(&(dyn Any + Send + Sync), &mut Vec<u8>) -> io::Result<()>;
 
 #[derive(Debug)]
 /// An enum for the possible states of a connection.
-///
-/// ```mermaid
-/// ---
-/// title: Status State Machine
-/// ---
-/// flowchart LR
-///     NotConnected -- connect() --> Connecting
-///     Connecting -- {{
-///
-/// ```
 pub enum Status {
     /// Not connected to any peer.
     NotConnected,
@@ -170,6 +160,7 @@ pub enum Status {
     /// The connection was dropped without sending a disconnection message.
     Dropped(Error),
     /// Disconnecting from the peer.
+    // TODO: add the ack_num of the disconnection message so we can monitor it's ack status.
     Disconnecting,
 }
 
@@ -363,6 +354,7 @@ pub type CId = u32;
 /// This is an integer incremented for every message sent, so messages can be uniquely identified.
 /// This is used as a way to acknowledge reliable messages.
 // TODO: this might need to be a wrapper type, as the comparing logic should consider wrapping
+// TODO: this should also be a u32 as we might wrap too quickly when sending a lot of messages.
 pub type AckNum = u16;
 
 /// Ordering Number.

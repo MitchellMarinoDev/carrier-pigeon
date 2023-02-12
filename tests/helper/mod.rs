@@ -4,7 +4,7 @@
 use crate::helper::test_messages::{get_msg_table, Connection, Disconnect, Accepted, Rejected};
 use carrier_pigeon::net::{ClientConfig, ServerConfig};
 use carrier_pigeon::{Client, Response, Server};
-use log::debug;
+use log::{debug, info};
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -32,31 +32,37 @@ pub fn create_client_server_pair() -> (Client, Server) {
     debug!("Creating client.");
     // Start client connection.
     let mut client = Client::new(msg_table, ClientConfig::default());
+    debug!("Client Connecting");
     client.connect(
         CLIENT_ADDR_LOCAL.parse().unwrap(),
         SERVER_ADDR_LOCAL.parse().unwrap(),
         &Connection::new("John Smith"),
     );
 
+
     // Spin until the connection is handled.
     // Normally this would be done in the game loop
     // and there would be other things to do.
     loop {
+        client.tick();
         server.tick();
         let count =
             server.handle_new_cons(|_cid, _addr, _con_msg: Connection| Response::Accepted::<Accepted, Rejected>(Accepted));
         if count != 0 {
             break;
         }
+        sleep(Duration::from_millis(1));
     }
 
     // Block until the connection is made.
     let mut status = client.get_status();
     while status.is_connecting() {
-        sleep(Duration::from_millis(1));
+        client.tick();
         status = client.get_status();
+        sleep(Duration::from_millis(1));
     }
-    assert!(status.is_accepted());
+
+    assert!(status.is_accepted(), "{}", status);
     let status = client.handle_status();
 
     debug!("Client created on addr: {}", client.local_addr().unwrap());
