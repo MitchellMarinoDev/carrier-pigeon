@@ -48,8 +48,8 @@ fn graceful_disconnect() {
 
         client.tick();
         assert_eq!(
-            client.get_status().disconnected::<Disconnect>().unwrap(),
-            &Disconnect::new("Testing Disconnect Server.")
+            client.get_status().unwrap_disconnected(),
+            Some(&Disconnect::new("Testing Disconnect Server."))
         );
     }
 }
@@ -68,7 +68,7 @@ fn drop_test() {
 
         client.tick();
         // Make sure the client is dropped abruptly
-        assert!(client.get_status().dropped().is_some());
+        assert!(client.get_status().is_dropped());
     }
 
     {
@@ -81,7 +81,7 @@ fn drop_test() {
 
         server.tick();
         let counts = server.handle_disconnects(|_cid, status| {
-            assert!(status.dropped().is_some(), "Expected status to be dropped");
+            assert!(status.is_dropped(), "Expected status to be dropped");
         });
 
         // make sure there was 1 disconnect handled.

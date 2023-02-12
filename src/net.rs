@@ -198,7 +198,9 @@ impl Guarantees {
 }
 
 /// An enum for the possible states of a connection.
-pub enum Status {
+///
+/// Generic types `A`, `R` and `D` are the accept, reject, and disconnect message types (respectively).
+pub enum Status<A: NetMsg, R: NetMsg, D: NetMsg> {
     /// Not connected to any peer.
     NotConnected,
     /// Currently connecting to a peer.
@@ -206,15 +208,15 @@ pub enum Status {
     /// We have sent a connection message, but have yet to hear a response.
     Connecting,
     /// We just got accepted.
-    Accepted(Box<dyn NetMsg>),
+    Accepted(A),
     /// We just got rejected.
-    Rejected(Box<dyn NetMsg>),
+    Rejected(R),
     /// The connection failed.
     ConnectionFailed(Error),
     /// The connection is established.
     Connected,
     /// The connection is closed because the peer disconnected by sending a disconnection message.
-    Disconnected(Box<dyn NetMsg>),
+    Disconnected(D),
     /// The connection was dropped without sending a disconnection message.
     Dropped(Error),
     /// Disconnecting from the peer.
@@ -222,13 +224,13 @@ pub enum Status {
     Disconnecting,
 }
 
-impl Debug for Status {
+impl<A: NetMsg, R: NetMsg, D: NetMsg> Debug for Status<A, R, D> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        <Status as Display>::fmt(self, f)
+        <Self as Display>::fmt(self, f)
     }
 }
 
-impl Display for Status {
+impl<A: NetMsg, R: NetMsg, D: NetMsg> Display for Status<A, R, D> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Status::NotConnected => write!(f, "Not connected"),
@@ -244,7 +246,7 @@ impl Display for Status {
     }
 }
 
-impl Status {
+impl<A: NetMsg, R: NetMsg, D: NetMsg> Status<A, R, D> {
     // matches functions
 
     /// Weather this status is [`NotConnected`](Self::NotConnected).
@@ -294,74 +296,35 @@ impl Status {
 
     // unwrapping functions
 
-    /// Unwraps the acceptation message from the [`Accepted`](Self::Accepted) variant,
-    /// and returns the boxed message. This is guaranteed to be the response message type
-    /// (generic parameter `R`) that you passed into
-    /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
-    /// For a typed version, use [`unwrap_accepted`](Self::unwrap_accepted).
-    pub fn unwrap_accepted_dyn(self) -> Option<Box<dyn NetMsg>> {
+    /// Gets the acceptation message from the [`Accepted`](Self::Accepted) variant.
+    /// If this status is not the [`Accepted`](Self::Accepted) variant, this returns `None`.
+    pub fn unwrap_accepted(&self) -> Option<&A> {
         match self {
             Status::Accepted(msg) => Some(msg),
             _ => None,
         }
     }
 
-    /// Unwraps the rejection message from the [`Rejected`](Self::Rejected) variant,
-    /// and returns the boxed message. This is guaranteed to be the response message type
-    /// (generic parameter `R`) that you passed into
-    /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
-    /// For a typed version, use [`unwrap_rejected`](Self::unwrap_rejected).
-    pub fn unwrap_rejected_dyn(self) -> Option<Box<dyn NetMsg>> {
+    /// Gets the rejection message from the [`Rejected`](Self::Rejected) variant.
+    /// If this status is not the [`Rejected`](Self::Rejected) variant, this returns `None`.
+    pub fn unwrap_rejected(&self) -> Option<&R> {
         match self {
             Status::Rejected(msg) => Some(msg),
             _ => None,
         }
     }
 
-    /// Unwraps the disconnection message from the [`Disconnected`](Self::Disconnected) variant,
-    /// and returns the boxed message. This is guaranteed to be the disconnection message type
-    /// (generic parameter `D`) that you passed into
-    /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build).
-    /// For a typed version, use [`unwrap_disconnected`](Self::unwrap_disconnected).
-    pub fn unwrap_disconnected_dyn(self) -> Option<Box<dyn NetMsg>> {
+    /// Gets the disconnection message from the [`Disconnected`](Self::Disconnected) variant.
+    /// If this status is not the [`Disconnected`](Self::Disconnected) variant, this returns `None`.
+    pub fn unwrap_disconnected(&self) -> Option<&D> {
         match self {
             Status::Disconnected(msg) => Some(msg),
             _ => None,
         }
     }
 
-    /// Unwraps the acceptation message from the [`Accepted`](Self::Accepted) variant,
-    /// and returns the message. If generic parameter `R` is not the response message type
-    /// (generic parameter `R` that you passed into
-    /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build)) this will return `None`.
-    /// For an untyped version, use [`unwrap_accepted_dyn`](Self::unwrap_accepted_dyn).
-    pub fn unwrap_accepted<R: NetMsg>(self) -> Option<R> {
-        self.unwrap_accepted_dyn()?.downcast().ok().map(|msg| *msg)
-    }
-
-    /// Unwraps the rejection message from the [`Rejected`](Self::Rejected) variant,
-    /// and returns the message. If generic parameter `R` is not the response message type
-    /// (generic parameter `R` that you passed into
-    /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build)) this will return `None`.
-    /// For an untyped version, use [`unwrap_rejected_dyn`](Self::unwrap_rejected_dyn).
-    pub fn unwrap_rejected<R: NetMsg>(self) -> Option<R> {
-        self.unwrap_rejected_dyn()?.downcast().ok().map(|msg| *msg)
-    }
-
-    /// Unwraps the disconnection message from the [`Disconnected`](Self::Disconnected) variant,
-    /// and returns the message. If generic parameter `D` is not the disconnection message type
-    /// (generic parameter `D` that you passed into
-    /// [`MsgTableBuilder::build`](crate::MsgTableBuilder::build)) this will return `None`.
-    /// For an untyped version, use [`unwrap_disconnected_dyn`](Self::unwrap_disconnected_dyn).
-    pub fn unwrap_disconnected<D: NetMsg>(self) -> Option<D> {
-        self.unwrap_disconnected_dyn()?
-            .downcast()
-            .ok()
-            .map(|msg| *msg)
-    }
-
     /// Unwraps the connection error from the [`ConnectionFailed`](Self::ConnectionFailed) variant.
-    pub fn unwrap_connection_failed(self) -> Option<Error> {
+    pub fn unwrap_connection_failed(&self) -> Option<&Error> {
         match self {
             Status::ConnectionFailed(err) => Some(err),
             _ => None,
@@ -369,37 +332,9 @@ impl Status {
     }
 
     /// Unwraps the dropped error from the [`Dropped`](Self::Dropped) variant.
-    pub fn unwrap_dropped(self) -> Option<Error> {
+    pub fn unwrap_dropped(&self) -> Option<&Error> {
         match self {
             Status::Dropped(err) => Some(err),
-            _ => None,
-        }
-    }
-
-    /// Turns this into an option with the disconnect message.
-    ///
-    /// ### Panics
-    /// Panics if the generic parameter `D` isn't the disconnect message type (the same `D` that
-    /// you passed into `MsgTable::build`).
-    pub fn disconnected<D: NetMsg>(&self) -> Option<&D> {
-        match self {
-            Status::Disconnected(d) => Some(d.downcast_ref().expect("The generic parameter `D` must be the disconnection message type (the same `D` that you passed into `MsgTable::build`).")),
-            _ => None,
-        }
-    }
-
-    /// Turns this into an option with the disconnect message.
-    pub fn disconnected_dyn(&self) -> Option<&Box<dyn NetMsg>> {
-        match self {
-            Status::Disconnected(d) => Some(d),
-            _ => None,
-        }
-    }
-
-    /// Turns this into an option with the drop error.
-    pub fn dropped(&self) -> Option<&Error> {
-        match self {
-            Status::Dropped(e) => Some(e),
             _ => None,
         }
     }

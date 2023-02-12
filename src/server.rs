@@ -26,7 +26,7 @@ pub struct Server<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
     msg_buf: Vec<Vec<ErasedNetMsg>>,
 
     /// Disconnected connections.
-    disconnected: VecDeque<(CId, Status)>,
+    disconnected: VecDeque<(CId, Status<A, R, D>)>,
     /// The connection for this server.
     connection: ServerConnection<UdpServerTransport, C, A, R, D>,
 
@@ -96,7 +96,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     /// Handles all remaining disconnects.
     ///
     /// Returns the number of disconnects handled.
-    pub fn handle_disconnects(&mut self, mut hook: impl FnMut(CId, Status)) -> u32 {
+    pub fn handle_disconnects(&mut self, mut hook: impl FnMut(CId, Status<A, R, D>)) -> u32 {
         // disconnect counts.
         let mut count = 0;
 

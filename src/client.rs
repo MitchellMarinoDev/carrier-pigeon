@@ -9,6 +9,7 @@ use std::fmt::{Debug, Formatter};
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
+use crate::Response;
 
 /// A Client connection.
 ///
@@ -20,7 +21,7 @@ pub struct Client<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
     /// The configuration of the client.
     config: ClientConfig,
     /// The status of the client. Whether it is connected/disconnected etc.
-    status: Status,
+    status: Status<A, R, D>,
     /// The received message buffer.
     ///
     /// Each [`MType`](crate::MType) has its own vector.
@@ -94,7 +95,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
         Ok(())
     }
 
-    pub fn handle_status(&mut self) -> Status {
+    pub fn handle_status(&mut self) -> Status<A, R, D> {
         use Status::*;
 
         let new_status = match &self.status {
@@ -113,7 +114,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     }
 
     /// Gets the status of the connection.
-    pub fn get_status(&self) -> &Status {
+    pub fn get_status(&self) -> &Status<A, R, D> {
         &self.status
     }
 
@@ -185,10 +186,16 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     fn update_status(&mut self) {
         match self.status {
             Status::Connecting => {
-                if let Some(response_msg) = self.msg_buff[RESPONSE_M_TYPE].get(0) {
-                    // TODO: generics are needed in order to unwrap this as this cant be downcast
-                    //      unless we know the types.
-                    todo!()
+                if let Some(response_msg) = self.msg_buff[RESPONSE_M_TYPE].pop() {
+                    let response = *response_msg.msg.downcast::<Response<A, R>>().expect("all messages in this buffer should be of type `RESPONSE_M_TYPE`");
+                    match response {
+                        Response::Accepted(a) => {
+                            self.status = Status::Accepted(a)
+                        }
+                        Response::Rejected(r) => {
+                            self.status = Status::Rejected(r)
+                        }
+                    }
                 }
 
                 if let Some(err) = self.connection.take_err() {

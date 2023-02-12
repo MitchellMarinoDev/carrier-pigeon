@@ -77,14 +77,12 @@ fn main() {
             println!("We were accepted!");
         }
         Status::Rejected(rejected) => {
-            let rejected = *rejected.downcast::<Rejected>().unwrap();
             println!("We were rejected for {}.", rejected.reason);
         }
         Status::ConnectionFailed(failed) => {
             println!("Connection failed: {}", failed);
         }
         Status::Disconnected(disconnected) => {
-            let disconnected = *disconnected.downcast::<Disconnect>().unwrap();
             println!("Client disconnected for {}.", disconnected.reason);
         }
         Status::Dropped(dropped) => {
@@ -129,7 +127,7 @@ fn main() {
             }
         }
 
-        if let Some(msg) = client.get_status().disconnected::<Disconnect>() {
+        if let Some(msg) = client.get_status().unwrap_disconnected() {
             // Client was disconnected.
             println!("Disconnected for reason {}", msg.reason);
             break;

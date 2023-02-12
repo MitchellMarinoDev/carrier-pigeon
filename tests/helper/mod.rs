@@ -70,7 +70,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
 
     debug!("Client created on addr: {}", client.local_addr().unwrap());
 
-    assert_eq!(status.unwrap_accepted(), Some(Accepted));
+    assert_eq!(status.unwrap_accepted(), Some(&Accepted));
 
     (client, server)
 }
