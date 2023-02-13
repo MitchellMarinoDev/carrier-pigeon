@@ -27,17 +27,20 @@ pub enum Response<A: NetMsg, R: NetMsg> {
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) struct AckMsg {
     /// The offset of the acknowledgments.
-    ack_offset: AckNum,
+    pub ack_offset: AckNum,
     /// The bitfields for the succeeding AckNums.
-    bitfields: Vec<u32>,
+    pub bitfields: Vec<u32>,
+    /// Extra [`AckNum`]s that didnt fit in the bitfield.
+    pub residuals: Vec<AckNum>,
 }
 
 impl AckMsg {
     /// Creates a new [`AckMsg`].
-    pub(crate) fn new(ack_offset: AckNum, bitfields: Vec<u32>) -> Self {
+    pub(crate) fn new(ack_offset: AckNum, bitfields: Vec<u32>, residuals: Vec<AckNum>) -> Self {
         AckMsg {
             ack_offset,
             bitfields,
+            residuals,
         }
     }
 }

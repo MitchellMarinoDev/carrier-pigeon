@@ -1,7 +1,9 @@
 use crate::connection::ping_system::ServerPingSystem;
-use crate::connection::reliable::ReliableSystem;
+use crate::connection::reliable_system::ReliableSystem;
 use crate::connection::{ConnectionList, ConnectionListError, DisconnectionEvent};
-use crate::message_table::{CONNECTION_M_TYPE, DISCONNECT_M_TYPE, PING_M_TYPE, RESPONSE_M_TYPE};
+use crate::message_table::{
+    ACK_M_TYPE, CONNECTION_M_TYPE, DISCONNECT_M_TYPE, PING_M_TYPE, RESPONSE_M_TYPE,
+};
 use crate::messages::{AckMsg, NetMsg, PingMsg, PingType, Response};
 use crate::net::{AckNum, CIdSpec, ErasedNetMsg, Message, MsgHeader, HEADER_SIZE};
 use crate::transport::server_std_udp::UdpServerTransport;
@@ -341,6 +343,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
             );
 
             let cid = match self.connection_list.cid_of(from) {
+                Some(cid) => cid,
                 // the message received was not from a connected client
                 None => {
                     // ignore messages from not connected clients,
@@ -358,7 +361,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                     let msg = match self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..]) {
                         Ok(msg) => *msg.downcast().expect("since the MType is `CONNECTION_M_TYPE`, the message should be the connection type"),
                         Err(err) => {
-                            warn!("Error in deserializing a connection message: {}", err);
+                            warn!("Server: Error in deserializing a connection message: {}", err);
                             continue;
                         },
                     };
@@ -368,7 +371,6 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                         .expect("address already checked to not be connected");
                     continue;
                 }
-                Some(cid) => cid,
             };
 
             let msg = match self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..]) {
@@ -378,9 +380,27 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                     continue;
                 }
             };
+            let reliable_sys = self
+                .reliable_sys
+                .get_mut(&cid)
+                .expect("CId already checked");
+            reliable_sys.msg_received(header);
 
             match header.m_type {
-                // TODO: Add other special types.
+                RESPONSE_M_TYPE => {
+                    warn!("Server: Got a response type message. Ignoring.");
+                }
+                DISCONNECT_M_TYPE => {
+                    if !self.cid_connected(cid) {
+                        continue;
+                    }
+                    let disconnect_msg: D = *msg.downcast().expect("since the MType is `DISCONNECT_M_TYPE`, the message should be the disconnection type");
+                    self.connection_disconnected_event(cid, disconnect_msg);
+                }
+                ACK_M_TYPE => {
+                    let ack_msg = *msg.downcast().expect("since the MType is `RESPONSE_M_TYPE`, the message should be the response type");
+                    reliable_sys.recv_ack_msg(ack_msg);
+                }
                 PING_M_TYPE => {
                     let msg: PingMsg = *msg.downcast().expect(
                         "since the MType is `PING_M_TYPE`, the message should be the PingMsg type",
@@ -396,23 +416,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                         }
                     }
                 }
-                DISCONNECT_M_TYPE => {
-                    // TODO: impl for server
-                    if !self.cid_connected(cid) {
-                        // TODO: send an ack_msg.
-                        continue;
-                    }
-                    let disconnect_msg: D = *msg.downcast().expect("since the MType is `DISCONNECT_M_TYPE`, the message should be the disconnection type");
-                    self.disconnection_events
-                        .push_back(DisconnectionEvent::disconnected(cid, disconnect_msg));
-                    // TODO: add this next to all disconnection_events.push calls; Or, even better, make it a function
-                    self.remove_connection(cid)
-                        .expect("cid should be from a connected client");
-                }
-                RESPONSE_M_TYPE => {
-                    warn!("Server: Got a response type message. Ignoring.");
-                }
-                _ => {
+                m_type => {
                     // handle reliability and ordering
                     let reliable_sys = self
                         .reliable_sys
@@ -421,7 +425,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                     reliable_sys.push_received(header, (cid, msg));
                     // get all messages from the reliable system and push them on the "ready" que.
                     while let Some((header, (cid, msg))) = reliable_sys.get_received() {
-                        self.msg_buf[header.m_type].push(ErasedNetMsg::new(
+                        self.msg_buf[m_type].push(ErasedNetMsg::new(
                             cid,
                             header.sender_ack_num,
                             header.order_num,
@@ -512,6 +516,17 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
         self.disconnection_events.pop_front()
     }
 
+    /// Handles an incoming ack message.
+    ///
+    /// This assumes the CId is valid.
+    fn recv_ack(&mut self, cid: CId, ack_msg: AckMsg) {
+        let reliable_sys = self
+            .reliable_sys
+            .get_mut(&cid)
+            .expect("cid should be valid");
+        reliable_sys.recv_ack_msg(ack_msg)
+    }
+
     /// Handles an incoming ping message.
     ///
     /// If this is a request type, it will respond to it.
@@ -569,6 +584,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
         }
         self.disconnection_events
             .push_back(DisconnectionEvent::disconnected(cid, disconnect_msg));
+        // TODO: send an ack msg for it.
         self.remove_connection(cid)
             .expect("cid should be from a connected client");
         debug!("CId {} disconnected.", cid);

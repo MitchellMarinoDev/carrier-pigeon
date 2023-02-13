@@ -39,11 +39,24 @@ impl<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<S
         }
     }
 
-    pub fn push_received(&mut self, header: MsgHeader, receive_data: RD) {
+    /// Handles the reliability aspects of receiving a message other than ordering.
+    ///
+    /// For ordering, use [`push_received`](Self::push_received) to push the message into the
+    /// ordering buffer.
+    pub fn msg_received(&mut self, header: MsgHeader) {
         self.ack_sys.msg_received(header.sender_ack_num);
         self.ack_sys
             .mark_bitfield(header.receiver_acking_offset, header.ack_bits);
+    }
 
+    /// Handles an incoming [`AckMsg`].
+    pub fn recv_ack_msg(&mut self, ack_msg: AckMsg) {
+        self.ack_sys.handle_ack_msg(ack_msg)
+    }
+
+    /// Pushes the received message into the ordering buffer to be ordered according to
+    /// it's guarantees.
+    pub fn push_received(&mut self, header: MsgHeader, receive_data: RD) {
         let guarantees = self.msg_table.guarantees[header.m_type];
         self.ordering_sys.push(header, guarantees, receive_data);
     }
@@ -57,8 +70,7 @@ impl<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<S
             }
             self.last_ack_msg = Instant::now();
         }
-        let (offset, flags) = self.ack_sys.ack_msg_info();
-        Some(AckMsg::new(offset, flags))
+        Some(self.ack_sys.ack_msg_info())
     }
 
     pub fn get_received(&mut self) -> Option<(MsgHeader, RD)> {

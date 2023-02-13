@@ -1,7 +1,7 @@
 mod ack_system;
 mod ordering_system;
 pub(crate) mod ping_system;
-pub(crate) mod reliable;
+pub(crate) mod reliable_system;
 #[cfg(test)]
 mod test_connection;
 

@@ -1,6 +1,8 @@
 use crate::connection::ping_system::ClientPingSystem;
-use crate::connection::reliable::ReliableSystem;
-use crate::message_table::{DISCONNECT_M_TYPE, PING_M_TYPE, RESPONSE_M_TYPE};
+use crate::connection::reliable_system::ReliableSystem;
+use crate::message_table::{
+    ACK_M_TYPE, CONNECTION_M_TYPE, DISCONNECT_M_TYPE, PING_M_TYPE, RESPONSE_M_TYPE,
+};
 use crate::messages::{NetMsg, PingMsg, PingType};
 use crate::net::{AckNum, ErasedNetMsg, Message, MsgHeader, Status, HEADER_SIZE};
 use crate::transport::client_std_udp::UdpClientTransport;
@@ -283,9 +285,31 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
                     continue;
                 }
             };
+            self.reliable_sys.msg_received(header);
 
             match header.m_type {
-                // TODO: Add other special types.
+                CONNECTION_M_TYPE => {
+                    warn!("Client: Got a connection type message. Ignoring.");
+                }
+                RESPONSE_M_TYPE => {
+                    if self.status.is_connecting() {
+                        let response = *msg.downcast::<Response<A, R>>().expect("since the MType is `RESPONSE_M_TYPE`, the message should be the response type");
+                        match response {
+                            Response::Accepted(a) => self.status = Status::Accepted(a),
+                            Response::Rejected(r) => self.status = Status::Rejected(r),
+                        }
+                    }
+                }
+                DISCONNECT_M_TYPE => {
+                    if self.status.is_connected() {
+                        let discon_msg = *msg.downcast().expect("since the MType is `DISCONNECT_M_TYPE`, the message should be the disconnection type");
+                        self.status = Status::Disconnected(discon_msg);
+                    }
+                }
+                ACK_M_TYPE => {
+                    let ack_msg = *msg.downcast().expect("since the MType is `RESPONSE_M_TYPE`, the message should be the response type");
+                    self.reliable_sys.recv_ack_msg(ack_msg);
+                }
                 PING_M_TYPE => {
                     let msg: PingMsg = *msg.downcast().expect("since the MType is `DISCONNECT_M_TYPE`, the message should be the disconnection type");
                     match msg.ping_type {
@@ -299,25 +323,12 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
                         }
                     }
                 }
-                DISCONNECT_M_TYPE => {
-                    if self.status.is_connected() {
-                        self.status = Status::Disconnected(*msg.downcast().expect("since the MType is `DISCONNECT_M_TYPE`, the message should be the disconnection type"));
-                    }
-                }
-                RESPONSE_M_TYPE => {
-                    if self.status.is_connecting() {
-                        match *msg.downcast::<Response<A, R>>().expect("since the MType is `RESPONSE_M_TYPE`, the message should be the response type") {
-                            Response::Accepted(a) => self.status = Status::Accepted(a),
-                            Response::Rejected(r) => self.status = Status::Rejected(r),
-                        }
-                    }
-                }
-                _ => {
+                m_type => {
                     // handle reliability and ordering
                     self.reliable_sys.push_received(header, msg);
                     // get all messages from the reliable system and push them on the "ready" que.
                     while let Some((header, msg)) = self.reliable_sys.get_received() {
-                        self.msg_buf[header.m_type].push(ErasedNetMsg::new(
+                        self.msg_buf[m_type].push(ErasedNetMsg::new(
                             0,
                             header.sender_ack_num,
                             header.order_num,

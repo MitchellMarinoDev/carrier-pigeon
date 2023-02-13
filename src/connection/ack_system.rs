@@ -1,10 +1,11 @@
+use crate::messages::AckMsg;
 use crate::net::{AckNum, MsgHeader};
 use crate::{Guarantees, NetConfig};
 use hashbrown::HashMap;
-use log::warn;
 use std::cmp::max;
 use std::collections::VecDeque;
 use std::fmt::Debug;
+use std::mem;
 use std::time::Instant;
 
 // TODO: impl ack_send_count for residuals
@@ -40,6 +41,8 @@ pub(crate) struct AckSystem<SD: Clone> {
     current_idx: usize,
     /// The [`NetConfig`].
     config: NetConfig,
+    /// A buffer for received messages that dont fit in the bitfield window.
+    residuals: Vec<AckNum>,
     /// The ack bitfields.
     ///
     /// This stores a bitfield for weather the 32 messages before `ack_offset` have been received.
@@ -58,6 +61,7 @@ impl<SD: Clone> AckSystem<SD> {
             ack_offset: 0,
             current_idx: usize::MAX - 1,
             config,
+            residuals: vec![],
             ack_bitfields: deque,
             saved_msgs: HashMap::new(),
         }
@@ -87,10 +91,7 @@ impl<SD: Clone> AckSystem<SD> {
         if num < self.ack_offset {
             // num is outside the window. This is unlikely to happen unless a packet stays on the
             // internet for a long time.
-            warn!(
-                "Received a message that is outside of the window (AckNum: {})",
-                num
-            );
+            self.residuals.push(num);
             return;
         }
         let dif = num - self.ack_offset;
@@ -114,6 +115,16 @@ impl<SD: Clone> AckSystem<SD> {
         }
     }
 
+    /// Handles an incoming [`AckMsg`].
+    pub fn handle_ack_msg(&mut self, ack_msg: AckMsg) {
+        for (i, bitfield) in ack_msg.bitfields.into_iter().enumerate() {
+            self.mark_bitfield(ack_msg.ack_offset + BITFIELD_WIDTH * i as AckNum, bitfield);
+        }
+        for residual in ack_msg.residuals {
+            self.saved_msgs.remove(&residual);
+        }
+    }
+
     /// Gets the next ack_offset and bitflags associated with it to be sent in the header.
     pub fn next_header(&mut self) -> (AckNum, u32) {
         self.current_idx = (self.current_idx + 1) % self.ack_bitfields.len();
@@ -129,13 +140,19 @@ impl<SD: Clone> AckSystem<SD> {
     ///
     /// This increases the send count for all the bitfields.
     /// Returns the offset and a vec of the bitfields.
-    pub fn ack_msg_info(&mut self) -> (AckNum, Vec<u32>) {
+    pub fn ack_msg_info(&mut self) -> AckMsg {
+        let residuals = if self.residuals.len() == 0 {
+            Vec::with_capacity(0)
+        } else {
+            mem::replace(&mut self.residuals, vec![])
+        };
+
         let mut out = Vec::with_capacity(self.ack_bitfields.len());
         for bf in self.ack_bitfields.iter_mut() {
             bf.send_count += 1;
             out.push(bf.bitfield);
         }
-        (self.ack_offset, out)
+        AckMsg::new(self.ack_offset, out, residuals)
     }
 
     /// Gets the next outgoing [`AckNum`].
