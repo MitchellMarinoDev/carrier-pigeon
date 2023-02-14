@@ -516,32 +516,6 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
         self.disconnection_events.pop_front()
     }
 
-    /// Handles an incoming ack message.
-    ///
-    /// This assumes the CId is valid.
-    fn recv_ack(&mut self, cid: CId, ack_msg: AckMsg) {
-        let reliable_sys = self
-            .reliable_sys
-            .get_mut(&cid)
-            .expect("cid should be valid");
-        reliable_sys.recv_ack_msg(ack_msg)
-    }
-
-    /// Handles an incoming ping message.
-    ///
-    /// If this is a request type, it will respond to it.
-    /// If it is a response, it is handled accordingly.
-    fn recv_ping(&mut self, cid: CId, ping_msg: PingMsg) {
-        match ping_msg.ping_type {
-            PingType::Req => {
-                if let Err(err) = self.send_to(cid, &ping_msg.response()) {
-                    warn!("Error in responding to a ping (CId: {}): {}", cid, err);
-                }
-            }
-            PingType::Res => self.ping_sys.recv_ping_msg(cid, ping_msg.ping_num),
-        }
-    }
-
     /// Add a new connection with `cid` and `addr`.
     fn new_connection(&mut self, cid: CId, addr: SocketAddr) -> Result<(), ConnectionListError> {
         self.connection_list.new_connection(cid, addr)?;
@@ -619,6 +593,14 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
 
     pub fn cids(&self) -> impl Iterator<Item = CId> + '_ {
         self.connection_list.cids()
+    }
+
+    pub fn cid_addr_pairs(&self) -> impl Iterator<Item = (CId, SocketAddr)> + '_ {
+        self.connection_list.pairs()
+    }
+
+    pub fn addrs(&self) -> impl Iterator<Item = SocketAddr> + '_ {
+        self.connection_list.addrs()
     }
 
     pub fn cid_of(&self, addr: SocketAddr) -> Option<CId> {

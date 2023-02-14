@@ -430,6 +430,13 @@ pub struct NetConfig {
     /// RTT witch is needed for reliable system.
     /// This also works as a heartbeat to keep the connection from timing out.
     pub ping_interval: Duration,
+    /// The time it takes for a connection to time out. That is, the time it takes for the
+    /// connection to close if we haven't heard from the peer.
+    ///
+    /// Since `carrier-pigeon` sends messages for RTT estimation and for acknowledging other
+    /// messages under the hood, you don't need to worry about sending messages to stop the
+    /// connection from timing out.
+    pub recv_timeout: Duration,
 }
 
 impl Default for NetConfig {
@@ -439,6 +446,7 @@ impl Default for NetConfig {
             ping_interval: Duration::from_millis(100),
             pings_to_retain: 8,
             ping_smoothing_value: 8,
+            recv_timeout: Duration::from_secs(10),
         }
     }
 }

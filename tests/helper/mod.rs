@@ -23,7 +23,10 @@ pub fn create_client_server_pair() -> (Client, Server) {
 
     debug!("Creating server.");
     let mut server = Server::new(
-        NetConfig::default(),
+        NetConfig {
+            // TODO add timeout value to 50ms.
+            ..Default::default()
+        },
         SERVER_ADDR_LOCAL.parse().unwrap(),
         msg_table.clone(),
     )
