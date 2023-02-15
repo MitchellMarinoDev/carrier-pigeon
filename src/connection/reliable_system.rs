@@ -61,6 +61,11 @@ impl<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<S
         self.ordering_sys.push(header, guarantees, receive_data);
     }
 
+    /// Gets an [`AckMsg`] even if one is not due to be sent yet.
+    pub fn force_get_ack_msg(&mut self) -> AckMsg {
+        self.ack_sys.ack_msg_info()
+    }
+
     /// Gets an [`AckMsg`] for acknowledging all received messages in the window if one needs to be
     /// sent.
     pub fn get_ack_msg(&mut self) -> Option<AckMsg> {

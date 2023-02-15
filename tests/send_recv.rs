@@ -3,6 +3,7 @@ use crate::helper::create_client_server_pair;
 use crate::helper::test_messages::{ReliableMsg, UnreliableMsg};
 use log::info;
 use std::time::Duration;
+use carrier_pigeon::NetConfig;
 
 mod helper;
 
@@ -12,8 +13,16 @@ fn send_recv() {
         .with_level(log::LevelFilter::Trace)
         .init();
 
+    let config = NetConfig {
+        ack_send_count: 2,
+        pings_to_retain: 8,
+        ping_smoothing_value: 4,
+        ping_interval: Duration::from_millis(1),
+        recv_timeout: Duration::from_millis(10),
+    };
+
     // CLIENT TO SERVER
-    let (mut client, mut server) = create_client_server_pair();
+    let (mut client, mut server) = create_client_server_pair(config);
     info!("connection made");
 
     // Send 10 reliable messages.

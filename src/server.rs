@@ -11,12 +11,13 @@ use crate::transport::ServerTransport;
 use crate::{CId, MsgTable, NetConfig};
 use hashbrown::HashMap;
 use log::{debug, error, info, trace, warn};
-use std::any::{type_name, TypeId};
+use std::any::TypeId;
 use std::collections::VecDeque;
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
 
 /// [`ReliableSystem`] with the generic parameters set for a server.
 type ServerReliableSystem<C, A, R, D> =
@@ -34,6 +35,8 @@ pub struct Server<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
     msg_table: MsgTable<C, A, R, D>,
     /// The transport to use to send and receive the messages.
     transport: UdpServerTransport,
+    /// The instant that we last heard from each connection.
+    last_heard: HashMap<CId, Instant>,
     /// The system used to generate ping messages and estimate the RTT.
     ping_sys: ServerPingSystem,
     /// The [`ReliableSystem`]s to add optional reliability to messages for each connection.
@@ -59,8 +62,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
         let connection_list = ConnectionList::new();
         let transport = UdpServerTransport::new(listen_addr)?;
         trace!(
-            "{} listening on {}",
-            type_name::<UdpServerTransport>(),
+            "Server: Creating socket listening on {}",
             transport
                 .listen_addr()
                 .map(|addr| addr.to_string())
@@ -72,6 +74,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
             config,
             msg_table,
             transport,
+            last_heard: HashMap::new(),
             ping_sys: ServerPingSystem::new(config),
             reliable_sys: HashMap::new(),
             disconnection_events: VecDeque::new(),
@@ -335,12 +338,13 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                 continue;
             }
             trace!(
-                "Server: received message (MType: {}, len: {}, AckNum: {}, from: {})",
+                "Server: received message (AckNum: {}, MType: {}, len: {}, from: {})",
+                header.sender_ack_num,
                 header.m_type,
                 n,
-                header.sender_ack_num,
                 from,
             );
+            debug!("Server: {:?}", header);
 
             let cid = match self.connection_list.cid_of(from) {
                 Some(cid) => cid,
@@ -365,9 +369,10 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                             continue;
                         },
                     };
+
                     // create a new connection
                     self.connection_list
-                        .new_pending(from, msg)
+                        .new_pending(from, header, msg)
                         .expect("address already checked to not be connected");
                     continue;
                 }
@@ -385,6 +390,8 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                 .get_mut(&cid)
                 .expect("CId already checked");
             reliable_sys.msg_received(header);
+            let last_heard = self.last_heard.get_mut(&cid).expect("CId already checked");
+            *last_heard = Instant::now();
 
             match header.m_type {
                 RESPONSE_M_TYPE => {
@@ -439,7 +446,8 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
 
     // TODO: handle things in the disconnecting buffer.
     fn update_statuses(&mut self) {
-        let mut remove = vec![];
+        // Handle the Disconnecting Buffer
+        let mut remove = Vec::with_capacity(0);
         for (idx, (cid, ack_num, _d)) in self.disconnecting.iter().enumerate() {
             if !self.reliable_sys[cid].is_not_acked(*ack_num) {
                 remove.push(idx);
@@ -450,6 +458,23 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
             let (cid, _, disconnect_msg) = self.disconnecting.swap_remove(idx);
             self.server_disconnected_event(cid, disconnect_msg);
         }
+
+        // Timeout Connections
+        let mut timed_out = Vec::with_capacity(0);
+        for (cid, instant) in self.last_heard.iter() {
+            if instant.elapsed() > self.config.recv_timeout {
+                info!(
+                    "Disconnecting client due to timeout ({}ms > {}ms)",
+                    instant.elapsed().as_millis(),
+                    self.config.recv_timeout.as_millis()
+                );
+                timed_out.push(*cid);
+            }
+        }
+
+        for cid in timed_out {
+            self.handle_send_err(cid, Error::new(ErrorKind::TimedOut, "connection timeout"))
+        }
     }
 
     /// Updates the status of the connection based on a send error.
@@ -457,7 +482,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     /// Since receiving is not connection specific, it should be handled differently.
     fn handle_send_err(&mut self, cid: CId, err: Error) {
         warn!(
-            "Got error while sending data to {}. Considering connection dropped. {}",
+            "Got error while sending data to {}. Considering connection dropped: {}",
             cid, err
         );
         self.connection_dropped_event(cid, err);
@@ -483,7 +508,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
         mut hook: impl FnMut(CId, SocketAddr, C) -> Response<A, R>,
     ) -> u32 {
         let mut count = 0;
-        while let Some((cid, addr, msg)) = self.connection_list.get_pending() {
+        while let Some((cid, addr, header, msg)) = self.connection_list.get_pending() {
             if self.connection_list.addr_connected(addr) {
                 // address is already connected; ignore the connection request
                 continue;
@@ -495,7 +520,11 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                 info!("Accepting client {}", cid);
                 self.new_connection(cid, addr).expect(
                     "cid and address should be valid, as they came from the connection list",
-                )
+                );
+                // Connection message needs to be marked as received here, as it was not connected
+                //      (and therefore didnt have a reliable_sys) when the connection message came in.
+                self.reliable_sys.get_mut(&cid).expect("newly created cid should be valid")
+                    .msg_received(header);
             } else {
                 debug!("Rejecting client {}", cid);
             }
@@ -524,12 +553,14 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
             cid,
             ReliableSystem::new(self.msg_table.clone(), self.config),
         );
+        self.last_heard.insert(cid, Instant::now());
         Ok(())
     }
 
     /// Removes a connection `cid`.
     fn remove_connection(&mut self, cid: CId) -> Result<(), ConnectionListError> {
         self.connection_list.remove_connection(cid)?;
+        self.last_heard.remove(&cid);
         let old_reliable = self.reliable_sys.remove(&cid);
         debug_assert!(old_reliable.is_some(), "since self.connection_list.remove_connection() didn't fail, there should be a corresponding entry for that cid in self.reliable_sys");
         let removed = self.ping_sys.remove_cid(cid);

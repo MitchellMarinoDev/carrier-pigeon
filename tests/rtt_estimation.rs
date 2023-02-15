@@ -1,6 +1,7 @@
 use crate::helper::create_client_server_pair;
 use std::process::Command;
 use std::time::{Duration, Instant};
+use carrier_pigeon::NetConfig;
 
 mod helper;
 
@@ -11,7 +12,15 @@ fn test_rtt_calculation() {
         .with_level(log::LevelFilter::Trace)
         .init();
 
-    let (mut client, mut server) = create_client_server_pair();
+    let config = NetConfig {
+        ack_send_count: 2,
+        pings_to_retain: 8,
+        ping_smoothing_value: 4,
+        ping_interval: Duration::from_millis(1),
+        recv_timeout: Duration::from_millis(20),
+    };
+
+    let (mut client, mut server) = create_client_server_pair(config);
 
     // simulate a 35ms delay
     Command::new("bash")
@@ -22,7 +31,7 @@ fn test_rtt_calculation() {
 
     let start = Instant::now();
     // run for a second.
-    let time = Duration::from_millis(1_000);
+    let time = Duration::from_millis(200);
     loop {
         if start.elapsed() > time {
             break;
@@ -38,6 +47,9 @@ fn test_rtt_calculation() {
         .output()
         .expect("failed to run `tc` to remove the emulated network conditions on the `lo` adapter");
 
+    server
+        .cid_addr_pairs()
+        .for_each(|(cid, addr)| println!("{}: {}", cid, addr));
     let server_rtt = server.rtt(1).unwrap() as i32;
     let client_rtt = client.rtt() as i32;
     // Double the 5ms would be 10_000 us.

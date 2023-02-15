@@ -11,6 +11,7 @@ use crate::CId;
 use std::collections::VecDeque;
 use std::io::Error;
 use std::net::SocketAddr;
+use crate::net::MsgHeader;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum ConnectionListError {
@@ -121,7 +122,7 @@ pub(crate) struct ConnectionList<C: NetMsg> {
     cid_addr: DoubleHashMap<CId, SocketAddr>,
     /// A que that keeps track of new unhandled connections.
     // TODO: I dont think a cid needs to be assigned until/unless the connection is accepted.
-    pending_connections: VecDeque<(CId, SocketAddr, C)>,
+    pending_connections: VecDeque<(CId, SocketAddr, MsgHeader, C)>,
 }
 
 impl<C: NetMsg> ConnectionList<C> {
@@ -145,17 +146,18 @@ impl<C: NetMsg> ConnectionList<C> {
     pub fn new_pending(
         &mut self,
         addr: SocketAddr,
+        header: MsgHeader,
         connection_msg: C,
     ) -> Result<CId, ConnectionListError> {
         let cid = self.current_cid;
         self.current_cid += 1;
         self.pending_connections
-            .push_back((cid, addr, connection_msg));
+            .push_back((cid, addr, header, connection_msg));
         Ok(cid)
     }
 
     /// Gets the next pending connection if there is one.
-    pub fn get_pending(&mut self) -> Option<(CId, SocketAddr, C)> {
+    pub fn get_pending(&mut self) -> Option<(CId, SocketAddr, MsgHeader, C)> {
         self.pending_connections.pop_front()
     }
 

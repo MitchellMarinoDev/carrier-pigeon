@@ -2,6 +2,7 @@
 use crate::helper::create_client_server_pair;
 use crate::helper::test_messages::Disconnect;
 use std::time::Duration;
+use carrier_pigeon::NetConfig;
 
 mod helper;
 
@@ -11,9 +12,17 @@ fn graceful_disconnect() {
         .with_level(log::LevelFilter::Trace)
         .init();
 
+    let config = NetConfig {
+        ack_send_count: 2,
+        pings_to_retain: 8,
+        ping_smoothing_value: 4,
+        ping_interval: Duration::from_millis(1),
+        recv_timeout: Duration::from_millis(10),
+    };
+
     {
         // Client Disconnect Test
-        let (mut client, mut server) = create_client_server_pair();
+        let (mut client, mut server) = create_client_server_pair(config);
 
         client
             .disconnect(&Disconnect::new("Testing Disconnect Client."))
@@ -36,7 +45,7 @@ fn graceful_disconnect() {
 
     {
         // Server Disconnect Test
-        let (mut client, mut server) = create_client_server_pair();
+        let (mut client, mut server) = create_client_server_pair(config);
 
         server
             .disconnect(Disconnect::new("Testing Disconnect Server."), 1)
@@ -59,9 +68,17 @@ fn drop_test() {
         .with_level(log::LevelFilter::Trace)
         .init();
 
+    let config = NetConfig {
+        ack_send_count: 2,
+        pings_to_retain: 8,
+        ping_smoothing_value: 4,
+        ping_interval: Duration::from_millis(1),
+        recv_timeout: Duration::from_millis(10),
+    };
+
     {
         // Server Drop Client.
-        let (mut client, server) = create_client_server_pair();
+        let (mut client, server) = create_client_server_pair(config);
         drop(server);
 
         // Give the client a few ticks to timeout or detect the connection drop.
@@ -79,7 +96,7 @@ fn drop_test() {
 
     {
         // Client Drop Server.
-        let (client, mut server) = create_client_server_pair();
+        let (client, mut server) = create_client_server_pair(config);
         drop(client);
 
         // Give the server a few ticks to timeout or detect the connection drop.

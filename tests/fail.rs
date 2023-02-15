@@ -8,6 +8,10 @@ mod helper;
 
 #[test]
 fn client_fail() {
+    let _ = simple_logger::SimpleLogger::new()
+        .with_level(log::LevelFilter::Trace)
+        .init();
+
     let table = get_msg_table();
 
     let local = "127.0.0.1:7776".parse().unwrap();
@@ -21,6 +25,7 @@ fn client_fail() {
     // Block until the connection is made.
     let mut status = client.get_status();
     while status.is_connecting() {
+        client.tick();
         sleep(Duration::from_millis(1));
         status = client.get_status();
     }

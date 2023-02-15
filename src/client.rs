@@ -67,7 +67,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
 
         let transport = UdpClientTransport::new(local_addr, peer_addr)?;
         trace!(
-            "ClientConnection created from {} to {}",
+            "Client: Creating connection from {} to {}.",
             transport
                 .local_addr()
                 .map(|addr| addr.to_string())
@@ -200,12 +200,22 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     }
 
     /// Sends an [`AckMsg`] to acknowledge all received messages.
+    fn force_send_ack_msg(&mut self) {
+        let ack_msg = self.reliable_sys.force_get_ack_msg();
+        trace!("Sending {:?}", ack_msg);
+        if let Err(err) = self.send(&ack_msg) {
+            error!("Error sending AckMsg: {}", err);
+        }
+    }
+
+    /// Sends an [`AckMsg`] to acknowledge all received messages if one needs to be sent.
     fn send_ack_msg(&mut self) {
         let ack_msg = match self.reliable_sys.get_ack_msg() {
             None => return,
             Some(ack_msg) => ack_msg,
         };
 
+        trace!("Sending {:?}", ack_msg);
         if let Err(err) = self.send(&ack_msg) {
             error!("Error sending AckMsg: {}", err);
         }
@@ -246,7 +256,6 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     /// buffer. Any errors other than a [`WouldBlock`](ErrorKind::WouldBlock) are treated as
     /// unrecoverable errors and therefor close the connection.
     fn get_msgs_err(&mut self) -> io::Result<()> {
-        // TODO: support blocking somehow.
         loop {
             let buf = match &mut self.transport {
                 None => return Ok(()),
@@ -272,11 +281,12 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
             }
 
             trace!(
-                "Client: received message (MType: {}, len: {}, AckNum: {})",
+                "Client: received message (AckNum: {}, MType: {}, len: {})",
+                header.sender_ack_num,
                 header.m_type,
                 n,
-                header.sender_ack_num,
             );
+            debug!("Client: {:?}", header);
 
             let msg = match self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..]) {
                 Ok(msg) => msg,
@@ -298,6 +308,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
                             Response::Accepted(a) => self.status = Status::Accepted(a),
                             Response::Rejected(r) => self.status = Status::Rejected(r),
                         }
+                        self.force_send_ack_msg();
                     }
                 }
                 DISCONNECT_M_TYPE => {
@@ -355,7 +366,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
         match &self.status {
             Connected => {
                 warn!(
-                    "Got error while sending/receiving data. Considering connection dropped. {}",
+                    "Got error while sending/receiving data. Considering connection dropped: {}",
                     err
                 );
                 self.status = Dropped(err);

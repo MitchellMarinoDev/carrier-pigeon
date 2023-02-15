@@ -18,15 +18,12 @@ pub const CLIENT_ADDR_LOCAL: &str = "127.0.0.1:7776";
 
 /// Creates a client and server that are connected to each other.
 /// Panics if any issues occur.
-pub fn create_client_server_pair() -> (Client, Server) {
+pub fn create_client_server_pair(config: NetConfig) -> (Client, Server) {
     let msg_table = get_msg_table();
 
     debug!("Creating server.");
     let mut server = Server::new(
-        NetConfig {
-            // TODO add timeout value to 50ms.
-            ..Default::default()
-        },
+        config,
         SERVER_ADDR_LOCAL.parse().unwrap(),
         msg_table.clone(),
     )
@@ -37,7 +34,7 @@ pub fn create_client_server_pair() -> (Client, Server) {
 
     debug!("Creating client.");
     // Start client connection.
-    let mut client = Client::new(NetConfig::default(), msg_table);
+    let mut client = Client::new(config, msg_table);
     debug!("Client Connecting");
     client.connect(
         CLIENT_ADDR_LOCAL.parse().unwrap(),
@@ -70,6 +67,11 @@ pub fn create_client_server_pair() -> (Client, Server) {
 
     assert!(status.is_accepted(), "{}", status);
     let status = client.handle_status();
+    assert!(
+        client.get_status().is_connected(),
+        "{}",
+        client.get_status()
+    );
 
     debug!("Client created on addr: {}", client.local_addr().unwrap());
 
