@@ -3,11 +3,7 @@ use crate::connection::ordering_system::OrderingSystem;
 use crate::messages::{AckMsg, NetMsg};
 use crate::net::{AckNum, MsgHeader};
 use crate::{Guarantees, MType, MsgTable, NetConfig};
-use std::time::{Duration, Instant};
-
-/// A minimum time for ack messages to be sent.
-/// [`AckMsg`]s are sent once per frame, limited by this number.
-const ACK_MSG_LIMIT: Option<Duration> = Some(Duration::from_millis(100));
+use std::time::Instant;
 
 /// A system that handles the reliablility and ordering of incoming messages based on their
 /// [`Guarantees`].
@@ -21,6 +17,7 @@ const ACK_MSG_LIMIT: Option<Duration> = Some(Duration::from_millis(100));
 /// Since these differ between client and server (server needs to keep track of a from address),
 /// these need to be generic parameters.
 pub(crate) struct ReliableSystem<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
+    config: NetConfig,
     msg_table: MsgTable<C, A, R, D>,
     last_ack_msg: Instant,
     ack_sys: AckSystem<SD>,
@@ -32,6 +29,7 @@ impl<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<S
     pub fn new(msg_table: MsgTable<C, A, R, D>, config: NetConfig) -> Self {
         let m_table_count = msg_table.mtype_count();
         ReliableSystem {
+            config,
             msg_table,
             last_ack_msg: Instant::now(),
             ack_sys: AckSystem::new(config),
@@ -69,12 +67,10 @@ impl<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<S
     /// Gets an [`AckMsg`] for acknowledging all received messages in the window if one needs to be
     /// sent.
     pub fn get_ack_msg(&mut self) -> Option<AckMsg> {
-        if let Some(limit) = ACK_MSG_LIMIT {
-            if self.last_ack_msg.elapsed() < limit {
-                return None;
-            }
-            self.last_ack_msg = Instant::now();
+        if self.last_ack_msg.elapsed() < self.config.ack_msg_interval {
+            return None;
         }
+        self.last_ack_msg = Instant::now();
         Some(self.ack_sys.ack_msg_info())
     }
 

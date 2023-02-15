@@ -13,8 +13,7 @@ pub mod test_messages;
 type Client = carrier_pigeon::Client<Connection, Accepted, Rejected, Disconnect>;
 type Server = carrier_pigeon::Server<Connection, Accepted, Rejected, Disconnect>;
 
-pub const SERVER_ADDR_LOCAL: &str = "127.0.0.1:7778";
-pub const CLIENT_ADDR_LOCAL: &str = "127.0.0.1:7776";
+pub const ADDR_LOCAL: &str = "127.0.0.1:0";
 
 /// Creates a client and server that are connected to each other.
 /// Panics if any issues occur.
@@ -24,7 +23,7 @@ pub fn create_client_server_pair(config: NetConfig) -> (Client, Server) {
     debug!("Creating server.");
     let mut server = Server::new(
         config,
-        SERVER_ADDR_LOCAL.parse().unwrap(),
+        ADDR_LOCAL.parse().unwrap(),
         msg_table.clone(),
     )
     .unwrap();
@@ -37,8 +36,8 @@ pub fn create_client_server_pair(config: NetConfig) -> (Client, Server) {
     let mut client = Client::new(config, msg_table);
     debug!("Client Connecting");
     client.connect(
-        CLIENT_ADDR_LOCAL.parse().unwrap(),
-        SERVER_ADDR_LOCAL.parse().unwrap(),
+        ADDR_LOCAL.parse().unwrap(),
+        addr,
         &Connection::new("John Smith"),
     );
 

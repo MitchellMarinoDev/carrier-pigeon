@@ -1,8 +1,8 @@
 //! Disconnect and Drop tests.
 use crate::helper::create_client_server_pair;
 use crate::helper::test_messages::Disconnect;
-use std::time::Duration;
 use carrier_pigeon::NetConfig;
+use std::time::Duration;
 
 mod helper;
 
@@ -18,6 +18,7 @@ fn graceful_disconnect() {
         ping_smoothing_value: 4,
         ping_interval: Duration::from_millis(1),
         recv_timeout: Duration::from_millis(10),
+        ack_msg_interval: Duration::from_millis(1),
     };
 
     {
@@ -74,6 +75,7 @@ fn drop_test() {
         ping_smoothing_value: 4,
         ping_interval: Duration::from_millis(1),
         recv_timeout: Duration::from_millis(10),
+        ack_msg_interval: Duration::from_millis(1),
     };
 
     {

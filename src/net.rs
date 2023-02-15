@@ -437,16 +437,23 @@ pub struct NetConfig {
     /// messages under the hood, you don't need to worry about sending messages to stop the
     /// connection from timing out.
     pub recv_timeout: Duration,
+    /// The interval to try to send [`AckMsg`](crate::messages::AckMsg)s the peer. This adds
+    /// an extra layer of acknowledging redundancy, keeps the acknowledgement system from falling
+    /// behind, and acknowledges old messages that can't get acknowledged otherwise.
+    ///
+    /// Set this to a duration of 0 to send a message every tick.
+    pub ack_msg_interval: Duration,
 }
 
 impl Default for NetConfig {
     fn default() -> Self {
         NetConfig {
             ack_send_count: 2,
-            ping_interval: Duration::from_millis(100),
             pings_to_retain: 8,
             ping_smoothing_value: 8,
+            ping_interval: Duration::from_millis(100),
             recv_timeout: Duration::from_secs(10),
+            ack_msg_interval: Duration::from_millis(100),
         }
     }
 }

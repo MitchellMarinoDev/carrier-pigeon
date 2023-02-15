@@ -1,7 +1,7 @@
 use crate::helper::create_client_server_pair;
+use carrier_pigeon::NetConfig;
 use std::process::Command;
 use std::time::{Duration, Instant};
-use carrier_pigeon::NetConfig;
 
 mod helper;
 
@@ -18,6 +18,7 @@ fn test_rtt_calculation() {
         ping_smoothing_value: 4,
         ping_interval: Duration::from_millis(1),
         recv_timeout: Duration::from_millis(20),
+        ack_msg_interval: Duration::from_millis(1),
     };
 
     let (mut client, mut server) = create_client_server_pair(config);

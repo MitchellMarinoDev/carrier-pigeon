@@ -1,9 +1,9 @@
 //! Simple send/receive tests.
 use crate::helper::create_client_server_pair;
 use crate::helper::test_messages::{ReliableMsg, UnreliableMsg};
+use carrier_pigeon::NetConfig;
 use log::info;
 use std::time::Duration;
-use carrier_pigeon::NetConfig;
 
 mod helper;
 
@@ -19,6 +19,7 @@ fn send_recv() {
         ping_smoothing_value: 4,
         ping_interval: Duration::from_millis(1),
         recv_timeout: Duration::from_millis(10),
+        ack_msg_interval: Duration::from_millis(1),
     };
 
     // CLIENT TO SERVER

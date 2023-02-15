@@ -6,12 +6,12 @@ pub(crate) mod reliable_system;
 mod test_connection;
 
 use crate::messages::NetMsg;
+use crate::net::MsgHeader;
 use crate::util::DoubleHashMap;
 use crate::CId;
 use std::collections::VecDeque;
 use std::io::Error;
 use std::net::SocketAddr;
-use crate::net::MsgHeader;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum ConnectionListError {

@@ -523,7 +523,9 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                 );
                 // Connection message needs to be marked as received here, as it was not connected
                 //      (and therefore didnt have a reliable_sys) when the connection message came in.
-                self.reliable_sys.get_mut(&cid).expect("newly created cid should be valid")
+                self.reliable_sys
+                    .get_mut(&cid)
+                    .expect("newly created cid should be valid")
                     .msg_received(header);
             } else {
                 debug!("Rejecting client {}", cid);
