@@ -141,10 +141,10 @@ impl<SD: Clone> AckSystem<SD> {
     /// This increases the send count for all the bitfields.
     /// Returns the offset and a vec of the bitfields.
     pub fn ack_msg_info(&mut self) -> AckMsg {
-        let residuals = if self.residuals.len() == 0 {
+        let residuals = if self.residuals.is_empty() {
             Vec::with_capacity(0)
         } else {
-            mem::replace(&mut self.residuals, vec![])
+            mem::take(&mut self.residuals)
         };
 
         let mut out = Vec::with_capacity(self.ack_bitfields.len());

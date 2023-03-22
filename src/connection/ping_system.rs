@@ -69,8 +69,7 @@ impl ServerPingSystem {
         if let Some((_, micros)) = self
             .pings
             .iter()
-            .filter(|(v_ping_num, _)| *v_ping_num == ping_num)
-            .next()
+            .find(|(v_ping_num, _)| *v_ping_num == ping_num)
         {
             let elapsed = match unix_micros().checked_sub(*micros) {
                 Some(elapsed) => elapsed,
@@ -163,8 +162,7 @@ impl ClientPingSystem {
         if let Some((_, micros)) = self
             .pings
             .iter()
-            .filter(|(v_ping_num, _)| *v_ping_num == ping_num)
-            .next()
+            .find(|(v_ping_num, _)| *v_ping_num == ping_num)
         {
             let elapsed = match unix_micros().checked_sub(*micros) {
                 Some(elapsed) => elapsed,

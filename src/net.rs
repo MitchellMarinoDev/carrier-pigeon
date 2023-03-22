@@ -412,7 +412,7 @@ impl CIdSpec {
     }
 }
 
-/// Configuration for a client or server
+/// Configuration for a [`Client`](crate::Client) or [`Server`](crate::Server).
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub struct NetConfig {
     /// The minimum number of times to acknowledge a message.
