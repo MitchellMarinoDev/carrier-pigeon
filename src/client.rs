@@ -254,7 +254,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
 
     /// Gets all the outstanding messages from the [`Transport`] and adds them to the `self.ready`
     /// buffer. Any errors other than a [`WouldBlock`](ErrorKind::WouldBlock) are treated as
-    /// unrecoverable errors and therefor close the connection.
+    /// unrecoverable errors and therefore close the connection.
     fn get_msgs_err(&mut self) -> io::Result<()> {
         loop {
             let buf = match &mut self.transport {

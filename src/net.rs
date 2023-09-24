@@ -451,9 +451,9 @@ impl Default for NetConfig {
             ack_send_count: 2,
             pings_to_retain: 8,
             ping_smoothing_value: 8,
-            ping_interval: Duration::from_millis(100),
+            ping_interval: Duration::from_millis(500),
             recv_timeout: Duration::from_secs(10),
-            ack_msg_interval: Duration::from_millis(100),
+            ack_msg_interval: Duration::from_millis(120),
         }
     }
 }
@@ -461,6 +461,8 @@ impl Default for NetConfig {
 /// An untyped network message containing the message content, along with the metadata associated.
 pub(crate) struct ErasedNetMsg {
     /// The [`CId`] that the message was sent from.
+    ///
+    /// On the client side, this will always be `0`.
     pub cid: CId,
     /// The acknowledgment number. This is an incrementing integer assigned by the sender for every
     /// message.
@@ -500,7 +502,7 @@ impl ErasedNetMsg {
             cid: self.cid,
             ack_num: self.ack_num,
             order_num: self.order_num,
-            m: msg,
+            content: msg,
         })
     }
 }
@@ -509,6 +511,8 @@ impl ErasedNetMsg {
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub struct Message<'n, T: NetMsg> {
     /// The [`CId`] that the message was sent from.
+    ///
+    /// On the client side, this will always be `0`.
     pub cid: CId,
     /// The acknowledgment number. This is an incrementing integer assigned by the sender for every
     /// message.
@@ -522,16 +526,16 @@ pub struct Message<'n, T: NetMsg> {
     /// This is not necessarily guaranteed to be unique as wrapping can happen after a lot of
     /// messages.
     pub order_num: OrderNum,
-    /// The actual message.
+    /// The contents of the message that was sent by the peer.
     ///
     /// Borrowed from the client or server.
-    pub m: &'n T,
+    pub content: &'n T,
 }
 
 impl<'n, T: NetMsg> Deref for Message<'n, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.m
+        self.content
     }
 }

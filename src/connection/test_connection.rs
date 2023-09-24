@@ -6,6 +6,7 @@ use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
 
+// TODO: somehow make this not call a command that might break someones computer.
 #[test]
 #[cfg(target_os = "linux")]
 fn test_reliability() {
@@ -54,7 +55,7 @@ fn test_reliability() {
         sleep(Duration::from_millis(150));
         server.tick();
         for msg in server.recv::<ReliableMsg>() {
-            results.push(msg.m.clone());
+            results.push(msg.content.clone());
         }
     }
 
@@ -66,7 +67,7 @@ fn test_reliability() {
         sleep(Duration::from_millis(150));
         server.tick();
         for msg in server.recv::<ReliableMsg>() {
-            results.push(msg.m.clone());
+            results.push(msg.content.clone());
         }
     }
     // remove the simulated conditions
@@ -94,6 +95,7 @@ fn test_reliability() {
 pub struct ReliableMsg {
     pub msg: String,
 }
+
 impl ReliableMsg {
     pub fn new(msg: impl ToString) -> Self {
         ReliableMsg {
@@ -119,6 +121,7 @@ pub struct Disconnect;
 /// The accepted message.
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
 pub struct Accepted;
+
 /// The rejected message.
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
 pub struct Rejected;
@@ -126,8 +129,6 @@ pub struct Rejected;
 /// Builds a table with all these test messages and returns it's parts.
 pub fn get_msg_table() -> MsgTable<Connection, Accepted, Rejected, Disconnect> {
     let mut builder = MsgTableBuilder::new();
-    // TODO: change this back to reliable
-    // TODO: add test for dupe checking when reliable
     builder
         .register_ordered::<ReliableMsg>(Guarantees::ReliableOrdered)
         .unwrap();

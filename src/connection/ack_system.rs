@@ -198,17 +198,17 @@ impl<SD: Clone> AckSystem<SD> {
     ///
     /// `rtt` should be the round trip time in microseconds.
     pub fn get_resend(&mut self, rtt: u32) -> Vec<(MsgHeader, SD)> {
-        let rtt = max(rtt, 60);
-        let mut acks = vec![];
+        let rtt = max(rtt, 800);
+        let mut resend = vec![];
         for (sent, msg_header, sd) in self.saved_msgs.values_mut() {
             // TODO: add duration to config.
             if sent.elapsed().as_micros() > (rtt * 3 / 2) as u128 {
                 *sent = Instant::now();
-                acks.push((*msg_header, sd.clone()));
+                resend.push((*msg_header, sd.clone()));
             }
         }
 
-        acks
+        resend
     }
 
     #[inline]
@@ -233,7 +233,7 @@ mod tests {
         assert_eq!(ack_system.ack_bitfields.len(), 1);
         assert_eq!(ack_system.ack_bitfields[0].send_count, 0);
         assert_eq!(ack_system.ack_offset, 0); // default
-        assert_eq!(ack_system.ack_bitfields.front().unwrap().bitfield, 1 << 0,);
+        assert_eq!(ack_system.ack_bitfields.front().unwrap().bitfield, 1 << 0);
 
         ack_system.msg_received(8);
         assert_eq!(ack_system.ack_bitfields.len(), 1);

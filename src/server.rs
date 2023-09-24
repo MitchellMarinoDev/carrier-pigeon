@@ -3,6 +3,7 @@ use crate::connection::reliable_system::ReliableSystem;
 use crate::connection::{ConnectionList, ConnectionListError, DisconnectionEvent};
 use crate::message_table::{
     ACK_M_TYPE, CONNECTION_M_TYPE, DISCONNECT_M_TYPE, PING_M_TYPE, RESPONSE_M_TYPE,
+    SPECIAL_M_TYPE_COUNT,
 };
 use crate::messages::{AckMsg, NetMsg, PingMsg, PingType, Response};
 use crate::net::{AckNum, CIdSpec, ErasedNetMsg, Message, MsgHeader, HEADER_SIZE};
@@ -127,6 +128,24 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
         ser_fn(msg, &mut payload).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
         let payload = Arc::new(payload);
 
+        if header.m_type < SPECIAL_M_TYPE_COUNT {
+            trace!(
+                "Server: Sending message (AckNum: {}, MType: {}, len: {}, to: {})",
+                header.sender_ack_num,
+                header.m_type,
+                payload.len(),
+                cid,
+            );
+        } else {
+            debug!(
+                "Server: Sending message (AckNum: {}, MType: {}, len: {}, to: {})",
+                header.sender_ack_num,
+                header.m_type,
+                payload.len(),
+                cid,
+            );
+        }
+
         // send the payload based on the guarantees
         let guarantees = self.msg_table.guarantees[m_type];
         reliable_sys.save(header, guarantees, (addr, payload.clone()));
@@ -197,6 +216,9 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                 .map(|net_msg| net_msg.get_typed().unwrap()),
         )
     }
+
+    // TODO: make a version of recv that takes the message, that can be used for
+    //       messages that would be expensive to clone.
 
     /// Gets an iterator for the messages of type `M`.
     ///
@@ -337,14 +359,20 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                 );
                 continue;
             }
-            trace!(
-                "Server: received message (AckNum: {}, MType: {}, len: {}, from: {})",
-                header.sender_ack_num,
-                header.m_type,
-                n,
-                from,
-            );
-            debug!("Server: {:?}", header);
+            if header.m_type < SPECIAL_M_TYPE_COUNT {
+                trace!(
+                    "Server: received message (AckNum: {}, MType: {}, len: {}, from: {})",
+                    header.sender_ack_num,
+                    header.m_type,
+                    n,
+                    from,
+                );
+            } else {
+                debug!(
+                    "Server: received message (AckNum: {}, MType: {}, len: {}, from: {})",
+                    header.sender_ack_num, header.m_type, n, from,
+                );
+            }
 
             let cid = match self.connection_list.cid_of(from) {
                 Some(cid) => cid,
@@ -367,7 +395,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                         Err(err) => {
                             warn!("Server: Error in deserializing a connection message: {}", err);
                             continue;
-                        },
+                        }
                     };
 
                     // create a new connection
