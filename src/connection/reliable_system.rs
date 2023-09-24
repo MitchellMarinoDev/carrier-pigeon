@@ -5,7 +5,7 @@ use crate::net::{AckNum, MsgHeader};
 use crate::{Guarantees, MType, MsgTable, NetConfig};
 use std::time::Instant;
 
-/// A system that handles the reliablility and ordering of incoming messages based on their
+/// A system that handles the reliability and ordering of incoming messages based on their
 /// [`Guarantees`].
 ///
 /// Generic parameter `SD` is for "Send Data". It should be the data that you send to the

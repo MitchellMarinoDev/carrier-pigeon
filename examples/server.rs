@@ -3,7 +3,7 @@
 //! This is a non interactive server, so you may not send
 //! messages with this.
 //!
-//! The default address and port is `127.0.0.1:7797`, however
+//! The default address and port is `127.0.0.1:7777`, however
 //! these can be override by running
 //! `cargo run --example server <IP ADDRESS AND PORT>`.
 //!
@@ -21,7 +21,7 @@ mod shared;
 
 fn main() {
     let _ = simple_logger::SimpleLogger::new()
-        .with_level(log::LevelFilter::Trace)
+        .with_level(log::LevelFilter::Debug)
         .init();
 
     let mut args = env::args().skip(1);
@@ -36,7 +36,7 @@ fn main() {
     // This should be the same on the client and server.
     let mut builder = MsgTableBuilder::new();
     builder
-        .register_ordered::<Msg>(Guarantees::Unreliable)
+        .register_ordered::<Msg>(Guarantees::ReliableOrdered)
         .unwrap();
 
     let table = builder
@@ -93,7 +93,7 @@ fn main() {
             }
 
             // Broadcast the message to all other clients.
-            msgs.push((msg.cid, msg.m.clone()));
+            msgs.push((msg.cid, msg.content.clone()));
         }
         for (cid, msg) in msgs {
             server.send_spec(CIdSpec::Except(cid), &msg).unwrap();

@@ -22,8 +22,25 @@ name = "client"
 [[example]]
 name = "server"
 
+[[bench]]
+name = "downcast"
+harness = false
+
+[[bench]]
+name = "serde"
+harness = false
+
+[[bench]]
+name = "std_udp"
+harness = false
+
+[[bench]]
+name = "unreliable"
+harness = false
+
 [dev-dependencies]
 simple_logger = "4.0"
+criterion = "0.5"
 
 [dependencies]
 bevy = { version = "0.9", optional = true }

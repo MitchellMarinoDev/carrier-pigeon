@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const CLIENT_ADDR_LOCAL: &str = "127.0.0.1:7776";
+pub const CLIENT_ADDR_LOCAL: &str = "0.0.0.0:0";
 pub const SERVER_ADDR_LOCAL: &str = "127.0.0.1:7777";
 
 /// A message from a user

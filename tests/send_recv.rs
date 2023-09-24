@@ -58,7 +58,7 @@ fn send_recv() {
         assert_eq!(msg.msg, format!("Test Reliable Msg {}", i));
     }
 
-    let unreliable_msgs: Vec<_> = server.recv::<UnreliableMsg>().map(|m| m.m).collect();
+    let unreliable_msgs: Vec<_> = server.recv::<UnreliableMsg>().map(|m| m.content).collect();
     assert_eq!(unreliable_msgs.len(), 10); // Make sure all 10 udp messages went through.
 
     // Udp is unreliable unordered. Assert that all messages arrive.
@@ -103,7 +103,10 @@ fn send_recv() {
         assert_eq!(p.msg, format!("Test Reliable message {}", i));
     }
 
-    let unreliable_msgs: Vec<_> = client.recv::<UnreliableMsg>().map(|msg| msg.m).collect();
+    let unreliable_msgs: Vec<_> = client
+        .recv::<UnreliableMsg>()
+        .map(|msg| msg.content)
+        .collect();
     assert_eq!(unreliable_msgs.len(), 10); // Make sure all 10 udp messages went through.
 
     // Udp is unreliable unordered. Assert that all messages arrive.
