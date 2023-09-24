@@ -1,21 +1,25 @@
 //! Benchmarks for (de)serialization.
-#![feature(test)]
-#![feature(bench_black_box)]
+use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 
-extern crate test;
+fn criterion_benchmark(c: &mut Criterion) {
+    c.bench_function("ser", ser);
+    c.bench_function("ser_size", ser_size);
+    c.bench_function("deser", deser);
+}
+
+criterion_group!(benches, criterion_benchmark);
+criterion_main!(benches);
+
 mod helper;
 
 use crate::helper::test_messages::UnreliableMsg;
 use std::hint::black_box;
-use test::Bencher;
 
-#[bench]
 fn ser(b: &mut Bencher) {
     let udp = black_box(UnreliableMsg::new("Short Message"));
     b.iter(|| bincode::serialize(&udp))
 }
 
-#[bench]
 fn ser_size(b: &mut Bencher) {
     let udp = black_box(UnreliableMsg::new("Short Message"));
     b.iter(|| {
@@ -23,7 +27,6 @@ fn ser_size(b: &mut Bencher) {
     })
 }
 
-#[bench]
 fn deser(b: &mut Bencher) {
     let udp = black_box(UnreliableMsg::new("Short Message"));
     let bytes = bincode::serialize(&udp).unwrap();

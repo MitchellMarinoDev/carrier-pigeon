@@ -5,10 +5,11 @@ use carrier_pigeon::{Guarantees, MsgTable, MsgTableBuilder};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
-/// A test message for TCP.
+/// A reliable test message.
 pub struct ReliableMsg {
     pub msg: String,
 }
+
 impl ReliableMsg {
     pub fn new<A: Into<String>>(msg: A) -> Self {
         ReliableMsg { msg: msg.into() }
@@ -16,10 +17,11 @@ impl ReliableMsg {
 }
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
-/// A test message for UDP.
+/// An unreliable test message.
 pub struct UnreliableMsg {
     pub msg: String,
 }
+
 impl UnreliableMsg {
     pub fn new<A: Into<String>>(msg: A) -> Self {
         UnreliableMsg { msg: msg.into() }
@@ -31,6 +33,7 @@ impl UnreliableMsg {
 pub struct Connection {
     pub usr: String,
 }
+
 impl Connection {
     pub fn new<A: Into<String>>(usr: A) -> Self {
         Connection { usr: usr.into() }
@@ -42,6 +45,7 @@ impl Connection {
 pub struct Disconnect {
     pub reason: String,
 }
+
 impl Disconnect {
     pub fn new<A: Into<String>>(reason: A) -> Self {
         Disconnect {
@@ -50,29 +54,26 @@ impl Disconnect {
     }
 }
 
+/// The accepted message.
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
-/// A test response message.
-pub enum Response {
-    Accepted,
-    Rejected(String),
-}
-impl Response {
-    pub fn rejected<A: Into<String>>(reason: A) -> Self {
-        Response::Rejected(reason.into())
-    }
-    pub fn accepted() -> Self {
-        Response::Accepted
-    }
+pub struct Accepted;
+
+/// The rejected message.
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
+pub struct Rejected {
+    pub reason: String,
 }
 
 /// Builds a table with all these test messages and returns it's parts.
-pub fn get_table_parts() -> MsgTable {
-    let mut table = MsgTableBuilder::new();
-    table
-        .register_ordered::<ReliableMsg>(Guarantees::ReliableOrdered)
+pub fn get_msg_table() -> MsgTable<Connection, Accepted, Rejected, Disconnect> {
+    let mut builder = MsgTableBuilder::new();
+    builder
+        .register_ordered::<ReliableMsg>(Guarantees::Reliable)
         .unwrap();
-    table
+    builder
         .register_ordered::<UnreliableMsg>(Guarantees::Unreliable)
         .unwrap();
-    table.build::<Connection, Response, Disconnect>().unwrap()
+    builder
+        .build::<Connection, Accepted, Rejected, Disconnect>()
+        .unwrap()
 }

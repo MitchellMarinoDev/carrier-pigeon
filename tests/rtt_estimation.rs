@@ -23,7 +23,7 @@ fn test_rtt_calculation() {
 
     let (mut client, mut server) = create_client_server_pair(config);
 
-    // simulate a 35ms delay
+    // simulate a 5ms delay
     Command::new("bash")
         .arg("-c")
         .arg("sudo tc qdisc add dev lo root netem delay 5ms")
@@ -31,8 +31,8 @@ fn test_rtt_calculation() {
         .expect("failed to run `tc` to emulate an unstable network on the `lo` adapter");
 
     let start = Instant::now();
-    // run for a second.
-    let time = Duration::from_millis(200);
+    // run for 2 seconds.
+    let time = Duration::from_millis(2000);
     loop {
         if start.elapsed() > time {
             break;

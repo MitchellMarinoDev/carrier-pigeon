@@ -1,70 +1,79 @@
 #![allow(unused)]
 //! Helper functions and types to make setting up the tests easier.
 
-use crate::helper::test_messages::{get_table_parts, Connection, Disconnect, Response};
+use crate::helper::test_messages::{get_msg_table, Accepted, Connection, Disconnect, Rejected};
 use carrier_pigeon::net::NetConfig;
-use carrier_pigeon::{Client, Server, ServerConfig};
-use log::debug;
+use carrier_pigeon::Response;
+use log::{debug, info};
 use std::net::{TcpListener, TcpStream, UdpSocket};
+use std::thread::sleep;
+use std::time::Duration;
 
 pub mod test_messages;
 
-const ADDR_LOCAL: &str = "127.0.0.1:0";
+type Client = carrier_pigeon::Client<Connection, Accepted, Rejected, Disconnect>;
+type Server = carrier_pigeon::Server<Connection, Accepted, Rejected, Disconnect>;
+
+pub const ADDR_LOCAL: &str = "127.0.0.1:0";
 
 /// Creates a client and server that are connected to each other.
 /// Panics if any issues occur.
-pub fn create_client_server_pair() -> (Client, Server) {
-    let parts = get_table_parts();
+pub fn create_client_server_pair(config: NetConfig) -> (Client, Server) {
+    let msg_table = get_msg_table();
 
     debug!("Creating server.");
-    let mut server = Server::new(
-        ADDR_LOCAL.parse().unwrap(),
-        parts.clone(),
-        ServerConfig::new(),
-    )
-    .unwrap();
+    let mut server = Server::new(config, ADDR_LOCAL.parse().unwrap(), msg_table.clone()).unwrap();
+    debug!("Server created!");
     let addr = server.listen_addr().unwrap();
-    debug!("Server created on addr: {}", addr);
+    debug!("Server listening on addr: {}", addr);
 
     debug!("Creating client.");
     // Start client connection.
-    let client = Client::new(
+    let mut client = Client::new(config, msg_table);
+    debug!("Client Connecting");
+    client.connect(
         ADDR_LOCAL.parse().unwrap(),
         addr,
-        parts,
-        NetConfig::default(),
-        Connection::new("John"),
+        &Connection::new("John Smith"),
     );
 
     // Spin until the connection is handled.
-    // Normally this would be done in the game loop and there would be other things to do.
+    // Normally this would be done in the game loop
+    // and there would be other things to do.
     loop {
-        server.clear_msgs();
-        server.get_msgs();
-        let n =
-            server.handle_new_cons(|_cid, _addr, _con_msg: Connection| (true, Response::Accepted));
-        if n >= 0 {
+        client.tick();
+        server.tick();
+        let count = server.handle_pending(|_cid, _addr, _con_msg: Connection| {
+            Response::Accepted::<Accepted, Rejected>(Accepted)
+        });
+        if count != 0 {
             break;
         }
+        sleep(Duration::from_millis(1));
     }
 
-    // Finish the client connection.
-    let (client, response_msg) = client.block::<Response>().unwrap();
+    // Block until the connection is made.
+    let mut status = client.get_status();
+    while status.is_connecting() {
+        client.tick();
+        status = client.get_status();
+        sleep(Duration::from_millis(1));
+    }
+
+    let status = client.get_status();
+    assert!(status.is_accepted(), "{}", status);
+    let status = client.handle_status();
+    assert!(
+        client.get_status().is_connected(),
+        "{}",
+        client.get_status()
+    );
+
     debug!("Client created on addr: {}", client.local_addr().unwrap());
 
-    assert_eq!(response_msg, Response::Accepted);
+    assert_eq!(status.unwrap_accepted(), Some(&Accepted));
 
     (client, server)
-}
-
-/// Creates a pair of [`TcpStream`]s that are connected to each other.
-/// Panics if any issues occur.
-pub fn create_tcp_pair() -> (TcpStream, TcpStream) {
-    let listener = TcpListener::bind(ADDR_LOCAL).unwrap();
-    let addr = listener.local_addr().unwrap();
-    let s1 = TcpStream::connect(addr).unwrap();
-    let (s2, _) = listener.accept().unwrap();
-    (s1, s2)
 }
 
 /// Creates a pair of [`UdpSocket`]s that are connected to each other.

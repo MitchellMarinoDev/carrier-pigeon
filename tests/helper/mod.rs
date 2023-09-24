@@ -21,12 +21,7 @@ pub fn create_client_server_pair(config: NetConfig) -> (Client, Server) {
     let msg_table = get_msg_table();
 
     debug!("Creating server.");
-    let mut server = Server::new(
-        config,
-        ADDR_LOCAL.parse().unwrap(),
-        msg_table.clone(),
-    )
-    .unwrap();
+    let mut server = Server::new(config, ADDR_LOCAL.parse().unwrap(), msg_table.clone()).unwrap();
     debug!("Server created!");
     let addr = server.listen_addr().unwrap();
     debug!("Server listening on addr: {}", addr);
@@ -64,6 +59,7 @@ pub fn create_client_server_pair(config: NetConfig) -> (Client, Server) {
         sleep(Duration::from_millis(1));
     }
 
+    let status = client.get_status();
     assert!(status.is_accepted(), "{}", status);
     let status = client.handle_status();
     assert!(
