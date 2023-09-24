@@ -3,7 +3,7 @@
 //! It connects to the server, and allows you to chat with
 //! the other people connected.
 //!
-//! The default address and port is `127.0.0.1:7797`. and
+//! The default address and port is `127.0.0.1:7777`. and
 //! the default username is "`MyUser`" however these can
 //! be override by running
 //! `cargo run --example client <IP ADDRESS AND PORT> <USERNAME>`.
@@ -28,7 +28,7 @@ mod shared;
 
 fn main() {
     let _ = simple_logger::SimpleLogger::new()
-        .with_level(log::LevelFilter::Trace)
+        .with_level(log::LevelFilter::Warn)
         .init();
 
     let mut args = env::args().skip(1);
@@ -50,7 +50,7 @@ fn main() {
     // This should be the same on the client and server.
     let mut builder = MsgTableBuilder::new();
     builder
-        .register_ordered::<Msg>(Guarantees::Unreliable)
+        .register_ordered::<Msg>(Guarantees::ReliableOrdered)
         .unwrap();
     let table = builder
         .build::<Connection, Accepted, Rejected, Disconnect>()
@@ -71,6 +71,7 @@ fn main() {
     let mut status = client.get_status();
     while status.is_connecting() {
         sleep(Duration::from_millis(1));
+        client.tick();
         status = client.get_status();
     }
 
