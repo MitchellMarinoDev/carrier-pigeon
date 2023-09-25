@@ -5,9 +5,17 @@
 
 A rusty networking library for games.
 
-Carrier pigeon builds on the standard library's `TcpStream` and `UdpSocket` types and handles all the serialization, 
-sending, receiving, and deserialization. This way you can worry about what to send, and pigeon will worry about how 
-to send it. This also allows you to send and receive different types of messages independently.
+Carrier Pigeon provides an optionally reliable message based interface for communicating between a server and clients.
+This message abstraction provides separate and independent channels for different parts of your game (your chat
+messages don't block your player movement messages). Pigeon also provides a connection procedure on top of a
+connectionless transport like UDP.
+
+Each message can be configured with delivery guarantees. For example, you can guarantee that chat messages arrive,
+and arrive in order, but unreliably send the player position messages. This way you don't suffer from the reliability
+and ordering overhead when you don't need to.
+
+Carrier Pigeon supports the client server model, rather than the peer to peer model. If you want to connect players
+to other players, one of the players should host the server.
 
 ### Add carrier-pigeon to your `Cargo.toml`:
 
@@ -19,11 +27,12 @@ to send it. This also allows you to send and receive different types of messages
 
 ## Documentation
 
-The documentation can be found on [Docs.rs](https://docs.rs/carrier-pigeon)
+The API documentation can be found on [Docs.rs](https://docs.rs/carrier-pigeon)
+More in depth documentation about carrier-pigeon, design decisions and the interworkings is found in [`docs`/](docs).
 
 ### Quickstart
 
-A quickstart guide that goes in more detail is found at [`/quickstart.md`](quickstart.md)
+A quickstart guide that goes in more detail is found at [`/quickstart.md`](docs/quickstart.md)
 
 ### Examples
 
@@ -32,25 +41,30 @@ This contains a client and server command line programs.
 
 ## Features
 
-- [x] Connection, response, disconnect messages built in and extremely flexible.
+- [x] Connection, and disconnect messages built in and flexible.
 - [x] Configuration for buffer size, timeouts and more.
-- [x] Send/Recv calls take an immutable reference allowing for parallelism.
-- [x] Independent message sending.
-- [x] TCP and UDP connections.
+- [x] Messages are stored in the server/client until they are cleared on the next tick.
+    - Iterating though these messages doesn't mutate the server/client, so you are free to do it in parallel.
+- [x] Independent message channels.
+- [x] Reliable/Unreliable and Ordered/Newest/Unordered Guarantees.
 - [x] Client and Server types.
-- [x] Built in serialization/deserialization.
+- [x] Serialization/deserialization handled by carrier-pigeon using serde.
 - [x] [Bevy](https://bevyengine.org/) integration ([bevy-pigeon](https://github.com/MitchellMarinoDev/bevy-pigeon)).
 
 ### Planned Features
 
 - [ ] Server discovery.
-- [ ] Query support for server. (Optionally listen on another port and respond to query requests).
-- [ ] Optional buffering of TCP messages (Buffer all tcp messages sent, then write them all when a `send_tcp` method is called).
+- [ ] Encryption.
+- [ ] Authentication.
+- [ ] Query support for server. (Optionally listen and respond to query requests).
+- [ ] Getting the send time of a message.
 - [ ] Compile messages into MsgTable using macros.
+- [ ] Support for other transports, such as webrtc-unreliable and the steam transport.
 
 ## Contributing
 
-To contribute, fork the repo and make a PR. If you find a bug, feel free to open an issue. If you have any questions, 
-concerns or suggestions you can shoot me an email (found in Cargo.toml) or DM me on discord `@TheHourGlass34#0459`.
+Contributions are more than welcome. To contribute, fork the repo and make a PR.
+If you find a bug, feel free to open an issue.
+If you have any questions, concerns or suggestions you can shoot me an email (found in Cargo.toml).
 
 By contributing, you agree that your changes are subject to the license found in /LICENSE.
