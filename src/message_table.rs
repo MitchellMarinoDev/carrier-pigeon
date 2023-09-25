@@ -129,8 +129,8 @@ impl MsgTableBuilder {
 
     /// If type `T` has been registered or not.
     pub fn is_registered<T>(&self) -> bool
-    where
-        T: NetMsg,
+        where
+            T: NetMsg,
     {
         let tid = TypeId::of::<T>();
         self.tid_registered(tid)
@@ -153,12 +153,12 @@ impl MsgTableBuilder {
     /// use the [`register_sorted`] method. That method does not require a constant
     /// registration order, but instead requires a unique string identifier to be
     /// registered with each message.
-    pub fn register_ordered<T: NetMsg + Serialize + DeserializeOwned>(
+    pub fn register_in_order<T: NetMsg + Serialize + DeserializeOwned>(
         &mut self,
         guarantees: Guarantees,
     ) -> Result<(), MsgRegError>
-    where
-        T: NetMsg,
+        where
+            T: NetMsg,
     {
         self.ordered
             .push(self.get_ordered_registration::<T>(guarantees)?);
@@ -177,8 +177,8 @@ impl MsgTableBuilder {
         guarantees: Guarantees,
         identifier: impl ToString,
     ) -> Result<(), MsgRegError>
-    where
-        T: NetMsg + DeserializeOwned + Serialize,
+        where
+            T: NetMsg + DeserializeOwned + Serialize,
     {
         self.sorted
             .push(self.get_sorted_registration::<T>(guarantees, identifier)?);
@@ -190,8 +190,8 @@ impl MsgTableBuilder {
         &self,
         guarantees: Guarantees,
     ) -> Result<Registration, MsgRegError>
-    where
-        T: NetMsg + DeserializeOwned + Serialize,
+        where
+            T: NetMsg + DeserializeOwned + Serialize,
     {
         // Check if it has been registered already.
         let tid = TypeId::of::<T>();
@@ -216,12 +216,12 @@ impl MsgTableBuilder {
                 m.downcast_ref::<T>()
                     .expect("wrong type passed to the message serialization function"),
             )
-            .map_err(|o| {
-                Error::new(
-                    ErrorKind::InvalidData,
-                    format!("serialization error: {}", o),
-                )
-            })
+                .map_err(|o| {
+                    Error::new(
+                        ErrorKind::InvalidData,
+                        format!("serialization error: {}", o),
+                    )
+                })
         };
 
         Ok(Registration {
@@ -238,8 +238,8 @@ impl MsgTableBuilder {
         guarantees: Guarantees,
         identifier: impl ToString,
     ) -> Result<(String, Registration), MsgRegError>
-    where
-        T: NetMsg + Serialize + DeserializeOwned,
+        where
+            T: NetMsg + Serialize + DeserializeOwned,
     {
         let identifier = identifier.to_string();
         // Check if the identifier has been registered already.
@@ -266,11 +266,11 @@ impl MsgTableBuilder {
     ///
     /// This fails iff the generic parameters have already been registered.
     pub fn build<C, A, R, D>(mut self) -> Result<MsgTable<C, A, R, D>, MsgRegError>
-    where
-        C: NetMsg + Serialize + DeserializeOwned,
-        A: NetMsg + Serialize + DeserializeOwned,
-        R: NetMsg + Serialize + DeserializeOwned,
-        D: NetMsg + Serialize + DeserializeOwned,
+        where
+            C: NetMsg + Serialize + DeserializeOwned,
+            A: NetMsg + Serialize + DeserializeOwned,
+            R: NetMsg + Serialize + DeserializeOwned,
+            D: NetMsg + Serialize + DeserializeOwned,
     {
         // Always prepend the Connection and Disconnect types first.
         // This gives them universal MTypes.
@@ -407,14 +407,19 @@ mod tests {
 
     #[derive(Serialize, Deserialize, Debug)]
     struct Connection;
+
     #[derive(Serialize, Deserialize, Debug)]
     struct Accepted;
+
     #[derive(Serialize, Deserialize, Debug)]
     struct Rejected;
+
     #[derive(Serialize, Deserialize, Debug)]
     struct Disconnect;
+
     #[derive(Serialize, Deserialize, Debug)]
     struct ReliableMsg;
+
     #[derive(Serialize, Deserialize, Debug)]
     struct UnreliableMsg;
 
@@ -424,10 +429,10 @@ mod tests {
     fn errors() {
         let mut builder = MsgTableBuilder::new();
         builder
-            .register_ordered::<ReliableMsg>(Guarantees::Reliable)
+            .register_in_order::<ReliableMsg>(Guarantees::Reliable)
             .unwrap();
         assert_eq!(
-            builder.register_ordered::<ReliableMsg>(Guarantees::Reliable),
+            builder.register_in_order::<ReliableMsg>(Guarantees::Reliable),
             Err(TypeAlreadyRegistered(TypeId::of::<ReliableMsg>()))
         );
 
@@ -455,10 +460,10 @@ mod tests {
     fn parts_gen() {
         let mut table = MsgTableBuilder::new();
         table
-            .register_ordered::<ReliableMsg>(Guarantees::Reliable)
+            .register_in_order::<ReliableMsg>(Guarantees::Reliable)
             .unwrap();
         table
-            .register_ordered::<UnreliableMsg>(Guarantees::Unreliable)
+            .register_in_order::<UnreliableMsg>(Guarantees::Unreliable)
             .unwrap();
 
         // Expected result:
@@ -559,11 +564,11 @@ mod tests {
         // MsgTable
         let mut builder1 = MsgTableBuilder::new();
         builder1
-            .register_ordered::<ReliableMsg>(Guarantees::Reliable)
+            .register_in_order::<ReliableMsg>(Guarantees::Reliable)
             .unwrap();
         let mut builder2 = MsgTableBuilder::new();
         builder2
-            .register_ordered::<UnreliableMsg>(Guarantees::Unreliable)
+            .register_in_order::<UnreliableMsg>(Guarantees::Unreliable)
             .unwrap();
 
         builder1.join(&builder2).unwrap();
@@ -653,11 +658,11 @@ mod tests {
         // ordered
         let mut builder1 = MsgTableBuilder::new();
         builder1
-            .register_ordered::<ReliableMsg>(Guarantees::Reliable)
+            .register_in_order::<ReliableMsg>(Guarantees::Reliable)
             .unwrap();
         let mut builder2 = MsgTableBuilder::new();
         builder2
-            .register_ordered::<ReliableMsg>(Guarantees::Unreliable)
+            .register_in_order::<ReliableMsg>(Guarantees::Unreliable)
             .unwrap();
 
         assert_eq!(

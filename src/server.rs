@@ -22,7 +22,7 @@ use std::time::Instant;
 
 /// [`ReliableSystem`] with the generic parameters set for a server.
 type ServerReliableSystem<C, A, R, D> =
-    ReliableSystem<(SocketAddr, Arc<Vec<u8>>), (CId, Box<dyn NetMsg>), C, A, R, D>;
+ReliableSystem<(SocketAddr, Arc<Vec<u8>>), (CId, Box<dyn NetMsg>), C, A, R, D>;
 
 /// A server that manages connections to multiple clients.
 ///
@@ -182,7 +182,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     /// ### Panics
     /// Panics if the type `M` was not registered.
     /// For a non-panicking version, see [try_recv_spec()](Self::try_recv_spec).
-    pub fn recv_spec<M: NetMsg>(&self, spec: CIdSpec) -> impl Iterator<Item = Message<M>> + '_ {
+    pub fn recv_spec<M: NetMsg>(&self, spec: CIdSpec) -> impl Iterator<Item=Message<M>> + '_ {
         self.msg_table.check_type::<M>().expect(
             "`recv_spec` panics if generic type `M` is not registered in the MsgTable. \
             For a non panicking version, use `try_recv_spec`",
@@ -205,7 +205,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     pub fn try_recv_spec<M: NetMsg>(
         &self,
         spec: CIdSpec,
-    ) -> Option<impl Iterator<Item = Message<M>> + '_> {
+    ) -> Option<impl Iterator<Item=Message<M>> + '_> {
         let tid = TypeId::of::<M>();
         let m_type = *self.msg_table.tid_map.get(&tid)?;
 
@@ -227,7 +227,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     /// ### Panics
     /// Panics if the type `M` was not registered.
     /// For a non-panicking version, see [try_recv()](Self::try_recv).
-    pub fn recv<M: NetMsg>(&self) -> impl Iterator<Item = Message<M>> {
+    pub fn recv<M: NetMsg>(&self) -> impl Iterator<Item=Message<M>> {
         self.msg_table.check_type::<M>().expect(
             "`recv` panics if generic type `M` is not registered in the MsgTable. \
             For a non panicking version, use `try_recv`",
@@ -243,7 +243,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
     /// Make sure to call [`get_msgs()`](Self::get_msgs) before calling this.
     ///
     /// Returns `None` if the type `M` was not registered.
-    pub fn try_recv<M: NetMsg>(&self) -> Option<impl Iterator<Item = Message<M>>> {
+    pub fn try_recv<M: NetMsg>(&self) -> Option<impl Iterator<Item=Message<M>>> {
         let tid = TypeId::of::<M>();
         let m_type = *self.msg_table.tid_map.get(&tid)?;
 
@@ -568,6 +568,10 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
         count
     }
 
+    // TODO: Bug: in the chat example, if the server disconnects the user, (though the user saying
+    //       "disconnect-me", the server will try to resend the disconnection message
+    //       until the connection times out. The server caches when this happens, as it is trying
+    //       to send a message to a CId that isn't connected.
     /// Handles all remaining disconnects.
     ///
     /// Returns the number of disconnects handled.
@@ -652,15 +656,15 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
         self.transport.listen_addr()
     }
 
-    pub fn cids(&self) -> impl Iterator<Item = CId> + '_ {
+    pub fn cids(&self) -> impl Iterator<Item=CId> + '_ {
         self.connection_list.cids()
     }
 
-    pub fn cid_addr_pairs(&self) -> impl Iterator<Item = (CId, SocketAddr)> + '_ {
+    pub fn cid_addr_pairs(&self) -> impl Iterator<Item=(CId, SocketAddr)> + '_ {
         self.connection_list.pairs()
     }
 
-    pub fn addrs(&self) -> impl Iterator<Item = SocketAddr> + '_ {
+    pub fn addrs(&self) -> impl Iterator<Item=SocketAddr> + '_ {
         self.connection_list.addrs()
     }
 
