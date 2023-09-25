@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 pub struct ReliableMsg {
     pub msg: String,
 }
+
 impl ReliableMsg {
     pub fn new<A: Into<String>>(msg: A) -> Self {
         ReliableMsg { msg: msg.into() }
@@ -20,6 +21,7 @@ impl ReliableMsg {
 pub struct UnreliableMsg {
     pub msg: String,
 }
+
 impl UnreliableMsg {
     pub fn new<A: Into<String>>(msg: A) -> Self {
         UnreliableMsg { msg: msg.into() }
@@ -31,6 +33,7 @@ impl UnreliableMsg {
 pub struct Connection {
     pub usr: String,
 }
+
 impl Connection {
     pub fn new<A: Into<String>>(usr: A) -> Self {
         Connection { usr: usr.into() }
@@ -42,6 +45,7 @@ impl Connection {
 pub struct Disconnect {
     pub reason: String,
 }
+
 impl Disconnect {
     pub fn new<A: Into<String>>(reason: A) -> Self {
         Disconnect {
@@ -64,10 +68,10 @@ pub struct Rejected {
 pub fn get_msg_table() -> MsgTable<Connection, Accepted, Rejected, Disconnect> {
     let mut builder = MsgTableBuilder::new();
     builder
-        .register_ordered::<ReliableMsg>(Guarantees::Reliable)
+        .register_in_order::<ReliableMsg>(Guarantees::Reliable)
         .unwrap();
     builder
-        .register_ordered::<UnreliableMsg>(Guarantees::Unreliable)
+        .register_in_order::<UnreliableMsg>(Guarantees::Unreliable)
         .unwrap();
     builder
         .build::<Connection, Accepted, Rejected, Disconnect>()

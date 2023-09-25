@@ -36,7 +36,7 @@ pub struct MsgHeader {
     /// The header also contains a place to acknowledge the previously received messages that were
     /// from the destination of this message.
     ///
-    /// This number is a offset for the `ack_bits`. Read `acknowledgements.md` and look at
+    /// This number is a offset for the `ack_bits`. Read `delivery_guarantees.md` and look at
     /// [AckSystem](crate::connection::ack_system::AckSystem) for more.
     pub receiver_acking_offset: AckNum,
     /// 32 bits representing weather the 32 ack numbers before the `receiver_acking_num` are acked.

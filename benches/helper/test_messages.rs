@@ -68,10 +68,10 @@ pub struct Rejected {
 pub fn get_msg_table() -> MsgTable<Connection, Accepted, Rejected, Disconnect> {
     let mut builder = MsgTableBuilder::new();
     builder
-        .register_ordered::<ReliableMsg>(Guarantees::Reliable)
+        .register_in_order::<ReliableMsg>(Guarantees::Reliable)
         .unwrap();
     builder
-        .register_ordered::<UnreliableMsg>(Guarantees::Unreliable)
+        .register_in_order::<UnreliableMsg>(Guarantees::Unreliable)
         .unwrap();
     builder
         .build::<Connection, Accepted, Rejected, Disconnect>()

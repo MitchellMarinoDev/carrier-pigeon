@@ -36,7 +36,7 @@ fn main() {
     // This should be the same on the client and server.
     let mut builder = MsgTableBuilder::new();
     builder
-        .register_ordered::<Msg>(Guarantees::ReliableOrdered)
+        .register_in_order::<Msg>(Guarantees::ReliableOrdered)
         .unwrap();
 
     let table = builder
