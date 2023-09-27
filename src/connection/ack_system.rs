@@ -191,7 +191,7 @@ impl<SD: Clone> AckSystem<SD> {
 
         // finally, insert the msg
         self.saved_msgs
-            .insert(header.sender_ack_num, (Instant::now(), header, other_data));
+            .insert(header.message_ack_num, (Instant::now(), header, other_data));
     }
 
     /// Gets messages that are due for a resend. This resets the time sent.

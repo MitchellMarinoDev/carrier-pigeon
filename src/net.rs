@@ -31,8 +31,8 @@ pub struct MsgHeader {
     /// An incrementing integer specific to this `m_type`. This allows us to order messages
     /// on arrival.
     pub order_num: OrderNum,
-    /// The [`AckNumber`] of this outgoing message.
-    pub sender_ack_num: AckNum,
+    /// The [`AckNumber`] of this message.
+    pub message_ack_num: AckNum,
     /// The header also contains a place to acknowledge the previously received messages that were
     /// from the destination of this message.
     ///
@@ -59,7 +59,7 @@ impl MsgHeader {
         MsgHeader {
             m_type,
             order_num,
-            sender_ack_num,
+            message_ack_num: sender_ack_num,
             receiver_acking_offset: receiver_acking_num,
             ack_bits,
         }
@@ -69,7 +69,7 @@ impl MsgHeader {
     pub fn to_be_bytes(&self) -> [u8; HEADER_SIZE] {
         let m_type_b = (self.m_type as u16).to_be_bytes();
         let order_num_b = self.order_num.to_be_bytes();
-        let sender_ack_num_b = self.sender_ack_num.to_be_bytes();
+        let sender_ack_num_b = self.message_ack_num.to_be_bytes();
         let receiver_acking_num_b = self.receiver_acking_offset.to_be_bytes();
         let ack_bits_b = self.ack_bits.to_be_bytes();
         debug_assert_eq!(m_type_b.len(), 2);
@@ -122,7 +122,7 @@ impl MsgHeader {
         MsgHeader {
             m_type,
             order_num,
-            sender_ack_num,
+            message_ack_num: sender_ack_num,
             receiver_acking_offset: receiver_acking_num,
             ack_bits,
         }

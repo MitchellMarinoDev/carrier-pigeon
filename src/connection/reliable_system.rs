@@ -42,7 +42,7 @@ impl<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<S
     /// For ordering, use [`push_received`](Self::push_received) to push the message into the
     /// ordering buffer.
     pub fn msg_received(&mut self, header: MsgHeader) {
-        self.ack_sys.msg_received(header.sender_ack_num);
+        self.ack_sys.msg_received(header.message_ack_num);
         self.ack_sys
             .mark_bitfield(header.receiver_acking_offset, header.ack_bits);
     }
@@ -83,7 +83,7 @@ impl<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<S
         MsgHeader {
             m_type,
             order_num: self.ordering_sys.next_outgoing(m_type),
-            sender_ack_num: self.ack_sys.outgoing_ack_num(),
+            message_ack_num: self.ack_sys.outgoing_ack_num(),
             receiver_acking_offset: offset,
             ack_bits: bitfield,
         }

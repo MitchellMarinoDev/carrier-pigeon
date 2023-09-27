@@ -122,7 +122,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
                 return Err(Error::new(
                     ErrorKind::NotConnected,
                     "Client is not connected",
-                ))
+                ));
             }
         };
 
@@ -146,7 +146,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
         self.reliable_sys.save(header, guarantees, payload.clone());
         let result = transport.send(m_type, payload);
         self.handle_transport_result(result);
-        Ok(header.sender_ack_num)
+        Ok(header.message_ack_num)
     }
 
     /// Gets an iterator for the messages of type `M`.
@@ -154,7 +154,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     /// ### Panics
     /// Panics if the type `M` was not registered.
     /// For a non-panicking version, see [try_get_msgs()](Self::try_get_msgs).
-    pub fn recv<M: NetMsg>(&self) -> impl Iterator<Item = Message<M>> + '_ {
+    pub fn recv<M: NetMsg>(&self) -> impl Iterator<Item=Message<M>> + '_ {
         self.msg_table.check_type::<M>().expect(
             "`get_msgs` panics if generic type `M` is not registered in the MsgTable. \
             For a non panicking version, use `try_get_msgs`",
@@ -168,7 +168,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
     /// Gets an iterator for the messages of type `M`.
     ///
     /// Returns `None` if the type `M` was not registered.
-    pub fn try_recv<M: NetMsg>(&self) -> Option<impl Iterator<Item = Message<M>> + '_> {
+    pub fn try_recv<M: NetMsg>(&self) -> Option<impl Iterator<Item=Message<M>> + '_> {
         let tid = TypeId::of::<M>();
         let m_type = *self.msg_table.tid_map.get(&tid)?;
 
@@ -282,7 +282,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
 
             trace!(
                 "Client: received message (AckNum: {}, MType: {}, len: {})",
-                header.sender_ack_num,
+                header.message_ack_num,
                 header.m_type,
                 n,
             );
@@ -341,7 +341,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
                     while let Some((header, msg)) = self.reliable_sys.get_received() {
                         self.msg_buf[m_type].push(ErasedNetMsg::new(
                             0,
-                            header.sender_ack_num,
+                            header.message_ack_num,
                             header.order_num,
                             msg,
                         ));

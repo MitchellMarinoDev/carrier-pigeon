@@ -131,7 +131,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
         if header.m_type < SPECIAL_M_TYPE_COUNT {
             trace!(
                 "Server: Sending message (AckNum: {}, MType: {}, len: {}, to: {})",
-                header.sender_ack_num,
+                header.message_ack_num,
                 header.m_type,
                 payload.len(),
                 cid,
@@ -139,7 +139,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
         } else {
             debug!(
                 "Server: Sending message (AckNum: {}, MType: {}, len: {}, to: {})",
-                header.sender_ack_num,
+                header.message_ack_num,
                 header.m_type,
                 payload.len(),
                 cid,
@@ -151,7 +151,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
         reliable_sys.save(header, guarantees, (addr, payload.clone()));
         let result = self.transport.send_to(addr, m_type, payload);
         self.handle_send_result(cid, result);
-        Ok(header.sender_ack_num)
+        Ok(header.message_ack_num)
     }
 
     /// Broadcasts a message to all connected clients.
@@ -309,9 +309,9 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                 .get_mut(&cid)
                 .expect("cid should be valid");
             for (header, (addr, payload)) in reliable_sys.get_resend(rtt) {
-                debug!("Resending msg {}", header.sender_ack_num);
+                debug!("Resending msg {}", header.message_ack_num);
                 if let Err(err) = self.transport.send_to(addr, header.m_type, payload) {
-                    error!("Error resending msg {}: {}", header.sender_ack_num, err);
+                    error!("Error resending msg {}: {}", header.message_ack_num, err);
                 }
             }
         }
@@ -362,7 +362,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
             if header.m_type < SPECIAL_M_TYPE_COUNT {
                 trace!(
                     "Server: received message (AckNum: {}, MType: {}, len: {}, from: {})",
-                    header.sender_ack_num,
+                    header.message_ack_num,
                     header.m_type,
                     n,
                     from,
@@ -370,7 +370,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
             } else {
                 debug!(
                     "Server: received message (AckNum: {}, MType: {}, len: {}, from: {})",
-                    header.sender_ack_num, header.m_type, n, from,
+                    header.message_ack_num, header.m_type, n, from,
                 );
             }
 
@@ -462,7 +462,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                     while let Some((header, (cid, msg))) = reliable_sys.get_received() {
                         self.msg_buf[m_type].push(ErasedNetMsg::new(
                             cid,
-                            header.sender_ack_num,
+                            header.message_ack_num,
                             header.order_num,
                             msg,
                         ));
