@@ -104,12 +104,12 @@ impl MsgHeader {
 
     /// Converts the big endian bytes back into a [`MsgHeader`].
     ///
-    /// You **must** pass in a slice that is [`HEADER_LEN`] long.
+    /// You **must** pass in a slice that is [`HEADER_SIZE`] long.
     pub fn from_be_bytes(bytes: &[u8]) -> Self {
         assert_eq!(
             bytes.len(),
             HEADER_SIZE,
-            "The length of the buffer passed into `from_be_bytes` should have a length of {}",
+            "The length of the buffer passed into `from_be_bytes` should have a length of {} (HEADER_SIZE)",
             HEADER_SIZE
         );
 

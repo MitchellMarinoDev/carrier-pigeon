@@ -604,7 +604,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
 
     /// Creates a [`DisconnectionEvent`] of type `Dropped`,
     /// and and removes the connection.
-    pub fn connection_dropped_event(&mut self, cid: CId, err: Error) {
+    fn connection_dropped_event(&mut self, cid: CId, err: Error) {
         if !self.cid_connected(cid) {
             return;
         }
@@ -617,7 +617,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
 
     /// Creates a [`DisconnectionEvent`] of type `Disconnected`,
     /// and and removes the connection.
-    pub fn connection_disconnected_event(&mut self, cid: CId, disconnect_msg: D) {
+    fn connection_disconnected_event(&mut self, cid: CId, disconnect_msg: D) {
         if !self.cid_connected(cid) {
             return;
         }
@@ -631,7 +631,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
 
     /// Creates a [`DisconnectionEvent`] of type `ServerDisconnected`,
     /// and and removes the connection.
-    pub fn server_disconnected_event(&mut self, cid: CId, disconnect_msg: D) {
+    fn server_disconnected_event(&mut self, cid: CId, disconnect_msg: D) {
         if !self.cid_connected(cid) {
             return;
         }

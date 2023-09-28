@@ -7,6 +7,12 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 // TODO: see if we can combine some of these structs.
 
+// TODO: Since we plan on sending `time_sent` with every message, we should keep track of it
+//      on every message. When the message gets acked, we can calculate RTT.
+//      This would calculate our RTT from all messages instead of just ping messages
+//      In fact, the ack message could serve as our Heartbeat, and we wont need ping messages
+//      at all.
+
 /// Gets the number of microseconds since the unix epoch
 fn unix_micros() -> u128 {
     SystemTime::now()
@@ -74,7 +80,7 @@ impl ServerPingSystem {
             let elapsed = match unix_micros().checked_sub(*micros) {
                 Some(elapsed) => elapsed,
                 None => {
-                    return warn!("Ping message had a negative RTT. Did the system clock change?")
+                    return warn!("Ping message had a negative RTT. Did the system clock change?");
                 }
             };
 
@@ -167,7 +173,7 @@ impl ClientPingSystem {
             let elapsed = match unix_micros().checked_sub(*micros) {
                 Some(elapsed) => elapsed,
                 None => {
-                    return warn!("Ping message had a negative RTT. Did the system clock change?")
+                    return warn!("Ping message had a negative RTT. Did the system clock change?");
                 }
             };
 
