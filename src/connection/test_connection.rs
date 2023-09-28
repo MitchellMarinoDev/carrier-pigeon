@@ -17,7 +17,7 @@ fn test_reliability() {
     let msg_table = get_msg_table();
 
     let server_addr = "127.0.0.1:7777".parse().unwrap();
-    let client_addr = "127.0.0.1:0".parse().unwrap();
+    let client_addr = "0.0.0.0:0".parse().unwrap();
 
     let mut server: Server<Connection, Accepted, Rejected, Disconnect> =
         Server::new(NetConfig::default(), server_addr, msg_table.clone()).unwrap();
@@ -40,7 +40,7 @@ fn test_reliability() {
         .arg("-c")
         .arg("sudo tc qdisc add dev lo root netem delay 10ms corrupt 5 duplicate 5 loss random 5 reorder 5")
         .output()
-        .expect("failed to run `tc` to emulate an unstable network on the `lo` adapter");
+        .expect("failed to run `bash -c sudo tc ...` to emulate an unstable network on the `lo` adapter");
 
     let msg = ReliableMsg::new("This is the message that is sent.");
     let mut results = vec![];
@@ -75,7 +75,7 @@ fn test_reliability() {
         .arg("-c")
         .arg("sudo tc qdisc del dev lo root netem")
         .output()
-        .expect("failed to run `tc` to remove the emulated network conditions on the `lo` adapter");
+        .expect("failed to run `bash sudo tc ...` to remove the emulated network conditions on the `lo` adapter");
 
     for v in results.iter() {
         println!("{:?}", v);

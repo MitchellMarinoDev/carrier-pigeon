@@ -1,7 +1,7 @@
 use crate::connection::ack_system::AckSystem;
 use crate::connection::ordering_system::OrderingSystem;
 use crate::messages::{AckMsg, NetMsg};
-use crate::net::{AckNum, MsgHeader};
+use crate::net::MsgHeader;
 use crate::{Guarantees, MType, MsgTable, NetConfig};
 use std::time::Instant;
 
@@ -83,7 +83,7 @@ impl<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<S
         MsgHeader {
             m_type,
             order_num: self.ordering_sys.next_outgoing(m_type),
-            message_ack_num: self.ack_sys.outgoing_ack_num(),
+            message_ack_num: self.ack_sys.next_ack_num(),
             receiver_acking_offset: offset,
             ack_bits: bitfield,
         }
@@ -99,12 +99,5 @@ impl<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<S
     /// Gets messages that are due for a resend.
     pub fn get_resend(&mut self, rtt: u32) -> Vec<(MsgHeader, SD)> {
         self.ack_sys.get_resend(rtt)
-    }
-
-    /// Checks to see if the given [`AckNum`] is in the resend buffer.
-    /// Therefore, this will return `false` if a message has not been acknowledged,
-    /// or was never sent.
-    pub fn is_not_acked(&self, ack_num: AckNum) -> bool {
-        self.ack_sys.is_not_acked(ack_num)
     }
 }

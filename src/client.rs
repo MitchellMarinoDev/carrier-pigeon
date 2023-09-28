@@ -189,7 +189,6 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
         self.send_ping();
         self.resend_reliable();
         self.get_msgs();
-        self.update_status();
     }
 
     /// Clears messages from the buffer.
@@ -347,14 +346,6 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
                         ));
                     }
                 }
-            }
-        }
-    }
-
-    fn update_status(&mut self) {
-        if let Status::Disconnecting(ack_num) = self.status {
-            if !self.reliable_sys.is_not_acked(ack_num) {
-                self.status = Status::NotConnected;
             }
         }
     }

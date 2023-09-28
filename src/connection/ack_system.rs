@@ -13,7 +13,9 @@ use std::time::Instant;
 /// The width of the bitfield that is used for acknowledgement.
 const BITFIELD_WIDTH: u16 = 32;
 
-/// Saves the bitfield next to a counter for how many times this was acked.
+/// The bitfield containing the acknowledgment numbers for 32 consecutive AckNums.
+///
+/// This also stores the `send_count` which is how many times these AckNums were sent.
 #[derive(Copy, Clone, Eq, PartialEq, Default, Hash, Debug)]
 pub(crate) struct AckBitfields {
     bitfield: u32,
@@ -32,10 +34,14 @@ pub(crate) struct AckBitfields {
 pub(crate) struct AckSystem<SD: Clone> {
     /// The current [`AckNum`] for outgoing messages.
     outgoing_counter: AckNum,
-    /// The current ack_offset value for the front end of the buffer.
-    /// This is also the lower limit of the ack bitfield window.
+    /// The current offset for our window.
+    ///
+    /// This offset is the end of the window; the entire window is before this ack offset.
     ack_offset: AckNum,
     /// The current index of the ack_bitfields that we are on.
+    ///
+    /// Since we only send part of our window every time, we need to rotate through our window.
+    /// This keeps track of what part of the window we are on.
     ///
     /// Used for `get_next`.
     current_idx: usize,
@@ -71,29 +77,42 @@ impl<SD: Clone> AckSystem<SD> {
     ///
     /// Marks an incoming message as received, so it gets acknowledged in the next message we send.
     pub fn msg_received(&mut self, num: AckNum) {
+        let window_width = (BITFIELD_WIDTH * self.ack_bitfields.len() as AckNum);
         // The highest AckNum we can have without shifting.
-        let mut upper_bound =
-            self.ack_offset + (BITFIELD_WIDTH * self.ack_bitfields.len() as AckNum);
-        // shift the ack_bitfields (if needed) to make room for ack_offset
+        let mut upper_bound = self.ack_offset.wrapping_add(window_width);
+
+        let distance_away_from_window = max(num.saturating_sub(self.ack_offset), upper_bound.saturating_sub(num));
+
+        // TODO: wrapping logic
+
+        // shift the ack_bitfields (if needed) to make room for the new number
         while num >= upper_bound {
-            // if the last element has been acknowledged enough, pop the back to make room.
-            // otherwise, we just push one on the front, growing the buffer
+            // if the first element (oldest ack number) has been acknowledged enough,
+            // pop it to make room. otherwise, we just push one on the back, growing the buffer
             if self.ack_bitfields[0].send_count >= self.config.ack_send_count {
                 self.ack_bitfields.pop_front();
                 // ack_offset keeps track of the offset from the front; when we remove the front,
                 // we must increment it.
                 self.ack_offset += BITFIELD_WIDTH;
             }
+
             self.ack_bitfields.push_back(AckBitfields::default());
             // recalculate the upper bound
             upper_bound = self.ack_offset + (BITFIELD_WIDTH * self.ack_bitfields.len() as AckNum);
         }
         if num < self.ack_offset {
+            // TODO: Remove this whole notion of residuals, when we start assigning new ack numbers
+            //       to resent messages. In addition, this screening of weather a message can be dumped
+            //       will need to happen sooner, because it will need to occur before decryption
+            //       as part of the protection against packet replay.
+            //       Therefore this "within window" checking logic should be moved to its own function.
             // num is outside the window. This is unlikely to happen unless a packet stays on the
             // internet for a long time.
             self.residuals.push(num);
             return;
         }
+
+        // TODO: This will fail when wrapping
         let dif = num - self.ack_offset;
         let bit_flag = 1 << (dif % BITFIELD_WIDTH);
         let field_idx = dif / BITFIELD_WIDTH;
@@ -104,9 +123,6 @@ impl<SD: Clone> AckSystem<SD> {
 
     /// Marks an incoming `ack_offset` and `ack_bitfield` pair. These come in the header of messages
     /// from the peer.
-    ///
-    /// For marking an incoming single ack,
-    /// use [`mark_incoming`](Self::mark_incoming)
     pub fn mark_bitfield(&mut self, offset: AckNum, bitfield: u32) {
         for i in 0..BITFIELD_WIDTH {
             if bitfield & (1 << i) != 0 {
@@ -156,7 +172,7 @@ impl<SD: Clone> AckSystem<SD> {
     }
 
     /// Gets the next outgoing [`AckNum`].
-    pub fn outgoing_ack_num(&mut self) -> AckNum {
+    pub fn next_ack_num(&mut self) -> AckNum {
         let ack = self.outgoing_counter;
         self.outgoing_counter = self.outgoing_counter.wrapping_add(1);
         ack
@@ -210,14 +226,6 @@ impl<SD: Clone> AckSystem<SD> {
 
         resend
     }
-
-    #[inline]
-    /// Checks to see if the given [`AckNum`] is in the resend buffer.
-    /// Therefore, this will return `false` if a message has not been acknowledged,
-    /// or was never sent.
-    pub fn is_not_acked(&self, ack_num: AckNum) -> bool {
-        self.saved_msgs.contains_key(&ack_num)
-    }
 }
 
 #[cfg(test)]
@@ -226,7 +234,7 @@ mod tests {
     use crate::Guarantees::{Reliable, ReliableNewest};
 
     #[test]
-    fn test_mark_received() {
+    fn test_msg_received() {
         let mut ack_system: AckSystem<()> = AckSystem::new(NetConfig::default());
 
         ack_system.msg_received(0);
@@ -260,7 +268,7 @@ mod tests {
     }
 
     #[test]
-    fn test_save_ack() {
+    fn test_save_msg() {
         let mut ack_system = AckSystem::new(NetConfig::default());
 
         ack_system.save_msg(MsgHeader::new(1, 0, 10, 0, 0), Reliable, ());
@@ -295,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn newest() {
+    fn test_reliable_newest() {
         let mut ack_system = AckSystem::new(NetConfig::default());
 
         ack_system.save_msg(MsgHeader::new(1, 0, 10, 0, 0), ReliableNewest, ());
@@ -309,4 +317,12 @@ mod tests {
     }
 
     // TODO: impl and test the AckNum rolling over logic
+
+    #[test]
+    fn test_ack_num_rollover() {
+        let mut ack_system: AckSystem<()> = AckSystem::new(NetConfig::default());
+
+        ack_system.msg_received(0u16.wrapping_sub(32));
+        panic!("{:?}", ack_system);
+    }
 }

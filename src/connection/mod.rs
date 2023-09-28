@@ -204,15 +204,15 @@ impl<C: NetMsg> ConnectionList<C> {
         self.cid_addr.get_backward(&addr).copied()
     }
 
-    pub fn cids(&self) -> impl Iterator<Item = CId> + '_ {
+    pub fn cids(&self) -> impl Iterator<Item=CId> + '_ {
         self.cid_addr.keys().copied()
     }
 
-    pub fn addrs(&self) -> impl Iterator<Item = SocketAddr> + '_ {
+    pub fn addrs(&self) -> impl Iterator<Item=SocketAddr> + '_ {
         self.cid_addr.values().copied()
     }
 
-    pub fn pairs(&self) -> impl Iterator<Item = (CId, SocketAddr)> + '_ {
+    pub fn pairs(&self) -> impl Iterator<Item=(CId, SocketAddr)> + '_ {
         self.cid_addr.pairs().map(|(&cid, &addr)| (cid, addr))
     }
 }

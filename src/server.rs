@@ -47,6 +47,8 @@ pub struct Server<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
     /// A que that keeps track of disconnection events.
     disconnection_events: VecDeque<DisconnectionEvent<D>>,
     /// A que for clients that are disconnecting
+    // TODO: remove. Instead, just send a burst of disconnect messages and hope for the best.
+    //       This will save alot of troupble
     disconnecting: Vec<(CId, AckNum, D)>,
     /// The received message buffer.
     ///
@@ -474,19 +476,6 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
 
     // TODO: handle things in the disconnecting buffer.
     fn update_statuses(&mut self) {
-        // Handle the Disconnecting Buffer
-        let mut remove = Vec::with_capacity(0);
-        for (idx, (cid, ack_num, _d)) in self.disconnecting.iter().enumerate() {
-            if !self.reliable_sys[cid].is_not_acked(*ack_num) {
-                remove.push(idx);
-            }
-        }
-
-        for idx in remove.into_iter().rev() {
-            let (cid, _, disconnect_msg) = self.disconnecting.swap_remove(idx);
-            self.server_disconnected_event(cid, disconnect_msg);
-        }
-
         // Timeout Connections
         let mut timed_out = Vec::with_capacity(0);
         for (cid, instant) in self.last_heard.iter() {
