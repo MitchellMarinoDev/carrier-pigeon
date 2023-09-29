@@ -22,7 +22,7 @@ use std::time::Instant;
 
 /// [`ReliableSystem`] with the generic parameters set for a server.
 type ServerReliableSystem<C, A, R, D> =
-ReliableSystem<(SocketAddr, Arc<Vec<u8>>), (CId, Box<dyn NetMsg>), C, A, R, D>;
+ReliableSystem<(CId, Box<dyn NetMsg>), C, A, R, D>;
 
 /// A server that manages connections to multiple clients.
 ///
@@ -149,7 +149,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
 
         // send the payload based on the guarantees
         let guarantees = self.msg_table.guarantees[m_type];
-        reliable_sys.save(header, guarantees, (addr, payload.clone()));
+        reliable_sys.save(guarantees, header, addr, payload.clone());
         let result = self.transport.send_to(addr, m_type, payload);
         self.handle_send_result(cid, result);
         Ok(header.message_ack_num)
@@ -309,7 +309,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                 .reliable_sys
                 .get_mut(&cid)
                 .expect("cid should be valid");
-            for (header, (addr, payload)) in reliable_sys.get_resend(rtt) {
+            for (header, addr, payload) in reliable_sys.get_resend(rtt) {
                 debug!("Resending msg {}", header.message_ack_num);
                 if let Err(err) = self.transport.send_to(addr, header.m_type, payload) {
                     error!("Error resending msg {}: {}", header.message_ack_num, err);

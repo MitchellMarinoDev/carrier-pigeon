@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+use std::sync::Arc;
 use crate::connection::ack_system::AckSystem;
 use crate::connection::ordering_system::OrderingSystem;
 use crate::messages::{AckMsg, NetMsg};
@@ -5,6 +7,8 @@ use crate::net::MsgHeader;
 use crate::{Guarantees, MType, MsgTable, NetConfig};
 use std::time::Instant;
 
+
+// TODO: move the ping system into here.
 /// A system that handles the reliability and ordering of incoming messages based on their
 /// [`Guarantees`].
 ///
@@ -16,15 +20,15 @@ use std::time::Instant;
 ///
 /// Since these differ between client and server (server needs to keep track of a from address),
 /// these need to be generic parameters.
-pub(crate) struct ReliableSystem<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
+pub(crate) struct ReliableSystem<RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
     config: NetConfig,
     msg_table: MsgTable<C, A, R, D>,
     last_ack_msg: Instant,
-    ack_sys: AckSystem<SD>,
+    ack_sys: AckSystem,
     ordering_sys: OrderingSystem<RD>,
 }
 
-impl<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<SD, RD, C, A, R, D> {
+impl<RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<RD, C, A, R, D> {
     /// Creates a new [`ReliableSystem`].
     pub fn new(msg_table: MsgTable<C, A, R, D>, config: NetConfig) -> Self {
         let m_table_count = msg_table.mtype_count();
@@ -44,7 +48,7 @@ impl<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<S
     pub fn msg_received(&mut self, header: MsgHeader) {
         self.ack_sys.msg_received(header.message_ack_num);
         self.ack_sys
-            .mark_bitfield(header.receiver_acking_offset, header.ack_bits);
+            .mark_bitfield(header.acking_offset, header.ack_bits);
     }
 
     /// Handles an incoming [`AckMsg`].
@@ -79,25 +83,23 @@ impl<SD: Clone, RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<S
     }
 
     pub fn get_send_header(&mut self, m_type: MType) -> MsgHeader {
-        let (offset, bitfield) = self.ack_sys.next_header();
+        let (offset, bitfield) = self.ack_sys.next_bitfield();
         MsgHeader {
             m_type,
             order_num: self.ordering_sys.next_outgoing(m_type),
             message_ack_num: self.ack_sys.next_ack_num(),
-            receiver_acking_offset: offset,
+            acking_offset: offset,
             ack_bits: bitfield,
         }
     }
 
     /// Saves a message, if it is reliable, so that it can be resent if it is lost in transit.
-    ///
-    /// This also
-    pub fn save(&mut self, header: MsgHeader, guarantees: Guarantees, send_data: SD) {
-        self.ack_sys.save_msg(header, guarantees, send_data);
+    pub fn save(&mut self, guarantees: Guarantees, header: MsgHeader, to_address: SocketAddr, payload: Arc<Vec<u8>>) {
+        self.ack_sys.save_msg(guarantees, header, to_address, payload);
     }
 
     /// Gets messages that are due for a resend.
-    pub fn get_resend(&mut self, rtt: u32) -> Vec<(MsgHeader, SD)> {
+    pub fn get_resend(&mut self, rtt: u32) -> Vec<(MsgHeader, SocketAddr, Arc<Vec<u8>>)> {
         self.ack_sys.get_resend(rtt)
     }
 }

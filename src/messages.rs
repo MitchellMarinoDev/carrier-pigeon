@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
 pub trait NetMsg: Downcast + Send + Sync + Debug {}
+
 impl<T: Downcast + Send + Sync + Debug> NetMsg for T {}
 impl_downcast!(NetMsg);
 
@@ -30,17 +31,14 @@ pub(crate) struct AckMsg {
     pub ack_offset: AckNum,
     /// The bitfields for the succeeding AckNums.
     pub bitfields: Vec<u32>,
-    /// Extra [`AckNum`]s that didnt fit in the bitfield.
-    pub residuals: Vec<AckNum>,
 }
 
 impl AckMsg {
     /// Creates a new [`AckMsg`].
-    pub(crate) fn new(ack_offset: AckNum, bitfields: Vec<u32>, residuals: Vec<AckNum>) -> Self {
+    pub(crate) fn new(ack_offset: AckNum, bitfields: Vec<u32>) -> Self {
         AckMsg {
             ack_offset,
             bitfields,
-            residuals,
         }
     }
 }

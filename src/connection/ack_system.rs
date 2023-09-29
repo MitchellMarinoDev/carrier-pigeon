@@ -1,11 +1,12 @@
 use crate::messages::AckMsg;
-use crate::net::{AckNum, MsgHeader};
+use crate::net::{AckNum, HEADER_SIZE, MsgHeader};
 use crate::{Guarantees, NetConfig};
 use hashbrown::HashMap;
 use std::cmp::max;
 use std::collections::VecDeque;
 use std::fmt::Debug;
-use std::mem;
+use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Instant;
 use log::trace;
 
@@ -21,6 +22,15 @@ pub(crate) struct AckBitfields {
     send_count: u32,
 }
 
+/// The message data stored for when a message might need to be resent.
+#[derive(Clone, Eq, PartialEq, Debug)]
+struct MessageData {
+    time_sent: Instant,
+    header: MsgHeader,
+    to_addr: SocketAddr,
+    payload: Arc<Vec<u8>>,
+}
+
 /// The Acknowledgement System.
 ///
 /// This handles generating the acknowledgment part of the header, getting the info needed for the
@@ -30,9 +40,9 @@ pub(crate) struct AckBitfields {
 /// other than the header. Since this differs between client and server (server needs to keep track
 /// of a to address), it is made a generic parameter.
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
-pub(crate) struct AckSystem<SD: Clone> {
+pub(crate) struct AckSystem {
     /// The current [`AckNum`] for outgoing messages.
-    outgoing_counter: AckNum,
+    current_outgoing_ack: AckNum,
     /// The current offset for our window.
     ///
     /// This offset is the end of the window; the entire window is before this ack offset.
@@ -46,27 +56,25 @@ pub(crate) struct AckSystem<SD: Clone> {
     current_idx: usize,
     /// The [`NetConfig`].
     config: NetConfig,
-    /// A buffer for received messages that dont fit in the bitfield window.
-    residuals: Vec<AckNum>,
     /// The ack bitfields.
     ///
     /// This stores a bitfield for weather the 32 messages before `ack_offset` have been received.
     ack_bitfields: VecDeque<AckBitfields>,
     /// This stores the saved reliable messages.
-    saved_msgs: HashMap<AckNum, (Instant, MsgHeader, SD)>,
+    // TODO: consider switching this to a sorted array
+    saved_msgs: HashMap<AckNum, MessageData>,
 }
 
-impl<SD: Clone> AckSystem<SD> {
+impl AckSystem {
     /// Creates a new [`AckSystem`].
     pub fn new(config: NetConfig) -> Self {
         let mut deque = VecDeque::new();
         deque.push_front(AckBitfields::default());
         AckSystem {
-            outgoing_counter: 0,
+            current_outgoing_ack: 0,
             ack_offset: 0,
             current_idx: usize::MAX - 1,
             config,
-            residuals: vec![],
             ack_bitfields: deque,
             saved_msgs: HashMap::new(),
         }
@@ -124,18 +132,21 @@ impl<SD: Clone> AckSystem<SD> {
         for (i, bitfield) in ack_msg.bitfields.into_iter().enumerate() {
             self.mark_bitfield(ack_msg.ack_offset + BITFIELD_WIDTH * i as AckNum, bitfield);
         }
-        for residual in ack_msg.residuals {
-            self.saved_msgs.remove(&residual);
-        }
     }
 
     /// Gets the next ack_offset and bitflags associated with it to be sent in the header.
-    pub fn next_header(&mut self) -> (AckNum, u32) {
-        self.current_idx = (self.current_idx + 1) % self.ack_bitfields.len();
-        let field = self.ack_bitfields[self.current_idx];
-        self.ack_bitfields[self.current_idx].send_count += 1;
+    pub fn next_bitfield(&mut self) -> (AckNum, u32) {
+        Self::next_bitfield_using(&mut self.current_idx, self.ack_offset, &mut self.ack_bitfields)
+    }
+
+    /// This is needed in order to get the next bitfield when part of this struct is already
+    /// borrowed, and we cannot use the function [`next_bitfield()`](Self::next_bitfield).
+    fn next_bitfield_using(current_idx: &mut usize, ack_offset: AckNum, ack_bitfields: &mut VecDeque<AckBitfields>) -> (AckNum, u32) {
+        *current_idx = (*current_idx + 1) % ack_bitfields.len();
+        ack_bitfields[*current_idx].send_count += 1;
+        let field = ack_bitfields[*current_idx];
         (
-            self.ack_offset + (BITFIELD_WIDTH * self.current_idx as AckNum),
+            ack_offset + (BITFIELD_WIDTH * *current_idx as AckNum),
             field.bitfield,
         )
     }
@@ -145,29 +156,23 @@ impl<SD: Clone> AckSystem<SD> {
     /// This increases the send count for all the bitfields.
     /// Returns the offset and a vec of the bitfields.
     pub fn ack_msg_info(&mut self) -> AckMsg {
-        let residuals = if self.residuals.is_empty() {
-            Vec::with_capacity(0)
-        } else {
-            mem::take(&mut self.residuals)
-        };
-
         let mut out = Vec::with_capacity(self.ack_bitfields.len());
         for bf in self.ack_bitfields.iter_mut() {
             bf.send_count += 1;
             out.push(bf.bitfield);
         }
-        AckMsg::new(self.ack_offset, out, residuals)
+        AckMsg::new(self.ack_offset, out)
     }
 
     /// Gets the next outgoing [`AckNum`].
     pub fn next_ack_num(&mut self) -> AckNum {
-        let ack = self.outgoing_counter;
-        self.outgoing_counter = self.outgoing_counter.wrapping_add(1);
+        let ack = self.current_outgoing_ack;
+        self.current_outgoing_ack += 1;
         ack
     }
 
     /// Saves a reliable message so that it can be sent again later if the message gets lost.
-    pub fn save_msg(&mut self, header: MsgHeader, guarantees: Guarantees, other_data: SD) {
+    pub fn save_msg(&mut self, guarantees: Guarantees, header: MsgHeader, to_address: SocketAddr, payload: Arc<Vec<u8>>) {
         if guarantees.unreliable() {
             return;
         }
@@ -180,8 +185,8 @@ impl<SD: Clone> AckSystem<SD> {
             let existing_ack = self
                 .saved_msgs
                 .iter()
-                .filter_map(|(ack, (_, saved_header, _))| {
-                    if saved_header.m_type == header.m_type {
+                .filter_map(|(ack, msg_data)| {
+                    if msg_data.header.m_type == header.m_type {
                         Some(*ack)
                     } else {
                         None
@@ -193,22 +198,42 @@ impl<SD: Clone> AckSystem<SD> {
             }
         }
 
-        // finally, insert the msg
+        // finally, insert the message
         self.saved_msgs
-            .insert(header.message_ack_num, (Instant::now(), header, other_data));
+            .insert(header.message_ack_num, MessageData {
+                time_sent: Instant::now(),
+                header,
+                to_addr: to_address,
+                payload,
+            });
     }
 
     /// Gets messages that are due for a resend. This resets the time sent.
     ///
     /// `rtt` should be the round trip time in microseconds.
-    pub fn get_resend(&mut self, rtt: u32) -> Vec<(MsgHeader, SD)> {
+    pub fn get_resend(&mut self, rtt: u32) -> Vec<(MsgHeader, SocketAddr, Arc<Vec<u8>>)> {
         let rtt = max(rtt, 800);
         let mut resend = vec![];
-        for (sent, msg_header, sd) in self.saved_msgs.values_mut() {
+        for message_data in self.saved_msgs.values_mut() {
             // TODO: add duration to config.
-            if sent.elapsed().as_micros() > (rtt * 3 / 2) as u128 {
-                *sent = Instant::now();
-                resend.push((*msg_header, sd.clone()));
+            if message_data.time_sent.elapsed().as_micros() > (rtt * 3 / 2) as u128 {
+                message_data.time_sent = Instant::now();
+                // update the header
+                let (ack_offset, bitfield) = Self::next_bitfield_using(&mut self.current_idx, self.ack_offset, &mut self.ack_bitfields);
+                message_data.header.acking_offset = ack_offset;
+                message_data.header.ack_bits = bitfield;
+                message_data.header.message_ack_num = self.current_outgoing_ack;
+                self.current_outgoing_ack += 1;
+
+                { // update the message header section of the payload
+                    // this `make_mut` will very likely not clone. It will only clone if the
+                    // transport still has a reference to the payload from the last time we
+                    // sent it
+                    let payload_mut = Arc::make_mut(&mut message_data.payload);
+                    message_data.header.be_bytes_into(&mut payload_mut[0..HEADER_SIZE]);
+                }
+
+                resend.push((message_data.header, message_data.to_addr, message_data.payload.clone()));
             }
         }
 
@@ -218,12 +243,13 @@ impl<SD: Clone> AckSystem<SD> {
 
 #[cfg(test)]
 mod tests {
+    use crate::client::empty_ip;
     use super::*;
     use crate::Guarantees::{Reliable, ReliableNewest};
 
     #[test]
     fn test_msg_received() {
-        let mut ack_system: AckSystem<()> = AckSystem::new(NetConfig::default());
+        let mut ack_system: AckSystem = AckSystem::new(NetConfig::default());
 
         ack_system.msg_received(0);
         assert_eq!(ack_system.ack_bitfields.len(), 1);
@@ -239,7 +265,7 @@ mod tests {
             ack_system.ack_bitfields.front().unwrap().bitfield,
             1 << 8 | 1 << 0
         );
-        assert_eq!(ack_system.next_header(), (0, 1 << 8 | 1 << 0));
+        assert_eq!(ack_system.next_bitfield(), (0, 1 << 8 | 1 << 0));
         assert_eq!(ack_system.ack_bitfields[0].send_count, 1);
         // The rest of the test relies on this not being across the threshold
         assert!(ack_system.ack_bitfields[0].send_count < NetConfig::default().ack_send_count);
@@ -251,17 +277,18 @@ mod tests {
         assert_eq!(ack_system.ack_bitfields[1].send_count, 0);
         // Since the first bitfield has already been sent, the next one to send should be the
         // second bitfield.
-        assert_eq!(ack_system.next_header(), (32, 1 << 6));
+        assert_eq!(ack_system.next_bitfield(), (32, 1 << 6));
         assert_eq!(ack_system.ack_bitfields[0].send_count, 1);
     }
 
     #[test]
     fn test_save_msg() {
         let mut ack_system = AckSystem::new(NetConfig::default());
+        let empty_payload = Arc::new(Vec::new());
 
-        ack_system.save_msg(MsgHeader::new(1, 0, 10, 0, 0), Reliable, ());
+        ack_system.save_msg(Reliable, MsgHeader::new(1, 0, 10, 0, 0), empty_ip(), empty_payload.clone());
         assert_eq!(ack_system.saved_msgs.len(), 1);
-        ack_system.save_msg(MsgHeader::new(1, 0, 11, 0, 0), Reliable, ());
+        ack_system.save_msg(Reliable, MsgHeader::new(1, 0, 11, 0, 0), empty_ip(), empty_payload.clone());
         assert_eq!(ack_system.saved_msgs.len(), 2);
         ack_system.mark_bitfield(0, 1 << 10);
         assert_eq!(ack_system.saved_msgs.len(), 1);
@@ -269,9 +296,9 @@ mod tests {
         assert_eq!(ack_system.saved_msgs.len(), 0);
 
         // check out of order ack
-        ack_system.save_msg(MsgHeader::new(1, 0, 20, 0, 0), Reliable, ());
-        ack_system.save_msg(MsgHeader::new(1, 0, 21, 0, 0), Reliable, ());
-        ack_system.save_msg(MsgHeader::new(1, 0, 22, 0, 0), Reliable, ());
+        ack_system.save_msg(Reliable, MsgHeader::new(1, 0, 20, 0, 0), empty_ip(), empty_payload.clone());
+        ack_system.save_msg(Reliable, MsgHeader::new(1, 0, 21, 0, 0), empty_ip(), empty_payload.clone());
+        ack_system.save_msg(Reliable, MsgHeader::new(1, 0, 22, 0, 0), empty_ip(), empty_payload.clone());
         assert_eq!(ack_system.saved_msgs.len(), 3);
         ack_system.mark_bitfield(0, 1 << 22);
         assert_eq!(ack_system.saved_msgs.len(), 2);
@@ -281,10 +308,10 @@ mod tests {
         assert_eq!(ack_system.saved_msgs.len(), 0);
 
         // check mark_bitfield
-        ack_system.save_msg(MsgHeader::new(1, 0, 32, 0, 0), Reliable, ());
-        ack_system.save_msg(MsgHeader::new(1, 0, 33, 0, 0), Reliable, ());
-        ack_system.save_msg(MsgHeader::new(1, 0, 34, 0, 0), Reliable, ());
-        ack_system.save_msg(MsgHeader::new(1, 0, 63, 0, 0), Reliable, ());
+        ack_system.save_msg(Reliable, MsgHeader::new(1, 0, 32, 0, 0), empty_ip(), empty_payload.clone());
+        ack_system.save_msg(Reliable, MsgHeader::new(1, 0, 33, 0, 0), empty_ip(), empty_payload.clone());
+        ack_system.save_msg(Reliable, MsgHeader::new(1, 0, 34, 0, 0), empty_ip(), empty_payload.clone());
+        ack_system.save_msg(Reliable, MsgHeader::new(1, 0, 63, 0, 0), empty_ip(), empty_payload.clone());
         assert_eq!(ack_system.saved_msgs.len(), 4);
         ack_system.mark_bitfield(32, 1 << 0 | 1 << 1 | 1 << 2 | 1 << 31);
         assert_eq!(ack_system.saved_msgs.len(), 0);
@@ -293,12 +320,13 @@ mod tests {
     #[test]
     fn test_reliable_newest() {
         let mut ack_system = AckSystem::new(NetConfig::default());
+        let empty_payload = Arc::new(Vec::new());
 
-        ack_system.save_msg(MsgHeader::new(1, 0, 10, 0, 0), ReliableNewest, ());
+        ack_system.save_msg(ReliableNewest, MsgHeader::new(1, 0, 10, 0, 0), empty_ip(), empty_payload.clone());
         assert_eq!(ack_system.saved_msgs.len(), 1);
-        ack_system.save_msg(MsgHeader::new(1, 0, 11, 0, 0), ReliableNewest, ());
+        ack_system.save_msg(ReliableNewest, MsgHeader::new(1, 0, 11, 0, 0), empty_ip(), empty_payload.clone());
         assert_eq!(ack_system.saved_msgs.len(), 1);
-        ack_system.save_msg(MsgHeader::new(1, 0, 12, 0, 0), ReliableNewest, ());
+        ack_system.save_msg(ReliableNewest, MsgHeader::new(1, 0, 12, 0, 0), empty_ip(), empty_payload.clone());
         assert_eq!(ack_system.saved_msgs.len(), 1);
         ack_system.mark_bitfield(0, 1 << 12);
         assert_eq!(ack_system.saved_msgs.len(), 0);

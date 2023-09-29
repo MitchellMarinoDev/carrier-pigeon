@@ -35,7 +35,7 @@ pub type MType = usize;
 pub type CId = u32;
 
 // TODO: AckNums should be changed when messages are resent
-//       Then, the Ordering System should filter out the douplicates for unordered message channels.
+//       Then, the Ordering System should filter out the duplicates for unordered message channels.
 /// Acknowledgement Number.
 ///
 /// This is an integer incremented for every message sent, so messages can be uniquely identified.
@@ -64,7 +64,7 @@ pub struct MsgHeader {
     ///
     /// This number is a offset for the `ack_bits`. Read `delivery_guarantees.md` and look at
     /// [AckSystem](crate::connection::ack_system::AckSystem) for more.
-    pub receiver_acking_offset: AckNum,
+    pub acking_offset: AckNum,
     /// 32 bits representing weather the 32 ack numbers before the `receiver_acking_num` are acked.
     ///
     /// This allows us to acknowledge up to 32 messages at once.
@@ -86,9 +86,59 @@ impl MsgHeader {
             m_type,
             order_num,
             message_ack_num: sender_ack_num,
-            receiver_acking_offset: receiver_acking_num,
+            acking_offset: receiver_acking_num,
             ack_bits,
         }
+    }
+
+    /// Converts the [`MsgHeader`] to big endian bytes to be sent over the internet, and puts those
+    /// bytes in the slice.
+    ///
+    /// You **must** pass in a slice that is [`HEADER_SIZE`] long.
+    pub fn be_bytes_into(&self, slice: &mut [u8]) {
+        assert_eq!(
+            slice.len(),
+            HEADER_SIZE,
+            "The length of the buffer passed into `be_bytes_into` should have a length of `HEADER_SIZE` ({}), but it was {}",
+            HEADER_SIZE,
+            slice.len()
+        );
+
+        let m_type_b = (self.m_type as u16).to_be_bytes();
+        let sender_ack_num_b = self.message_ack_num.to_be_bytes();
+        let order_num_b = self.order_num.to_be_bytes();
+        let receiver_acking_num_b = self.acking_offset.to_be_bytes();
+        let ack_bits_b = self.ack_bits.to_be_bytes();
+        debug_assert_eq!(m_type_b.len(), 2);
+        debug_assert_eq!(sender_ack_num_b.len(), 4);
+        debug_assert_eq!(order_num_b.len(), 2);
+        debug_assert_eq!(receiver_acking_num_b.len(), 4);
+        debug_assert_eq!(ack_bits_b.len(), 4);
+        debug_assert_eq!(
+            m_type_b.len()
+                + order_num_b.len()
+                + sender_ack_num_b.len()
+                + receiver_acking_num_b.len()
+                + ack_bits_b.len(),
+            HEADER_SIZE
+        );
+
+        slice[00] = m_type_b[0];
+        slice[01] = m_type_b[1];
+        slice[02] = sender_ack_num_b[0];
+        slice[03] = sender_ack_num_b[1];
+        slice[04] = sender_ack_num_b[2];
+        slice[05] = sender_ack_num_b[3];
+        slice[06] = order_num_b[0];
+        slice[07] = order_num_b[1];
+        slice[08] = receiver_acking_num_b[0];
+        slice[09] = receiver_acking_num_b[1];
+        slice[10] = receiver_acking_num_b[2];
+        slice[11] = receiver_acking_num_b[3];
+        slice[12] = ack_bits_b[0];
+        slice[13] = ack_bits_b[1];
+        slice[14] = ack_bits_b[2];
+        slice[15] = ack_bits_b[3];
     }
 
     /// Converts the [`MsgHeader`] to big endian bytes to be sent over the internet.
@@ -96,7 +146,7 @@ impl MsgHeader {
         let m_type_b = (self.m_type as u16).to_be_bytes();
         let sender_ack_num_b = self.message_ack_num.to_be_bytes();
         let order_num_b = self.order_num.to_be_bytes();
-        let receiver_acking_num_b = self.receiver_acking_offset.to_be_bytes();
+        let receiver_acking_num_b = self.acking_offset.to_be_bytes();
         let ack_bits_b = self.ack_bits.to_be_bytes();
         debug_assert_eq!(m_type_b.len(), 2);
         debug_assert_eq!(sender_ack_num_b.len(), 4);
@@ -153,7 +203,7 @@ impl MsgHeader {
             m_type,
             order_num,
             message_ack_num: sender_ack_num,
-            receiver_acking_offset: receiver_acking_num,
+            acking_offset: receiver_acking_num,
             ack_bits,
         }
     }

@@ -12,11 +12,16 @@ use log::{debug, error, trace, warn};
 use std::any::TypeId;
 use std::io;
 use std::io::{Error, ErrorKind};
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
+/// Creates a dummy IP for usage in the reliable system
+pub fn empty_ip() -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0)
+}
+
 /// [`ReliableSystem`] with the generic parameters set for a server.
-type ClientReliableSystem<C, A, R, D> = ReliableSystem<Arc<Vec<u8>>, Box<dyn NetMsg>, C, A, R, D>;
+type ClientReliableSystem<C, A, R, D> = ReliableSystem<Box<dyn NetMsg>, C, A, R, D>;
 
 /// A wrapper around the the [`ClientTransport`] that adds the reliability and ordering.
 pub struct Client<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
@@ -143,7 +148,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
 
         // send the payload based on the guarantees
         let guarantees = self.msg_table.guarantees[m_type];
-        self.reliable_sys.save(header, guarantees, payload.clone());
+        self.reliable_sys.save(guarantees, header, empty_ip(), payload.clone());
         let result = transport.send(m_type, payload);
         self.handle_transport_result(result);
         Ok(header.message_ack_num)
@@ -231,7 +236,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
 
     /// Resends any messages that it needs to for the reliability system to work.
     fn resend_reliable(&mut self) {
-        for (header, payload) in self.reliable_sys.get_resend(self.rtt()) {
+        for (header, _, payload) in self.reliable_sys.get_resend(self.rtt()) {
             if let Some(transport) = &self.transport {
                 self.handle_transport_result(transport.send(header.m_type, payload.clone()));
             }
