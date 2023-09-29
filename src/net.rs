@@ -21,7 +21,33 @@ pub const MAX_SAFE_MESSAGE_SIZE: usize = 508;
 pub const MAX_MESSAGE_SIZE: usize = 65507;
 
 /// The size of carrier-pigeon's header.
-pub const HEADER_SIZE: usize = 12;
+pub const HEADER_SIZE: usize = 16;
+
+/// Message Type.
+///
+/// This is an integer unique to each type of message.
+pub type MType = usize;
+
+/// Connection ID.
+///
+/// This is an integer incremented for every connection made to the server, so connections can
+/// be uniquely identified.
+pub type CId = u32;
+
+// TODO: AckNums should be changed when messages are resent
+//       Then, the Ordering System should filter out the douplicates for unordered message channels.
+/// Acknowledgement Number.
+///
+/// This is an integer incremented for every message sent, so messages can be uniquely identified.
+/// This is used as a way to acknowledge reliable messages.
+pub type AckNum = u32;
+
+/// Ordering Number.
+///
+/// This is an integer specific to each [`MType`], incremented for every message sent,
+/// This is so we can order the messages as they come in.
+// TODO: implement wrapping logic for counting
+pub type OrderNum = u16;
 
 /// A header to be sent before the message contents of a message.
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
@@ -68,14 +94,14 @@ impl MsgHeader {
     /// Converts the [`MsgHeader`] to big endian bytes to be sent over the internet.
     pub fn to_be_bytes(&self) -> [u8; HEADER_SIZE] {
         let m_type_b = (self.m_type as u16).to_be_bytes();
-        let order_num_b = self.order_num.to_be_bytes();
         let sender_ack_num_b = self.message_ack_num.to_be_bytes();
+        let order_num_b = self.order_num.to_be_bytes();
         let receiver_acking_num_b = self.receiver_acking_offset.to_be_bytes();
         let ack_bits_b = self.ack_bits.to_be_bytes();
         debug_assert_eq!(m_type_b.len(), 2);
+        debug_assert_eq!(sender_ack_num_b.len(), 4);
         debug_assert_eq!(order_num_b.len(), 2);
-        debug_assert_eq!(sender_ack_num_b.len(), 2);
-        debug_assert_eq!(receiver_acking_num_b.len(), 2);
+        debug_assert_eq!(receiver_acking_num_b.len(), 4);
         debug_assert_eq!(ack_bits_b.len(), 4);
         debug_assert_eq!(
             m_type_b.len()
@@ -89,12 +115,16 @@ impl MsgHeader {
         [
             m_type_b[0],
             m_type_b[1],
-            order_num_b[0],
-            order_num_b[1],
             sender_ack_num_b[0],
             sender_ack_num_b[1],
+            sender_ack_num_b[2],
+            sender_ack_num_b[3],
+            order_num_b[0],
+            order_num_b[1],
             receiver_acking_num_b[0],
             receiver_acking_num_b[1],
+            receiver_acking_num_b[2],
+            receiver_acking_num_b[3],
             ack_bits_b[0],
             ack_bits_b[1],
             ack_bits_b[2],
@@ -114,10 +144,10 @@ impl MsgHeader {
         );
 
         let m_type = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
-        let order_num = u16::from_be_bytes(bytes[2..4].try_into().unwrap());
-        let sender_ack_num = u16::from_be_bytes(bytes[4..6].try_into().unwrap());
-        let receiver_acking_num = u16::from_be_bytes(bytes[6..8].try_into().unwrap());
-        let ack_bits = u32::from_be_bytes(bytes[8..12].try_into().unwrap());
+        let sender_ack_num = u32::from_be_bytes(bytes[2..6].try_into().unwrap());
+        let order_num = u16::from_be_bytes(bytes[6..8].try_into().unwrap());
+        let receiver_acking_num = u32::from_be_bytes(bytes[8..12].try_into().unwrap());
+        let ack_bits = u32::from_be_bytes(bytes[12..16].try_into().unwrap());
 
         MsgHeader {
             m_type,
@@ -342,32 +372,6 @@ impl<A: NetMsg, R: NetMsg, D: NetMsg> Status<A, R, D> {
         }
     }
 }
-
-/// Message Type.
-///
-/// This is an integer unique to each type of message.
-pub type MType = usize;
-
-/// Connection ID.
-///
-/// This is an integer incremented for every connection made to the server, so connections can
-/// be uniquely identified.
-pub type CId = u32;
-
-/// Acknowledgement Number.
-///
-/// This is an integer incremented for every message sent, so messages can be uniquely identified.
-/// This is used as a way to acknowledge reliable messages.
-// TODO: this might need to be a wrapper type, as the comparing logic should consider wrapping
-// TODO: this should also be a u32 as we might wrap too quickly when sending a lot of messages.
-pub type AckNum = u16;
-
-/// Ordering Number.
-///
-/// This is an integer specific to each [`MType`], incremented for every message sent,
-/// This is so we can order the messages as they come in.
-// TODO: this might need to be a wrapper type, as the comparing logic should consider wrapping
-pub type OrderNum = u16;
 
 /// A way to specify the valid [`CId`]s for an operation.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]

@@ -7,11 +7,10 @@ use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::mem;
 use std::time::Instant;
-
-// TODO: impl ack_send_count for residuals
+use log::trace;
 
 /// The width of the bitfield that is used for acknowledgement.
-const BITFIELD_WIDTH: u16 = 32;
+const BITFIELD_WIDTH: AckNum = 32;
 
 /// The bitfield containing the acknowledgment numbers for 32 consecutive AckNums.
 ///
@@ -77,13 +76,14 @@ impl<SD: Clone> AckSystem<SD> {
     ///
     /// Marks an incoming message as received, so it gets acknowledged in the next message we send.
     pub fn msg_received(&mut self, num: AckNum) {
-        let window_width = (BITFIELD_WIDTH * self.ack_bitfields.len() as AckNum);
+        let window_width = BITFIELD_WIDTH * self.ack_bitfields.len() as AckNum;
         // The highest AckNum we can have without shifting.
         let mut upper_bound = self.ack_offset.wrapping_add(window_width);
-
-        let distance_away_from_window = max(num.saturating_sub(self.ack_offset), upper_bound.saturating_sub(num));
-
-        // TODO: wrapping logic
+        // Make sure the ack num is not passed the window
+        if num < self.ack_offset {
+            trace!("Got a message number {} which is earlier than the window. Discarding.", num);
+            return;
+        }
 
         // shift the ack_bitfields (if needed) to make room for the new number
         while num >= upper_bound {
@@ -100,19 +100,7 @@ impl<SD: Clone> AckSystem<SD> {
             // recalculate the upper bound
             upper_bound = self.ack_offset + (BITFIELD_WIDTH * self.ack_bitfields.len() as AckNum);
         }
-        if num < self.ack_offset {
-            // TODO: Remove this whole notion of residuals, when we start assigning new ack numbers
-            //       to resent messages. In addition, this screening of weather a message can be dumped
-            //       will need to happen sooner, because it will need to occur before decryption
-            //       as part of the protection against packet replay.
-            //       Therefore this "within window" checking logic should be moved to its own function.
-            // num is outside the window. This is unlikely to happen unless a packet stays on the
-            // internet for a long time.
-            self.residuals.push(num);
-            return;
-        }
 
-        // TODO: This will fail when wrapping
         let dif = num - self.ack_offset;
         let bit_flag = 1 << (dif % BITFIELD_WIDTH);
         let field_idx = dif / BITFIELD_WIDTH;
@@ -314,15 +302,5 @@ mod tests {
         assert_eq!(ack_system.saved_msgs.len(), 1);
         ack_system.mark_bitfield(0, 1 << 12);
         assert_eq!(ack_system.saved_msgs.len(), 0);
-    }
-
-    // TODO: impl and test the AckNum rolling over logic
-
-    #[test]
-    fn test_ack_num_rollover() {
-        let mut ack_system: AckSystem<()> = AckSystem::new(NetConfig::default());
-
-        ack_system.msg_received(0u16.wrapping_sub(32));
-        panic!("{:?}", ack_system);
     }
 }

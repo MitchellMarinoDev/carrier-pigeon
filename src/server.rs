@@ -46,10 +46,6 @@ pub struct Server<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> {
     connection_list: ConnectionList<C>,
     /// A que that keeps track of disconnection events.
     disconnection_events: VecDeque<DisconnectionEvent<D>>,
-    /// A que for clients that are disconnecting
-    // TODO: remove. Instead, just send a burst of disconnect messages and hope for the best.
-    //       This will save alot of troupble
-    disconnecting: Vec<(CId, AckNum, D)>,
     /// The received message buffer.
     ///
     /// Each [`MType`](crate::MType) has its own vector.
@@ -81,7 +77,6 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
             ping_sys: ServerPingSystem::new(config),
             reliable_sys: HashMap::new(),
             disconnection_events: VecDeque::new(),
-            disconnecting: vec![],
             connection_list,
         })
     }
@@ -98,8 +93,12 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
             ));
         }
         debug!("Disconnecting CId {}", cid);
-        let discon_ack = self.send_to(cid, &discon_msg)?;
-        self.disconnecting.push((cid, discon_ack, discon_msg));
+        // send a burst of messages, hoping at least 1 makes it though
+        // if not, it will look like a timeout (not the end of the world)
+        for _ in 0..10 {
+            self.send_to(cid, &discon_msg)?;
+        }
+        self.server_disconnected_event(cid, discon_msg);
         Ok(())
     }
 
@@ -432,7 +431,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                         continue;
                     }
                     let disconnect_msg: D = *msg.downcast().expect("since the MType is `DISCONNECT_M_TYPE`, the message should be the disconnection type");
-                    self.connection_disconnected_event(cid, disconnect_msg);
+                    self.client_disconnected_event(cid, disconnect_msg);
                 }
                 ACK_M_TYPE => {
                     let ack_msg = *msg.downcast().expect("since the MType is `RESPONSE_M_TYPE`, the message should be the response type");
@@ -606,7 +605,7 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
 
     /// Creates a [`DisconnectionEvent`] of type `Disconnected`,
     /// and and removes the connection.
-    fn connection_disconnected_event(&mut self, cid: CId, disconnect_msg: D) {
+    fn client_disconnected_event(&mut self, cid: CId, disconnect_msg: D) {
         if !self.cid_connected(cid) {
             return;
         }
@@ -663,12 +662,6 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
 
     pub fn cid_connected(&self, cid: CId) -> bool {
         self.connection_list.cid_connected(cid)
-    }
-
-    pub fn cid_disconnecting(&self, cid: CId) -> bool {
-        self.disconnecting
-            .iter()
-            .any(|(disconnecting_cid, _, _)| *disconnecting_cid == cid)
     }
 
     pub fn addr_of(&self, cid: CId) -> Option<SocketAddr> {

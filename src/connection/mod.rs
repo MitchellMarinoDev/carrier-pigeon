@@ -13,6 +13,11 @@ use std::collections::VecDeque;
 use std::io::Error;
 use std::net::SocketAddr;
 
+// TODO: add statistics
+
+// TODO: Send an AckMsg every tick where the ack_count is 0 for a certain window so that all messages
+//       are acknowledged on the tick that they are received.
+
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum ConnectionListError {
     /// The [`SocketAddress`] was already connected.
@@ -26,8 +31,8 @@ pub enum ConnectionListError {
 pub enum DisconnectionEventType<D: NetMsg> {
     /// The connection was dropped without sending a disconnection message.
     Dropped(Error),
-    /// The peer disconnected by sending a disconnection message.
-    Disconnected(D),
+    /// The client disconnected by sending a disconnection message.
+    ClientDisconnected(D),
     /// The server disconnected the peer with message.
     ServerDisconnected(D),
 }
@@ -38,9 +43,9 @@ impl<D: NetMsg> DisconnectionEventType<D> {
         matches!(self, DisconnectionEventType::Dropped(_))
     }
 
-    /// Returns weather this is the [`Disconnected`](Self::Disconnected) variant or not.
-    pub fn is_disconnected(&self) -> bool {
-        matches!(self, DisconnectionEventType::Disconnected(_))
+    /// Returns weather this is the [`Disconnected`](Self::ClientDisconnected) variant or not.
+    pub fn is_client_disconnected(&self) -> bool {
+        matches!(self, DisconnectionEventType::ClientDisconnected(_))
     }
 
     /// Returns weather this is the [`ServerDisconnected`](Self::ServerDisconnected) variant or not.
@@ -56,10 +61,10 @@ impl<D: NetMsg> DisconnectionEventType<D> {
         }
     }
 
-    /// Gets the disconnection message out of the [`Disconnected`](Self::Disconnected) variant.
+    /// Gets the disconnection message out of the [`Disconnected`](Self::ClientDisconnected) variant.
     pub fn unwrap_disconnected(&self) -> Option<&D> {
         match self {
-            DisconnectionEventType::Disconnected(msg) => Some(msg),
+            DisconnectionEventType::ClientDisconnected(msg) => Some(msg),
             _ => None,
         }
     }
@@ -97,7 +102,7 @@ impl<D: NetMsg> DisconnectionEvent<D> {
     pub fn disconnected(cid: CId, disconnect_msg: D) -> Self {
         DisconnectionEvent {
             cid,
-            disconnection_type: DisconnectionEventType::Disconnected(disconnect_msg),
+            disconnection_type: DisconnectionEventType::ClientDisconnected(disconnect_msg),
         }
     }
 

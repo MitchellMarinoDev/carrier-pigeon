@@ -3,6 +3,9 @@ use crate::{Guarantees, MType};
 use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
 
+// TODO: this system should prevent message duplication in reliableUnordered and ideally,
+//       Unreliable message types.
+
 /// The Ordering System.
 ///
 /// This buffers messages and orders them according to their [`Guarantees`].
