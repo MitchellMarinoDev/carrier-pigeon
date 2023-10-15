@@ -44,7 +44,6 @@ impl<RD> OrderingSystem<RD> {
         } else if guarantees.newest() {
             self.handle_newest(header, other_data);
         } else {
-            // TODO: add dupe detection for reliable messages
             self.next.push_back((header, other_data));
         }
     }
@@ -96,10 +95,18 @@ impl<RD> OrderingSystem<RD> {
         self.next.pop_front()
     }
 
+    /// Gets the next outgoing [`OrderNum`].
+    ///
+    /// This increments the counter.
     pub fn next_outgoing(&mut self, m_type: MType) -> OrderNum {
         let order_num = self.outgoing[m_type];
-        self.outgoing[m_type] = self.outgoing[m_type].wrapping_add(1);
+        self.outgoing[m_type] += 1;
         order_num
+    }
+
+    /// Gets the current order number for incoming messages.
+    pub fn get_incoming(&self, m_type: MType) -> OrderNum {
+        self.current[m_type]
     }
 }
 

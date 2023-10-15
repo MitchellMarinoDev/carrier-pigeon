@@ -61,7 +61,6 @@ pub(crate) struct AckSystem {
     /// This stores a bitfield for weather the 32 messages before `ack_offset` have been received.
     ack_bitfields: VecDeque<AckBitfields>,
     /// This stores the saved reliable messages.
-    // TODO: consider switching this to a sorted array
     saved_msgs: HashMap<AckNum, MessageData>,
 }
 
@@ -79,6 +78,12 @@ impl AckSystem {
             saved_msgs: HashMap::new(),
         }
     }
+
+    // TODO: If a message is already acked, do not process it. If a message has left the window,
+    //          do not process it.
+    //       This will stop us from processing doupes for all message types, which means unreliable
+    //       messages will have doupe detection for free, as well as protecting from packet
+    //       replay attacks.
 
     /// Marks the [`AckNum`] of a message as received.
     ///
@@ -181,7 +186,6 @@ impl AckSystem {
         // newest message; we should remove an old one if it exists
         if guarantees == Guarantees::ReliableNewest {
             // if there is an existing message of the same m_type in the saved buffer, remove it.
-            // TODO: this might work better as a sorted vector.
             let existing_ack = self
                 .saved_msgs
                 .iter()
@@ -212,10 +216,9 @@ impl AckSystem {
     ///
     /// `rtt` should be the round trip time in microseconds.
     pub fn get_resend(&mut self, rtt: u32) -> Vec<(MsgHeader, SocketAddr, Arc<Vec<u8>>)> {
-        let rtt = max(rtt, 800);
+        let rtt = max(rtt, 4_000);
         let mut resend = vec![];
         for message_data in self.saved_msgs.values_mut() {
-            // TODO: add duration to config.
             if message_data.time_sent.elapsed().as_micros() > (rtt * 3 / 2) as u128 {
                 message_data.time_sent = Instant::now();
                 // update the header

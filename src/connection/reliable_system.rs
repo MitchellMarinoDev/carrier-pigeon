@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::connection::ack_system::AckSystem;
 use crate::connection::ordering_system::OrderingSystem;
 use crate::messages::{AckMsg, NetMsg};
-use crate::net::MsgHeader;
+use crate::net::{MsgHeader, OrderNum};
 use crate::{Guarantees, MType, MsgTable, NetConfig};
 use std::time::Instant;
 
@@ -101,5 +101,11 @@ impl<RD, C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> ReliableSystem<RD, C, A, R,
     /// Gets messages that are due for a resend.
     pub fn get_resend(&mut self, rtt: u32) -> Vec<(MsgHeader, SocketAddr, Arc<Vec<u8>>)> {
         self.ack_sys.get_resend(rtt)
+    }
+
+    /// Gets the current order number for incoming messages.
+    #[inline]
+    pub fn current_incoming_order_num(&self, m_type: MType) -> OrderNum {
+        self.ordering_sys.get_incoming(m_type)
     }
 }

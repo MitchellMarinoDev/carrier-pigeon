@@ -46,10 +46,11 @@ pub type AckNum = u32;
 ///
 /// This is an integer specific to each [`MType`], incremented for every message sent,
 /// This is so we can order the messages as they come in.
-// TODO: implement wrapping logic for counting
-pub type OrderNum = u16;
+///
+/// Though this is a u32, we serialize it as a u16 and then reconstruct it on the other side.
+pub type OrderNum = u32;
 
-/// A header to be sent before the message contents of a message.
+/// The header to be sent before the contents of every message.
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 pub struct MsgHeader {
     /// The message type of this message.
@@ -106,7 +107,7 @@ impl MsgHeader {
 
         let m_type_b = (self.m_type as u16).to_be_bytes();
         let sender_ack_num_b = self.message_ack_num.to_be_bytes();
-        let order_num_b = self.order_num.to_be_bytes();
+        let order_num_b = (self.order_num as u16).to_be_bytes();
         let receiver_acking_num_b = self.acking_offset.to_be_bytes();
         let ack_bits_b = self.ack_bits.to_be_bytes();
         debug_assert_eq!(m_type_b.len(), 2);
@@ -145,7 +146,7 @@ impl MsgHeader {
     pub fn to_be_bytes(&self) -> [u8; HEADER_SIZE] {
         let m_type_b = (self.m_type as u16).to_be_bytes();
         let sender_ack_num_b = self.message_ack_num.to_be_bytes();
-        let order_num_b = self.order_num.to_be_bytes();
+        let order_num_b = (self.order_num as u16).to_be_bytes();
         let receiver_acking_num_b = self.acking_offset.to_be_bytes();
         let ack_bits_b = self.ack_bits.to_be_bytes();
         debug_assert_eq!(m_type_b.len(), 2);
@@ -185,6 +186,12 @@ impl MsgHeader {
     /// Converts the big endian bytes back into a [`MsgHeader`].
     ///
     /// You **must** pass in a slice that is [`HEADER_SIZE`] long.
+    ///
+    /// In addition, this will give you **only the 16 least significant bits** of the order number.
+    /// The most significant bits need to be reconstructed using some context.
+    ///
+    /// You must call [`reconstruct_order_num()`](self::reconstruct_order_num)
+    /// in order to get the other 16 bits.
     pub fn from_be_bytes(bytes: &[u8]) -> Self {
         assert_eq!(
             bytes.len(),
@@ -195,7 +202,7 @@ impl MsgHeader {
 
         let m_type = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
         let sender_ack_num = u32::from_be_bytes(bytes[2..6].try_into().unwrap());
-        let order_num = u16::from_be_bytes(bytes[6..8].try_into().unwrap());
+        let order_num = u16::from_be_bytes(bytes[6..8].try_into().unwrap()) as u32;
         let receiver_acking_num = u32::from_be_bytes(bytes[8..12].try_into().unwrap());
         let ack_bits = u32::from_be_bytes(bytes[12..16].try_into().unwrap());
 
@@ -207,6 +214,26 @@ impl MsgHeader {
             ack_bits,
         }
     }
+
+    /// Reconstructs the most significant bits of the order number.
+    ///
+    /// This is needed because only the 16 least significant bits are sent over the internet to
+    /// reduce the overhead of carrier-pigeon.
+    pub fn reconstruct_order_num(&mut self, current_order_num: OrderNum) {
+        self.order_num = reconstruct_order_number(self.order_num as u16, current_order_num);
+    }
+}
+
+fn reconstruct_order_number(order_num_lsb: u16, current_order_num: u32) -> u32 {
+    // The threshold for weather to round up or down
+    let current_lsb = current_order_num as u16;
+    let mut msb = current_order_num & ((u16::MAX as u32) << 16);
+    let threshold = current_lsb ^ (1 << 15);
+
+    msb -= (((threshold > current_lsb) && (order_num_lsb > threshold)) as u32) << 16;
+    msb += (((threshold < current_lsb) && (order_num_lsb < threshold)) as u32) << 16;
+
+    return msb + (order_num_lsb as u32);
 }
 
 /// Delivery guarantees.
@@ -591,5 +618,37 @@ impl<'n, T: NetMsg> Deref for Message<'n, T> {
 
     fn deref(&self) -> &Self::Target {
         self.content
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::net::reconstruct_order_number;
+
+    /// We are going to test a lot of combinations.
+    ///
+    /// We generate a current_order_num and then simulate receiving a order number that is up to
+    /// 1_000 order numbers before or after our real order number, and then we make sure that
+    /// the function successfully reconstructs the number.
+    #[test]
+    fn test_reconstruct_order_num() {
+        for msb in (0..u16::MAX).step_by(100) {
+            let msb = (msb as u32) << 15;
+            for order_number_lsb in 0..u16::MAX {
+                for offset in (-1_000..1_000).step_by(66) {
+                    let current_order_number = msb + (order_number_lsb as u32);
+
+                    let order_number_i64 = (current_order_number as i64).wrapping_add(offset);
+                    let order_number = if order_number_i64 > 0 {
+                        order_number_i64 as u32
+                    } else {
+                        continue;
+                    };
+
+                    let reconstructed = reconstruct_order_number(order_number as u16, current_order_number);
+                    assert_eq!(reconstructed, order_number, "Err when msb={}, current_order_num={}, order_num={}", msb >> 15, current_order_number, order_number);
+                }
+            }
+        }
     }
 }

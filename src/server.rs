@@ -351,7 +351,9 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
                 );
                 continue;
             }
-            let header = MsgHeader::from_be_bytes(&buf[..HEADER_SIZE]);
+
+            let mut header = MsgHeader::from_be_bytes(&buf[..HEADER_SIZE]);
+
             if !self.msg_table.valid_m_type(header.m_type) {
                 warn!(
                     "Server received message with invalid MType ({}). Maximum is {}",
@@ -421,6 +423,8 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Server<C, A, R, D> {
             reliable_sys.msg_received(header);
             let last_heard = self.last_heard.get_mut(&cid).expect("CId already checked");
             *last_heard = Instant::now();
+
+            header.reconstruct_order_num(reliable_sys.current_incoming_order_num(header.m_type));
 
             match header.m_type {
                 RESPONSE_M_TYPE => {

@@ -5,8 +5,6 @@ use log::warn;
 use std::collections::VecDeque;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-// TODO: see if we can combine some of these structs.
-
 // TODO: Since we plan on sending `time_sent` with every message, we should keep track of it
 //      on every message. When the message gets acked, we can calculate RTT.
 //      This would calculate our RTT from all messages instead of just ping messages

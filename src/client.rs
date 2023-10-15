@@ -275,7 +275,10 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
                 );
                 continue;
             }
-            let header = MsgHeader::from_be_bytes(&buf[..HEADER_SIZE]);
+
+            let mut header = MsgHeader::from_be_bytes(&buf[..HEADER_SIZE]);
+            header.reconstruct_order_num(self.reliable_sys.current_incoming_order_num(header.m_type));
+
             if !self.msg_table.valid_m_type(header.m_type) {
                 warn!(
                     "Client: Received a message with an invalid MType: {}, Maximum MType is {}",
@@ -290,7 +293,6 @@ impl<C: NetMsg, A: NetMsg, R: NetMsg, D: NetMsg> Client<C, A, R, D> {
                 header.m_type,
                 n,
             );
-            debug!("Client: {:?}", header);
 
             let msg = match self.msg_table.deser[header.m_type](&buf[HEADER_SIZE..]) {
                 Ok(msg) => msg,
